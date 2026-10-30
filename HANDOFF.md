@@ -4,7 +4,7 @@ Date: Tue Oct 27, 2026
 
 ## Project
 - Local browser rhythm game: upload → auto-chart → play. Root: `C:\Users\amrel\WebstormProjects\pulsegrid`
-- Git repo, branch `main`, no remote.
+- Git repo, branch `main`, pushed to the private GitHub repo amrogad/pulsegrid.
 - Stack: React 18, TypeScript, Vite. Web Worker analysis, Web Audio playback, IndexedDB storage.
 
 ## Current state
