@@ -1,0 +1,303 @@
+/**
+ * Player settings.
+ *
+ * Stored in localStorage (small, synchronous, and available even when IndexedDB is blocked) with
+ * defensive parsing: a settings blob from an older build — or a hand-edited one — must never be
+ * able to put the app in a broken state, so every field is clamped or rejected.
+ */
+import type { FailRule } from '../core/types'
+import { FAIL_RULES } from '../core/types'
+import type { ControlMap, KeyMap } from '../game/input'
+import { CONTROL_DEFAULTS, DEFAULT_KEYMAP } from '../game/input'
+import type { CustomWindows, WindowPreset } from '../game/judgment'
+import { normalizeCustomWindows } from '../game/judgment'
+import type { LaneStyle, NoteShape, ScrollDirection, ThemeName } from '../render/renderer'
+
+/** Windowed play always; `fullscreen` asks the browser for fullscreen when a run starts. */
+export type DisplayMode = 'window' | 'fullscreen'
+
+export interface Settings {
+  /** Master volume 0..1. Defaults to a full mixer; Windows/macOS system volume still applies. */
+  volume: number
+  /** Interface sounds: clicks, toggles and keystroke taps. Always on; there is no toggle. */
+  uiSounds: boolean
+  windowPreset: WindowPreset
+  /** The four hit windows used when `windowPreset` is 'custom'. */
+  customWindows: CustomWindows
+  /** When a run fails: never, after N misses, or the arcade accuracy rule. */
+  failRule: FailRule
+  scrollSpeed: number
+  scrollDirection: ScrollDirection
+  /** One size control for tap arrows, hold arrows and their receptor ghosts. */
+  noteScale: number
+  laneStyle: LaneStyle
+  noteShape: NoteShape
+  theme: ThemeName
+  displayMode: DisplayMode
+  reducedMotion: boolean
+  keyMap: KeyMap
+  controls: ControlMap
+  /** The one-time welcome walkthrough has been dismissed. */
+  tutorialSeen: boolean
+  /**
+   * Auto-play (watch/verify) mode. Persisted so it survives a reload when testing, but the schema
+   * migration turns it off once: it masks all key input, which can make a normal run look broken.
+   */
+  autoPlay: boolean
+  /** Show the lightweight in-game performance readout. */
+  showStats: boolean
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  volume: 1,
+  uiSounds: true,
+  windowPreset: 'stepmania',
+  customWindows: { marvelous: 16, perfect: 40, great: 80, good: 120 },
+  // Casual-friendly default: a first run should reach the results screen even while the player
+  // is still learning the lanes. Arcade failure is one click away in Settings.
+  failRule: 'never',
+  scrollSpeed: 5,
+  scrollDirection: 'up',
+  noteScale: 1.3,
+  laneStyle: 'neon',
+  noteShape: 'arrow',
+  theme: 'disco',
+  displayMode: 'window',
+  reducedMotion: false,
+  keyMap: DEFAULT_KEYMAP,
+  controls: CONTROL_DEFAULTS,
+  tutorialSeen: false,
+  autoPlay: false,
+  showStats: false,
+}
+
+const STORAGE_KEY = 'pulsegrid:settings:v1'
+
+/**
+ * Saved-settings schema. Bumping it runs a one-time migration in `loadSettings`; every other
+ * field still comes from the sanitizer so older blobs keep their choices.
+ *
+ * v2: gameplay is silent by default (StepMania has no hit sounds) and auto-play starts off — a
+ *     stored `true` from v1 was almost always the old default, not a deliberate choice.
+ * v3: hit sounds and manual audio offset are gone; audio is remembered by default so a song can
+ *     be replayed with the same arrows without re-importing it.
+ * v4: runs no longer fail by default; the arcade rule was too punishing for a first play.
+ * v5: the green terminal skin was the old default; move that default to the disco skin.
+ * v6: Settings was cut back to the options that matter. Hidden tuning knobs return to their
+ *     defaults, interface sounds are always on, and the one fair timing/fail ruleset applies.
+ * v7: the green terminal theme is gone; disco is the only default look.
+ * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
+ *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
+ */
+const SETTINGS_SCHEMA = 8
+
+function clamp(value: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  return Math.max(min, Math.min(max, n))
+}
+
+function sanitizeKeyList(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return [...fallback]
+  const list = value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0).slice(0, 8)
+  return list.length > 0 ? list : [...fallback]
+}
+
+function sanitizeKeyMap(value: unknown): KeyMap {
+  const raw = (value ?? {}) as Partial<KeyMap>
+  const map: KeyMap = {
+    left: sanitizeKeyList(raw.left, DEFAULT_KEYMAP.left),
+    down: sanitizeKeyList(raw.down, DEFAULT_KEYMAP.down),
+    up: sanitizeKeyList(raw.up, DEFAULT_KEYMAP.up),
+    right: sanitizeKeyList(raw.right, DEFAULT_KEYMAP.right),
+  }
+  // A key can only belong to one lane. Repair conflicts by keeping the first owner and dropping
+  // later duplicates — resetting the whole map to defaults here used to silently undo the player's
+  // rebind the moment they moved a default key (e.g. W) to another arrow.
+  const used = new Set<string>()
+  const spare = ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon']
+  for (const lane of ['left', 'down', 'up', 'right'] as (keyof KeyMap)[]) {
+    map[lane] = map[lane].filter((code) => {
+      if (used.has(code)) return false
+      used.add(code)
+      return true
+    })
+    if (map[lane].length === 0) {
+      const replacement = [...DEFAULT_KEYMAP[lane], ...spare].find((code) => !used.has(code))
+      if (replacement) {
+        map[lane] = [replacement]
+        used.add(replacement)
+      }
+    }
+  }
+  return map
+}
+
+function sanitizeControls(value: unknown): ControlMap {
+  const raw = (value ?? {}) as Partial<ControlMap>
+  return {
+    pause: sanitizeKeyList(raw.pause, CONTROL_DEFAULTS.pause),
+    restart: sanitizeKeyList(raw.restart, CONTROL_DEFAULTS.restart),
+    fullscreen: sanitizeKeyList(raw.fullscreen, CONTROL_DEFAULTS.fullscreen),
+  }
+}
+
+export function sanitizeSettings(input: unknown): Settings {
+  const raw = (input ?? {}) as Partial<Settings>
+  const windowPreset: WindowPreset =
+    raw.windowPreset === 'strict' ||
+    raw.windowPreset === 'standard' ||
+    raw.windowPreset === 'stepmania' ||
+    raw.windowPreset === 'lenient' ||
+    raw.windowPreset === 'custom'
+      ? raw.windowPreset
+      : 'stepmania'
+  const laneStyle: LaneStyle = raw.laneStyle === 'classic' || raw.laneStyle === 'minimal' ? raw.laneStyle : 'neon'
+  const noteShape: NoteShape =
+    raw.noteShape === 'bar' ||
+    raw.noteShape === 'chevron' ||
+    raw.noteShape === 'diamond' ||
+    raw.noteShape === 'orb' ||
+    raw.noteShape === 'star' ||
+    raw.noteShape === 'hex'
+      ? raw.noteShape
+      : 'arrow'
+  const scrollDirection: ScrollDirection = raw.scrollDirection === 'down' ? 'down' : 'up'
+  // The phosphor-green terminal skin was removed: any old saved value falls back to disco.
+  const theme: ThemeName = raw.theme === 'neon' ? 'neon' : 'disco'
+  const displayMode: DisplayMode = raw.displayMode === 'fullscreen' ? 'fullscreen' : 'window'
+  const failRule: FailRule =
+    typeof raw.failRule === 'string' && (FAIL_RULES as readonly string[]).includes(raw.failRule)
+      ? (raw.failRule as FailRule)
+      : DEFAULT_SETTINGS.failRule
+  return {
+    volume: clamp(raw.volume, 0, 1, DEFAULT_SETTINGS.volume),
+    uiSounds: typeof raw.uiSounds === 'boolean' ? raw.uiSounds : DEFAULT_SETTINGS.uiSounds,
+    windowPreset,
+    customWindows: normalizeCustomWindows(raw.customWindows),
+    failRule,
+    scrollSpeed: clamp(raw.scrollSpeed, 1, 10, DEFAULT_SETTINGS.scrollSpeed),
+    scrollDirection,
+    noteScale: clamp(raw.noteScale, 0.8, 1.7, DEFAULT_SETTINGS.noteScale),
+    laneStyle,
+    noteShape,
+    theme,
+    displayMode,
+    reducedMotion: typeof raw.reducedMotion === 'boolean' ? raw.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
+    keyMap: sanitizeKeyMap(raw.keyMap),
+    controls: sanitizeControls(raw.controls),
+    tutorialSeen: typeof raw.tutorialSeen === 'boolean' ? raw.tutorialSeen : DEFAULT_SETTINGS.tutorialSeen,
+    autoPlay: typeof raw.autoPlay === 'boolean' ? raw.autoPlay : DEFAULT_SETTINGS.autoPlay,
+    showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
+  }
+}
+
+export function loadSettings(): Settings {
+  try {
+    const text = localStorage.getItem(STORAGE_KEY)
+    if (!text) return { ...DEFAULT_SETTINGS }
+    const parsed = JSON.parse(text) as Partial<Settings> & { schema?: number }
+    if ((parsed.schema ?? 1) < SETTINGS_SCHEMA) {
+      // v5: terminal was the app's default, not a choice the player made. Move it to disco;
+      // an explicit 'neon' choice is left alone.
+      if ((parsed.schema ?? 1) < 7) parsed.theme = parsed.theme === 'neon' ? 'neon' : 'disco'
+      if ((parsed.schema ?? 1) < 6) {
+        // These controls left the UI. Their old saved values must not quietly keep changing how
+        // the game feels, so the shared defaults are restored once.
+        parsed.noteScale = 1
+        parsed.laneStyle = 'neon'
+        parsed.windowPreset = 'stepmania'
+        parsed.failRule = 'never'
+        parsed.autoPlay = false
+        parsed.uiSounds = true
+      }
+      parsed.autoPlay = false
+      if ((parsed.schema ?? 1) < 8) {
+        // v8: the mixer used to start at 90%. A full mixer is the closest a browser can get to
+        // "follow the system volume" (the OS level is applied after this gain). The old note and
+        // receptor sliders were hidden, so their stored values were not deliberate choices.
+        parsed.volume = 1
+        parsed.noteScale = DEFAULT_SETTINGS.noteScale
+      }
+      // v4: failure used to default to the arcade accuracy rule, which ended a first run before
+      // a new player had a chance to learn the controls. Reset it once to the casual default.
+      if ((parsed.schema ?? 1) < 4) {
+        parsed.failRule = 'never'
+        // Arrow keys now work alongside WASD. Add the matching arrow as an alias without
+        // touching custom bindings; the sanitizer resolves any collision.
+        const aliases: Record<keyof KeyMap, string> = {
+          left: 'ArrowLeft',
+          down: 'ArrowDown',
+          up: 'ArrowUp',
+          right: 'ArrowRight',
+        }
+        const keyMap = parsed.keyMap as Partial<Record<keyof KeyMap, string[]>> | undefined
+        if (keyMap && typeof keyMap === 'object') {
+          for (const lane of Object.keys(aliases) as (keyof KeyMap)[]) {
+            const keys = keyMap[lane]
+            if (Array.isArray(keys) && !keys.includes(aliases[lane])) {
+              keyMap[lane] = [...keys, aliases[lane]]
+            }
+          }
+        }
+      }
+    }
+    const migrated = sanitizeSettings(parsed)
+    if ((parsed.schema ?? 1) < SETTINGS_SCHEMA) saveSettings(migrated)
+    return migrated
+  } catch {
+    return { ...DEFAULT_SETTINGS }
+  }
+}
+
+export function saveSettings(settings: Settings): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, schema: SETTINGS_SCHEMA }))
+  } catch {
+    // Storage full or blocked: the in-memory settings still apply for this session.
+  }
+}
+
+/**
+ * Observable settings store. React reads it through `useSyncExternalStore`, so any screen that
+ * changes a setting updates every other screen without prop plumbing.
+ */
+export class SettingsStore {
+  private value: Settings
+  private listeners = new Set<() => void>()
+
+  constructor(initial: Settings = loadSettings()) {
+    this.value = initial
+  }
+
+  /**
+   * Arrow property on purpose: the store is read through `useSyncExternalStore(store.subscribe,
+   * store.get, store.get)`, which calls these functions without a receiver — a prototype method
+   * would crash on `this`.
+   */
+  get = (): Settings => {
+    return this.value
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  update(patch: Partial<Settings>): Settings {
+    this.value = sanitizeSettings({ ...this.value, ...patch })
+    saveSettings(this.value)
+    for (const listener of this.listeners) listener()
+    return this.value
+  }
+
+  reset(): Settings {
+    this.value = { ...DEFAULT_SETTINGS }
+    saveSettings(this.value)
+    for (const listener of this.listeners) listener()
+    return this.value
+  }
+}
+
+export const settingsStore = new SettingsStore()

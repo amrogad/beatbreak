@@ -1,0 +1,167 @@
+/**
+ * PULSEGRID's default skin.
+ *
+ * A dark arcade instrument panel: solid near-black surfaces, square corners, no gradients, no glow.
+ * The accents are the original neon palette (cyan, violet, magenta and amber), and every lane also
+ * has a distinct arrow shape, so colour is never the only cue. The canvas playfield reads the
+ * matching palette from `render/renderer.ts`.
+ */
+
+[data-theme='disco'] {
+  --bg: #05060e;
+  --bg-soft: #0b0d1a;
+  --panel: #0f1326;
+  --panel-strong: #141a32;
+  --border: #252b4a;
+  --border-strong: #3d4770;
+  --text: #e8eeff;
+  --muted: #98a2c8;
+  --faint: #737fa8;
+  --cyan: #22e0ff;
+  --amber: #ffc73a;
+  --green: #5ce69a;
+  --red: #ff4d6d;
+  --yellow: #f0e442;
+  --focus: #22e0ff;
+  --magenta: #ff3ea5;
+  --violet: #a06bff;
+  --lane-left: #56b4e9;
+  --lane-down: #e69f00;
+  --lane-up: #009e73;
+  --lane-right: #f2f5f7;
+  --surface-1: #0f1326;
+  --surface-2: #0a0d1c;
+  --surface-3: #171d38;
+  --control: #121730;
+  --control-hover: #1c2444;
+  --solid: #22e0ff;
+  --on-solid: #041018;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --shadow: none;
+  --font: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+}
+
+[data-theme='disco'] body {
+  background-image: none;
+}
+
+[data-theme='disco'] .topbar {
+  background: var(--bg-soft);
+  border-bottom-color: var(--border);
+  backdrop-filter: none;
+}
+
+[data-theme='disco'] .panel,
+[data-theme='disco'] .hero {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-theme='disco'] .hero {
+  border-color: var(--border-strong);
+}
+
+[data-theme='disco'] .btn {
+  border-radius: 0;
+  border-color: var(--border-strong);
+  background: var(--control);
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+[data-theme='disco'] .btn:hover:not(:disabled) {
+  background: var(--control-hover);
+  border-color: var(--text);
+}
+
+[data-theme='disco'] .btn-primary {
+  background: var(--solid);
+  border-color: var(--solid);
+  color: var(--on-solid);
+  box-shadow: none;
+}
+
+[data-theme='disco'] .btn-primary:hover:not(:disabled) {
+  background: #6de9ff;
+  border-color: #6de9ff;
+  filter: none;
+}
+
+[data-theme='disco'] .btn-danger {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(255, 77, 109, 0.1);
+}
+
+[data-theme='disco'] .btn-danger:hover:not(:disabled) {
+  background: rgba(255, 77, 109, 0.2);
+  border-color: var(--red);
+}
+
+[data-theme='disco'] .btn-ghost {
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
+  color: var(--muted);
+}
+
+[data-theme='disco'] .btn-ghost:hover:not(:disabled) {
+  border-color: var(--text);
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+[data-theme='disco'] .chip {
+  border-radius: 0;
+  background: #1c2444;
+  border-color: var(--border-strong);
+}
+
+[data-theme='disco'] .keycap,
+[data-theme='disco'] .toast {
+  border-radius: 0;
+}
+
+[data-theme='disco'] .keycap {
+  border-color: var(--border-strong);
+  background: var(--control);
+}
+
+[data-theme='disco'] input[type='text'],
+[data-theme='disco'] input[type='number'],
+[data-theme='disco'] select {
+  border-radius: 0;
+  background: var(--control);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+[data-theme='disco'] input[type='text']:focus,
+[data-theme='disco'] input[type='number']:focus,
+[data-theme='disco'] select:focus {
+  outline-color: var(--focus);
+}
+
+[data-theme='disco'] .toggle-track,
+[data-theme='disco'] .toggle-thumb {
+  border-radius: 0;
+}
+
+[data-theme='disco'] .hero-preview {
+  background: var(--bg-soft);
+  border-color: var(--border);
+}
+
+[data-theme='disco'] .tab.active {
+  background: var(--solid);
+  border-color: var(--solid);
+  color: var(--on-solid);
+}
+
+[data-theme='disco'] .game-hint,
+[data-theme='disco'] .game-top-left .chip,
+[data-theme='disco'] .game-top-right .btn {
+  letter-spacing: 0.015em;
+}

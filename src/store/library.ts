@@ -1,0 +1,372 @@
+/**
+ * Library: turning a picked audio file into a stored song with generated charts.
+ *
+ * This is the only place that assembles a `SongMeta`, so the rules about what is persisted live
+ * here: metadata, peaks, the honest analysis summary and the generated charts are saved; the
+ * decoded audio buffer only lives in memory (and in IndexedDB solely when the user opted in).
+ */
+import type { AnalysisResult, Chart, Difficulty, SongMeta } from '../core/types'
+import { DIFFICULTIES } from '../core/types'
+import { planForMeta, type EditPlan } from '../core/edit'
+import { decodeAudioFile } from '../audio/engine'
+import { downmixMono } from '../audio/analyze'
+import { autoTrimWindow } from '../audio/trim'
+import { toPeakBytes, downsample, normalize } from '../core/math'
+import { createId, hashString } from '../core/rng'
+import { GENERATOR_VERSION, generateAllDifficulties } from '../chart/generate'
+import { TimingMap } from '../chart/timing'
+import type { AnalysisClient } from '../workers/analysisClient'
+import {
+  listCharts,
+  listSongs,
+  loadAnalysis,
+  loadAudio,
+  saveAnalysis,
+  saveAudio,
+  saveCharts,
+  saveSong,
+} from './repository'
+
+export interface ImportProgress {
+  stage: string
+  fraction: number
+}
+
+export interface SongBundle {
+  meta: SongMeta
+  charts: Chart[]
+  analysis: AnalysisResult | null
+  /** Decoded audio for playback. Not persisted; null when the file must be re-selected. */
+  buffer: AudioBuffer | null
+}
+
+export function titleFromFileName(fileName: string): string {
+  const withoutExt = fileName.replace(/\.[a-z0-9]{2,5}$/i, '')
+  const cleaned = withoutExt.replace(/[_]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  return cleaned.length > 0 ? cleaned : fileName
+}
+
+export function buildSongMeta(input: {
+  songId: string
+  title: string
+  artist: string
+  file: File
+  buffer: AudioBuffer
+  analysis: AnalysisResult
+  audioCached: boolean
+}): SongMeta {
+  const { songId, title, artist, file, buffer, analysis, audioCached } = input
+  const mono = downmixMono(
+    Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)),
+    buffer.length,
+  )
+  return {
+    id: songId,
+    title,
+    artist,
+    fileName: file.name,
+    fileSize: file.size,
+    lastModified: file.lastModified,
+    duration: buffer.duration,
+    sampleRate: buffer.sampleRate,
+    channels: buffer.numberOfChannels,
+    peaks: toPeakBytes(mono, 1400),
+    envelope: downsample(normalize(analysis.envelope), 700),
+    analysis: summarizeAnalysis(analysis),
+    createdAt: Date.now(),
+    lastPlayedAt: Date.now(),
+    audioCached,
+  }
+}
+
+/** Everything the app persists about the analysis (the full result stays in memory only). */
+export function summarizeAnalysis(analysis: AnalysisResult): SongMeta['analysis'] {
+  return {
+    version: analysis.version,
+    bpm: analysis.bpm,
+    bpmConfidence: analysis.bpmConfidence,
+    offset: analysis.offset,
+    phaseConfidence: analysis.phaseConfidence,
+    gridResidualMs: analysis.gridResidualMs,
+    candidates: analysis.candidates.slice(0, 6),
+    beats: analysis.beats,
+    beatsPerBar: analysis.beatsPerBar,
+    sections: analysis.sections,
+    silentRegions: analysis.silentRegions,
+    limitations: analysis.limitations,
+  }
+}
+
+export interface ImportSongOptions {
+  analysisClient: AnalysisClient
+  onProgress?: (progress: ImportProgress) => void
+  onStage?: (stage: string) => void
+  signal?: AbortSignal
+  /** Persist the decoded file bytes so the song can be replayed without re-selecting it. */
+  rememberAudio?: boolean
+  title?: string
+  artist?: string
+  difficulties?: Difficulty[]
+}
+
+/**
+ * Full import path: decode → analyse (worker) → generate 4 charts → persist metadata + charts.
+ *
+ * Re-importing the same file is an update, not a new song: the stable id, saved trim and existing
+ * charts are kept, so the arrows do not change just because the file was loaded again.
+ */
+export async function importSongFromFile(file: File, options: ImportSongOptions): Promise<SongBundle> {
+  const { analysisClient, onProgress, onStage } = options
+  onStage?.('Decoding audio')
+  onProgress?.({ stage: 'Decoding audio', fraction: 0 })
+  const buffer = await decodeAudioFile(file)
+  if (options.signal?.aborted) throw new DOMException('Import cancelled', 'AbortError')
+
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c))
+  const mono = downmixMono(channels, buffer.length)
+  // `downmixMono` returns a fresh array for multi-channel input; for a mono file it returns the
+  // AudioBuffer's own channel data, which must not be transferred away.
+  const owned = buffer.numberOfChannels > 1
+
+  const analysis = await analysisClient.analyze(mono, buffer.sampleRate, {
+    owned,
+    signal: options.signal,
+    onProgress: (stage, fraction) => onProgress?.({ stage, fraction }),
+  })
+  if (options.signal?.aborted) throw new DOMException('Import cancelled', 'AbortError')
+
+  onStage?.('Generating charts')
+  onProgress?.({ stage: 'Generating charts', fraction: 0.97 })
+  const title = options.title?.trim() || titleFromFileName(file.name)
+  const artist = options.artist?.trim() || ''
+  const existing = (await listSongs()).find(
+    (song) => song.fileName === file.name && song.fileSize === file.size && song.lastModified === file.lastModified,
+  )
+  // Stable id derived from the file identity instead of a clock/random pair. Two different files
+  // colliding on all three fields is not realistic; the same file always lands on the same row.
+  const songId = existing?.id ?? `song_${hashString(`${file.name}|${file.size}|${file.lastModified}`).toString(36)}`
+  const timing = TimingMap.single(analysis.bpm, analysis.offset)
+  const existingCharts = existing ? await listCharts(existing.id) : []
+  const remember = options.rememberAudio ?? true
+  const meta = buildSongMeta({ songId, title, artist, file, buffer, analysis, audioCached: remember })
+  const auto = autoTrimWindow(analysis, buffer.duration, meta.peaks)
+  let trimChanged = false
+  if (existing) {
+    // Preserve everything the player chose that is not part of a fresh analysis.
+    meta.createdAt = existing.createdAt
+    meta.lastPlayedAt = existing.lastPlayedAt
+    if (existing.preferredDifficulty !== undefined) meta.preferredDifficulty = existing.preferredDifficulty
+    if (existing.chartVariant !== undefined) meta.chartVariant = existing.chartVariant
+    if ((existing.trimCuts?.length ?? 0) > 0) {
+      // Keep deliberate splices; only the edge window is auto-managed.
+      if (existing.trimStart !== undefined) meta.trimStart = existing.trimStart
+      if (existing.trimEnd !== undefined) meta.trimEnd = existing.trimEnd
+      if (existing.trimCuts !== undefined) meta.trimCuts = existing.trimCuts
+    } else if (existing.trimStart !== undefined || existing.trimEnd !== undefined) {
+      // Older versions selected quiet regions from an energy estimate. Re-run the current,
+      // waveform-verified edge trim once so an old "random cut" does not survive an update.
+      trimChanged = !sameTrim(trimDraftFor(existing), { start: auto.window.start, end: auto.window.end, cuts: [] })
+      if (auto.window.start > 0.05) meta.trimStart = auto.window.start
+      else delete meta.trimStart
+      if (auto.window.end < buffer.duration - 0.05) meta.trimEnd = auto.window.end
+      else delete meta.trimEnd
+    }
+  } else {
+    // Trim conservatively on the first import: only waveform-verified near-silence at the edges.
+    // A quiet intro is never cut just because it is quiet.
+    if (auto.window.start > 0.05) meta.trimStart = auto.window.start
+    if (auto.window.end < buffer.duration - 0.05) meta.trimEnd = auto.window.end
+  }
+  // Keep the arrows the player already has. "New arrows" in song options is the explicit way to
+  // ask for a different variation. A generator upgrade is the one exception: old charts would
+  // otherwise keep the exact timing/chord/hold behaviour this version just fixed. Hand-edited
+  // charts are never replaced.
+  const requested = options.difficulties ?? [...DIFFICULTIES]
+  const regenerate = new Set<Difficulty>()
+  for (const difficulty of requested) {
+    const chart = existingCharts.find((c) => c.difficulty === difficulty)
+    if (!chart) regenerate.add(difficulty)
+    else if (!chart.edited && chart.generator.version !== GENERATOR_VERSION) regenerate.add(difficulty)
+    else if (!chart.edited && trimChanged) regenerate.add(difficulty)
+  }
+  let charts = existingCharts.filter((chart) => requested.includes(chart.difficulty))
+  if (regenerate.size > 0) {
+    const regenerated = generateAllDifficulties({
+      analysis,
+      timing,
+      duration: buffer.duration,
+      songId,
+      title,
+      difficulties: [...regenerate],
+      edit: planForMeta(meta),
+      options: { salt: meta.chartVariant ?? 0 },
+    })
+    const byDifficulty = new Map(regenerated.map((chart) => [chart.difficulty, chart]))
+    charts = requested
+      .map(
+        (difficulty) =>
+          byDifficulty.get(difficulty) ??
+          existingCharts.find((chart) => chart.difficulty === difficulty && chart.edited),
+      )
+      .filter((chart): chart is Chart => chart !== undefined)
+  }
+
+  await saveSong(meta)
+  await saveAnalysis(songId, analysis)
+  await saveCharts(charts)
+  if (remember) await saveAudio(songId, file)
+
+  onProgress?.({ stage: 'Done', fraction: 1 })
+  return { meta, charts, analysis, buffer }
+}
+
+/**
+ * Regenerate charts from an existing analysis with corrected timing (BPM/offset are the two
+ * numbers a player can meaningfully correct by ear) and/or a playback edit (trim window + cuts).
+ */
+export async function regenerateCharts(input: {
+  analysis: AnalysisResult
+  duration: number
+  songId: string
+  title: string
+  bpm: number
+  offset: number
+  difficulties?: Difficulty[]
+  edit?: EditPlan | null
+  /** Increment for a new arrow variation; omit to reproduce the current chart exactly. */
+  salt?: number
+}): Promise<Chart[]> {
+  const timing = TimingMap.single(input.bpm, input.offset)
+  const charts = generateAllDifficulties({
+    analysis: input.analysis,
+    timing,
+    duration: input.duration,
+    songId: input.songId,
+    title: input.title,
+    difficulties: input.difficulties ?? [...DIFFICULTIES],
+    edit: input.edit ?? null,
+    options: { salt: input.salt ?? 0 },
+  })
+  await saveCharts(charts)
+  return charts
+}
+
+/**
+ * Persist a song's playable window and removed sections. `null` (or a window that covers the whole
+ * file with no cuts) removes the trim entirely, which is the canonical "no trim" state.
+ *
+ * Charts are NOT touched here: the caller regenerates them with the matching `EditPlan`, because
+ * only the caller still has the full analysis in memory.
+ */
+export async function setSongTrim(songId: string, trim: TrimDraft | null): Promise<SongMeta | null> {
+  const songs = await listSongs()
+  const meta = songs.find((song) => song.id === songId)
+  if (!meta) return null
+  const next: SongMeta = { ...meta }
+  const coversAll = !trim || (trim.start <= 0.001 && trim.end >= meta.duration - 0.001 && trim.cuts.length === 0)
+  if (coversAll) {
+    delete next.trimStart
+    delete next.trimEnd
+    delete next.trimCuts
+  } else {
+    const start = Math.max(0, Math.min(trim.start, meta.duration))
+    const end = Math.max(start + 1, Math.min(trim.end, meta.duration))
+    next.trimStart = start
+    next.trimEnd = end
+    next.trimCuts = trim.cuts
+      .map((cut) => ({ start: Math.max(start, Math.min(cut.start, end)), end: Math.max(start, Math.min(cut.end, end)) }))
+      .filter((cut) => cut.end - cut.start > 0.05)
+      .sort((a, b) => a.start - b.start)
+  }
+  await saveSong(next)
+  return next
+}
+
+/** What the trim UI edits: a playable window plus whole sections to splice out. */
+export interface TrimDraft {
+  start: number
+  end: number
+  cuts: { start: number; end: number }[]
+}
+
+/** Current trim of a song as an editable draft. */
+export function trimDraftFor(meta: SongMeta): TrimDraft {
+  return {
+    start: meta.trimStart ?? 0,
+    end: meta.trimEnd ?? meta.duration,
+    cuts: (meta.trimCuts ?? []).map((cut) => ({ start: cut.start, end: cut.end })),
+  }
+}
+
+export function sameTrim(a: TrimDraft, b: TrimDraft): boolean {
+  if (a.cuts.length !== b.cuts.length) return false
+  if (Math.abs(a.start - b.start) > 1e-3 || Math.abs(a.end - b.end) > 1e-3) return false
+  return a.cuts.every((cut, i) => Math.abs(cut.start - b.cuts[i].start) <= 1e-3 && Math.abs(cut.end - b.cuts[i].end) <= 1e-3)
+}
+
+/** Everything the library needs for one song: metadata, charts, and audio if it can be obtained. */
+export async function loadSongBundle(songId: string, options: { requireAudio?: boolean } = {}): Promise<SongBundle | null> {
+  const songs = await listSongs()
+  let meta = songs.find((song) => song.id === songId)
+  if (!meta) return null
+  let [charts, analysis] = await Promise.all([listCharts(songId), loadAnalysis(songId)])
+  if (analysis) {
+    let trimChanged = false
+    // One-time migration for libraries made before waveform-verified trim: the old energy-based
+    // auto trim could start or stop in the middle of real music. If the song has an edge trim on
+    // record (the UI has no manual trim handle), re-run the safe detector once.
+    if (
+      (meta.trimStart !== undefined || meta.trimEnd !== undefined) &&
+      (meta.trimCuts?.length ?? 0) === 0
+    ) {
+      const auto = autoTrimWindow(analysis, meta.duration, meta.peaks)
+      const nextTrim = { start: auto.window.start, end: auto.window.end, cuts: [] }
+      if (!sameTrim(trimDraftFor(meta), nextTrim)) {
+        const nextMeta: SongMeta = { ...meta }
+        if (nextTrim.start > 0.05) nextMeta.trimStart = nextTrim.start
+        else delete nextMeta.trimStart
+        if (nextTrim.end < meta.duration - 0.05) nextMeta.trimEnd = nextTrim.end
+        else delete nextMeta.trimEnd
+        await saveSong(nextMeta)
+        meta = nextMeta
+        trimChanged = true
+      }
+    }
+    // A generator update is the one time we replace generated arrows without the player pressing
+    // "New arrows". Edited charts are never overwritten.
+    const stale = charts
+      .filter((chart) => !chart.edited && chart.generator.version !== GENERATOR_VERSION)
+      .map((chart) => chart.difficulty)
+    const difficulties = trimChanged ? charts.filter((chart) => !chart.edited).map((chart) => chart.difficulty) : stale
+    if (difficulties.length > 0) {
+      const regenerated = generateAllDifficulties({
+        analysis,
+        timing: TimingMap.single(analysis.bpm, analysis.offset),
+        duration: meta.duration,
+        songId: meta.id,
+        title: meta.title,
+        difficulties,
+        edit: planForMeta(meta),
+        options: { salt: meta.chartVariant ?? 0 },
+      })
+      await saveCharts(regenerated)
+      const byDifficulty = new Map(regenerated.map((chart) => [chart.difficulty, chart]))
+      charts = charts.map((chart) => byDifficulty.get(chart.difficulty) ?? chart)
+    }
+  }
+  let buffer: AudioBuffer | null = null
+  if (meta.audioCached) {
+    const file = await loadAudio(songId)
+    if (file) {
+      try {
+        buffer = await decodeAudioFile(file)
+      } catch {
+        buffer = null
+      }
+    }
+  }
+  if (options.requireAudio && !buffer) {
+    return { meta, charts, analysis, buffer: null }
+  }
+  return { meta, charts, analysis, buffer }
+}

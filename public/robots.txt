@@ -1,0 +1,7 @@
+# PULSEGRID is a fully client-side app: every page is the same shell.
+User-agent: *
+Allow: /
+
+# The service worker and build assets carry no crawlable content.
+Disallow: /sw.js
+Disallow: /assets/
