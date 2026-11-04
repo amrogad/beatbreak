@@ -36,6 +36,9 @@ export interface EditorScreenProps {
 
 const UNDO_LIMIT = 40
 
+/** Undo restores the grid along with the notes, so a BPM or resolution change can be taken back. */
+type UndoEntry = Pick<Chart, 'notes' | 'timing' | 'stepsPerBeat'>
+
 export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged }: EditorScreenProps): React.JSX.Element {
   const [bundle, setBundle] = useState<SongBundle | null>(() => runtime.get(songId) ?? null)
   const [chart, setChart] = useState<Chart | null>(null)
@@ -48,14 +51,16 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const [playhead, setPlayhead] = useState(0)
   const [smResult, setSmResult] = useState<{ ok: boolean; errors: string[]; warnings: string[] } | null>(null)
   const [importWarnings, setImportWarnings] = useState<string[] | null>(null)
+  const [bpmDraft, setBpmDraft] = useState<string | null>(null)
+  const [offsetDraft, setOffsetDraft] = useState<string | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const engineRef = useRef<AudioEngine | null>(null)
   const rafRef = useRef(0)
   const clickCursorRef = useRef(0)
-  const undoRef = useRef<ChartNote[][]>([])
-  const dragRef = useRef<{ noteId: string; grabTime: number; before: ChartNote[] } | null>(null)
+  const undoRef = useRef<UndoEntry[]>([])
+  const dragRef = useRef<{ noteId: string; grabTime: number; before: ChartNote[]; moved: boolean } | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const playheadRef = useRef(0)
 
@@ -110,13 +115,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       onEnded: () => stopPlayback(),
     })
     engineRef.current = engine
-    const startAt = Math.max(0, Math.min(playheadRef.current, duration))
     // Audition through the same edit plan the game plays: previewing from inside a removed section
-    // snaps forward, cuts splice instead of playing audio that will never be part of a run, and a
-    // playhead that sits past the trimmed end starts at the window end (silence) rather than
-    // silently doing nothing.
+    // snaps forward and cuts splice instead of playing audio that will never be part of a run. A
+    // playhead at (or past) the end starts again from the top.
     const plan = planForMeta(bundle.meta)
-    const from = Math.max(plan.windowStart, Math.min(startAt, plan.windowEnd))
+    const startAt = Math.max(0, Math.min(playheadRef.current, duration))
+    const from = startAt >= plan.windowEnd - 0.05 ? plan.windowStart : Math.max(plan.windowStart, startAt)
     clickCursorRef.current = Math.ceil((from - timing.offset) / timing.secondsPerBeat(timing.timeToBeat(from)))
     engine.play(from, undefined, toPlaybackPlan(plan))
     setPlaying(true)
@@ -149,30 +153,65 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
 
   /* ------------------------------------------------------------------ edits */
 
-  const pushUndo = useCallback((notes: ChartNote[]) => {
-    undoRef.current.push(notes)
+  const pushUndo = useCallback((entry: UndoEntry) => {
+    undoRef.current.push(entry)
     if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift()
   }, [])
 
   const commitNotes = useCallback(
     (notes: ChartNote[], options: { undo?: ChartNote[] } = {}) => {
+      if (options.undo && chart) pushUndo({ notes: options.undo, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
       setChart((current) => {
         if (!current) return current
-        if (options.undo) pushUndo(options.undo)
         const sorted = [...notes].sort((a, b) => (a.time === b.time ? a.lane - b.lane : a.time - b.time))
         return { ...current, notes: sorted, stats: computeStats(sorted, duration), edited: true }
       })
       setDirty(true)
     },
-    [duration, pushUndo],
+    [chart, duration, pushUndo],
   )
 
   const undo = useCallback(() => {
     const previous = undoRef.current.pop()
     if (!previous || !chart) return
-    setChart({ ...chart, notes: previous, stats: computeStats(previous, duration), edited: true })
+    setChart({ ...chart, ...previous, stats: computeStats(previous.notes, duration), edited: true })
+    setBpmDraft(null)
+    setOffsetDraft(null)
     setDirty(true)
   }, [chart, duration])
+
+  /** Move the grid and re-snap every note onto it, as one undoable step. */
+  const regrid = useCallback(
+    (nextTiming: TimingMap, stepsPerBeat: number) => {
+      if (!chart) return
+      pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
+      const notes = chart.notes.map((note) => {
+        const time = nextTiming.snapTime(note.time, stepsPerBeat)
+        return { ...note, time, beat: nextTiming.timeToBeat(time), step: nextTiming.timeToStep(time, stepsPerBeat) }
+      })
+      setChart({ ...chart, timing: nextTiming.toJSON(), stepsPerBeat, notes, stats: computeStats(notes, duration), edited: true })
+      setDirty(true)
+    },
+    [chart, duration, pushUndo],
+  )
+
+  const applyBpmDraft = (): void => {
+    if (bpmDraft === null) return
+    const next = Number(bpmDraft)
+    setBpmDraft(null)
+    if (!chart || !Number.isFinite(next) || next < 30 || next > 320) return
+    if (Math.abs(next - timing.primaryBpm) < 1e-9) return
+    regrid(timing.withBpm(next), chart.stepsPerBeat)
+  }
+
+  const applyOffsetDraft = (): void => {
+    if (offsetDraft === null) return
+    const next = Number(offsetDraft) / 1000
+    setOffsetDraft(null)
+    if (!chart || offsetDraft.trim() === '' || !Number.isFinite(next)) return
+    if (Math.abs(next - timing.offset) < 1e-6) return
+    regrid(timing.withOffset(next), chart.stepsPerBeat)
+  }
 
   const snapTime = useCallback(
     (time: number): number => (snap ? timing.snapTime(Math.max(0, time), chart?.stepsPerBeat ?? 4) : Math.max(0, time)),
@@ -447,21 +486,27 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       }
       if (!chart) return
       const incoming = parsed.chart
-      const nextChart: Chart = {
+      const notes = [...incoming.notes].sort((a, b) => (a.time === b.time ? a.lane - b.lane : a.time - b.time))
+      // The file's notes and grid replace this chart; it stays this song's chart at this difficulty.
+      pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
+      setChart({
         ...incoming,
         id: chart.id,
         songId,
+        difficulty: chart.difficulty,
         title: bundle?.meta.title ?? incoming.title,
+        notes,
+        stats: computeStats(notes, duration),
         edited: true,
         updatedAt: Date.now(),
-      }
-      const before = chart.notes
-      commitNotes(nextChart.notes, { undo: before })
-      setChart((current) => (current ? { ...nextChart, notes: current.notes === before ? nextChart.notes : nextChart.notes } : nextChart))
+      })
+      setDirty(true)
+      setBpmDraft(null)
+      setOffsetDraft(null)
       setImportWarnings(parsed.warnings)
-      onToast(`Imported ${nextChart.notes.length} notes from ${file.name}. Review, then save.`, 'success')
+      onToast(`Imported ${notes.length} notes from ${file.name}. Review, then save.`, 'success')
     },
-    [bundle?.meta.title, chart, commitNotes, onToast, songId],
+    [bundle?.meta.title, chart, duration, onToast, pushUndo, songId],
   )
 
   /* ------------------------------------------------------------------ render */
@@ -489,7 +534,15 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     <div className="page">
       <div className="row-between wrap gap-12">
         <div>
-          <Button variant="ghost" size="sm" onClick={() => { stopPlayback(); onBack() }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (dirty && !window.confirm('Leave the editor without saving your changes?')) return
+              stopPlayback()
+              onBack()
+            }}
+          >
             ← Back
           </Button>
           <h1 className="mt-8">{bundle.meta.title}</h1>
@@ -543,6 +596,8 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                     setSelection(null)
                     setDirty(false)
                     setSmResult(null)
+                    setBpmDraft(null)
+                    setOffsetDraft(null)
                   }}
                 >
                   {DIFFICULTY_LABEL[difficulty]}
@@ -588,6 +643,14 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               const y = event.clientY - rect.top
               const time = timeFromX(x, rect.width)
               const lane = Math.max(0, Math.min(3, Math.floor(((y - 22) / Math.max(1, rect.height - 22)) * 4))) as Lane
+              if (y < 22) {
+                // The time ruler moves the playhead; Play starts from there.
+                if (playing) stopPlayback()
+                const seek = Math.max(0, Math.min(duration, time))
+                playheadRef.current = seek
+                setPlayhead(seek)
+                return
+              }
               const hit = hitTest(time, lane)
               if (event.button === 2) {
                 if (!hit) return
@@ -601,7 +664,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               }
               if (hit) {
                 setSelection(hit.id)
-                dragRef.current = { noteId: hit.id, grabTime: time - hit.time, before: chart.notes }
+                dragRef.current = { noteId: hit.id, grabTime: time - hit.time, before: chart.notes, moved: false }
                 event.currentTarget.setPointerCapture(event.pointerId)
                 return
               }
@@ -637,7 +700,8 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                   ? { ...note, time: snappedTime, lane: snappedLane, beat: timing.timeToBeat(snappedTime), step: timing.timeToStep(snappedTime, chart.stepsPerBeat) }
                   : note,
               )
-              commitNotes(moved, { undo: before })
+              commitNotes(moved, drag.moved ? {} : { undo: before })
+              drag.moved = true
             }}
             onPointerUp={() => {
               dragRef.current = null
@@ -671,7 +735,8 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             Follow playhead
           </Button>
           <span className="editor-hint">
-            Left-click empty space to add · drag a note to move · right-click to delete · wheel scrolls · Ctrl+wheel zooms ·
+            Left-click empty space to add · drag a note to move · right-click to delete · click the time ruler to move the
+            playhead · wheel scrolls · Ctrl+wheel zooms ·
             Space plays · arrows nudge · Del deletes · Ctrl+Z undoes
           </span>
         </div>
@@ -708,22 +773,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               { value: '6', label: '1/24 notes (6 steps/beat)' },
               { value: '8', label: '1/32 notes (8 steps/beat)' },
             ]}
-            onChange={(value) => {
-              const stepsPerBeat = Number(value)
-              const before = chart.notes
-              pushUndo(before)
-              const snapped = before.map((note) => {
-                const time = timing.snapTime(note.time, stepsPerBeat)
-                return { ...note, time, beat: timing.timeToBeat(time), step: timing.timeToStep(time, stepsPerBeat) }
-              })
-              setChart({ ...chart, stepsPerBeat, notes: snapped, stats: computeStats(snapped, duration), edited: true })
-              setDirty(true)
-            }}
+            onChange={(value) => regrid(timing, Number(value))}
           />
         </div>
       </Panel>
 
-      <Panel title="Timing" subtitle="Correcting BPM or offset re-snaps every note so the chart stays on the grid.">
+      <Panel title="Timing" subtitle="A new BPM or offset applies when you press Enter or leave the box, and re-snaps every note to the grid.">
         <div className="grid cols-3">
           <label className="field">
             <span className="field-label">BPM</span>
@@ -732,19 +787,11 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               min={30}
               max={320}
               step={0.01}
-              value={timing.primaryBpm}
-              onChange={(event) => {
-                const next = Number(event.target.value)
-                if (!Number.isFinite(next) || next <= 0) return
-                const nextTiming = timing.withBpm(next)
-                const before = chart.notes
-                pushUndo(before)
-                const notes = before.map((note) => {
-                  const time = nextTiming.snapTime(note.time, chart.stepsPerBeat)
-                  return { ...note, time, beat: nextTiming.timeToBeat(time), step: nextTiming.timeToStep(time, chart.stepsPerBeat) }
-                })
-                setChart({ ...chart, timing: nextTiming.toJSON(), notes, stats: computeStats(notes, duration), edited: true })
-                setDirty(true)
+              value={bpmDraft ?? String(Number(timing.primaryBpm.toFixed(3)))}
+              onChange={(event) => setBpmDraft(event.target.value)}
+              onBlur={applyBpmDraft}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur()
               }}
             />
           </label>
@@ -753,35 +800,18 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             <input
               type="number"
               step={1}
-              value={Math.round(timing.offset * 1000)}
-              onChange={(event) => {
-                const next = Number(event.target.value) / 1000
-                if (!Number.isFinite(next)) return
-                const nextTiming = timing.withOffset(next)
-                const before = chart.notes
-                pushUndo(before)
-                const notes = before.map((note) => {
-                  const time = nextTiming.snapTime(note.time, chart.stepsPerBeat)
-                  return { ...note, time, beat: nextTiming.timeToBeat(time), step: nextTiming.timeToStep(time, chart.stepsPerBeat) }
-                })
-                setChart({ ...chart, timing: nextTiming.toJSON(), notes, stats: computeStats(notes, duration), edited: true })
-                setDirty(true)
+              value={offsetDraft ?? String(Math.round(timing.offset * 1000))}
+              onChange={(event) => setOffsetDraft(event.target.value)}
+              onBlur={applyOffsetDraft}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur()
               }}
             />
           </label>
           <div className="col gap-8">
             <Button
               size="sm"
-              onClick={() => {
-                const before = chart.notes
-                pushUndo(before)
-                const notes = before.map((note) => {
-                  const time = timing.snapTime(note.time, chart.stepsPerBeat)
-                  return { ...note, time, beat: timing.timeToBeat(time), step: timing.timeToStep(time, chart.stepsPerBeat) }
-                })
-                setChart({ ...chart, notes, stats: computeStats(notes, duration), edited: true })
-                setDirty(true)
-              }}
+              onClick={() => regrid(timing, chart.stepsPerBeat)}
             >
               Re-snap all notes to grid
             </Button>
