@@ -112,7 +112,7 @@ const PALETTES: Record<ThemeName, PlayfieldPalette> = {
 /** Each column's own colour: arrows, the target rim, its press glow and its lane beam. */
 const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
 /** Picked from at random, four at a time, when arrow colours are shuffled. */
-const SHUFFLE_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d', '#b35cff', '#ff7a3d', '#3de9ff', '#ff3d5a', '#9dff3d', '#ff6bd6']
+const SHUFFLE_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d', '#b35cff', '#ff7a3d', '#3de9ff', '#9dff3d']
 const MONO_WHITE = '#f4f4f4'
 
 interface JudgeStyle {
@@ -223,12 +223,16 @@ export class PlayfieldRenderer {
   /** 2 = full, 1 = reduced, 0 = minimal. */
   private quality: 0 | 1 | 2 = 2
 
-  constructor(canvas: HTMLCanvasElement, settings: RenderSettings = DEFAULT_RENDER_SETTINGS) {
+  /** A small demo playfield (the home page): lanes fill the canvas and there is no HUD. */
+  private preview: boolean
+
+  constructor(canvas: HTMLCanvasElement, settings: RenderSettings = DEFAULT_RENDER_SETTINGS, options: { preview?: boolean } = {}) {
     const ctx = canvas.getContext('2d', { alpha: false })
     if (!ctx) throw new Error('Canvas 2D is not available in this browser.')
     this.canvas = canvas
     this.ctx = ctx
     this.settings = { ...settings }
+    this.preview = options.preview ?? false
   }
 
   setSettings(settings: Partial<RenderSettings>): void {
@@ -333,14 +337,16 @@ export class PlayfieldRenderer {
     const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}`
     const cached = this.layoutCache
     if (cached && this.layoutKey === key) return cached
-    const laneAreaW = Math.max(180, Math.min(this.width * 0.72, 460))
+    const laneAreaW = this.preview ? this.width * 0.84 : Math.max(180, Math.min(this.width * 0.72, 460))
     const laneW = laneAreaW / 4
     const laneAreaX = (this.width - laneAreaW) / 2
     const direction: 1 | -1 = this.settings.scrollDirection === 'down' ? -1 : 1
-    const noteH = Math.min(laneW * 0.96, laneW * 0.66 * this.settings.noteScale)
+    const fullNote = Math.min(laneW * 0.96, laneW * 0.66 * this.settings.noteScale)
+    // A short preview canvas keeps the arrows in proportion to its height.
+    const noteH = this.preview ? Math.min(fullNote, this.height * 0.2) : fullNote
     // The receptor inset mirrors between layouts: at the top for rising arrows, at the bottom
     // for falling ones, so touch-thumb room and HUD clearance are the same either way.
-    const inset = Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
+    const inset = this.preview ? noteH * 0.8 : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
     const receptorY = direction === 1 ? inset : this.height - inset
     const travelDistance = direction === 1 ? this.height - receptorY : receptorY
     const pxPerSec = scrollPixelsPerSecond(this.settings.scrollSpeed, travelDistance)
@@ -409,6 +415,7 @@ export class PlayfieldRenderer {
     if (!reduced && this.quality > 0) this.particles.draw(ctx)
     this.drawJudgmentFlash()
     this.drawCombo(hud)
+    if (this.preview) return
     this.drawHud(hud, pulse)
     this.drawCountdown(hud)
   }
@@ -868,7 +875,7 @@ export class PlayfieldRenderer {
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
     ctx.globalAlpha = Math.max(0, alpha)
-    drawStyledText(ctx, text, 0, 0, Math.min(30, laneAreaW / 10), this.judgeStyle(flash.judgment), this.quality > 0)
+    drawStyledText(ctx, text, 0, 0, Math.min(30, laneAreaW / 10) * this.textScale(), this.judgeStyle(flash.judgment), this.quality > 0)
     ctx.restore()
   }
 
@@ -877,7 +884,7 @@ export class PlayfieldRenderer {
     const ctx = this.ctx
     const { laneAreaX, laneAreaW } = this.layout()
     const x = laneAreaX + laneAreaW / 2
-    const y = this.judgmentY() + 42
+    const y = this.judgmentY() + 42 * this.textScale()
     const sinceBump = this.nowMs - this.comboBumpAt
     const zoom = this.settings.reducedMotion ? 1 : sinceBump < 120 ? 1.14 - 0.14 * (sinceBump / 120) : 1
     const hot = hud.combo >= 100
@@ -890,7 +897,7 @@ export class PlayfieldRenderer {
         : hot
           ? { fill: '#ffd23d', shadow: '#a8520c', burst: '#ffb300' }
           : { fill: '#ffffff', shadow: '#4a3a9c', burst: '#8fd8ff' }
-    drawStyledText(ctx, String(hud.combo), 0, 0, 38, comboStyle, this.quality > 0)
+    drawStyledText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), comboStyle, this.quality > 0)
     ctx.restore()
     ctx.save()
     ctx.textAlign = 'center'
@@ -901,7 +908,7 @@ export class PlayfieldRenderer {
       ctx.shadowColor = comboStyle.burst
       ctx.shadowBlur = 10
     }
-    ctx.fillText('combo', x, y + 28)
+    ctx.fillText('combo', x, y + 28 * this.textScale())
     ctx.restore()
   }
 
@@ -1007,17 +1014,31 @@ export class PlayfieldRenderer {
     ctx.restore()
   }
 
+  /** Judgment and combo shrink with a short preview canvas. */
+  private textScale(): number {
+    return this.preview ? Math.max(0.55, Math.min(1, this.height / 480)) : 1
+  }
+
+  /** How long an arrow takes to travel up to its target: the run-up after the countdown. */
+  leadInMs(): number {
+    return this.layout().travelSeconds * 1000
+  }
+
   private drawCountdown(hud: HudState): void {
     if (hud.countdownMs === null) return
+    // Positive: the 3-2-1 numbers. Zero and below: GO! during the run-up, fading out.
     const remaining = hud.countdownMs
-    const number = Math.ceil(Math.max(0, remaining) / 1000)
+    const number = remaining > 0 ? Math.ceil(remaining / 1000) : 0
+    const goAge = Math.max(0, -remaining)
+    if (number === 0 && goAge > 700) return
     const ctx = this.ctx
-    const phase = 1 - ((Math.max(0, remaining) % 1000) / 1000) // 0 → just appeared
+    const phase = number > 0 ? 1 - (remaining % 1000) / 1000 : Math.min(1, goAge / 350)
     const reduced = this.settings.reducedMotion
     const scale = reduced ? 1 : 1 + (1 - Math.min(1, phase * 3)) * 0.45
     const x = this.width / 2
     const y = this.height * 0.42
     ctx.save()
+    if (number === 0) ctx.globalAlpha = Math.max(0, 1 - goAge / 700)
     if (!reduced) {
       ctx.globalCompositeOperation = 'lighter'
       ctx.strokeStyle = this.settings.theme === 'mono' ? `rgba(255, 255, 255, ${0.35 * (1 - phase)})` : `rgba(255, 210, 61, ${0.5 * (1 - phase)})`

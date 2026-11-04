@@ -36,6 +36,11 @@ export interface GameScreenProps {
 }
 
 const COUNTDOWN_MS = 3000
+/**
+ * After 3-2-1 comes a short run-up, shown as GO!, while the first arrows travel up from the
+ * bottom. Its length is the arrows' travel time, so nothing is on screen during the numbers.
+ */
+const leadInRef = { current: 900 }
 
 export function GameScreen({
   song,
@@ -105,7 +110,7 @@ export function GameScreen({
     if (finishedRef.current || pausedRef.current) return
     // Freeze the countdown too, not just the audio. Otherwise pausing before the first note and
     // resuming a moment later starts the song mid-countdown with no run-up.
-    if (!engagingRef.current && performance.now() - countdownStartRef.current < COUNTDOWN_MS) {
+    if (!engagingRef.current && performance.now() - countdownStartRef.current < COUNTDOWN_MS + leadInRef.current) {
       countdownPausedAtRef.current = performance.now()
     }
     engineRef.current?.pause()
@@ -288,7 +293,7 @@ export function GameScreen({
 
     const countdownRemaining = (): number => {
       const now = countdownPausedAtRef.current ?? performance.now()
-      return Math.max(0, COUNTDOWN_MS - (now - countdownStartRef.current))
+      return Math.max(0, COUNTDOWN_MS + leadInRef.current - (now - countdownStartRef.current))
     }
     countdownStartRef.current = performance.now()
 
@@ -323,13 +328,14 @@ export function GameScreen({
         // arrows rise from the bottom as the countdown reaches zero. The clock counts down to
         // the start of the playable window, not to 0: a trimmed song starts later in the file,
         // and counting to 0 made its first arrows pop up mid-screen on GO.
+        leadInRef.current = renderer.leadInMs()
         const remaining = countdownRemaining()
         renderer.render(activeSession ?? session, playPlan.windowStart * 1000 - remaining, {
           score: 0,
           combo: 0,
           accuracy: 1,
           progress: 0,
-          countdownMs: pausedRef.current ? null : remaining,
+          countdownMs: pausedRef.current ? null : remaining - leadInRef.current,
           paused: pausedRef.current,
           autoPlay: autoPlayRef.current,
           showStats: settingsRef.current.showStats,
