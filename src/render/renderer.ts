@@ -515,8 +515,10 @@ export class PlayfieldRenderer {
     const ctx = this.ctx
     const palette = PALETTES[this.settings.theme]
     const { laneX, laneW, laneAreaX, laneAreaW, receptorY, direction, noteH } = this.layout()
+    // The highway is a little wider than the lanes, so the outer arrows do not touch the rails.
+    const gap = Math.max(8, laneW * 0.1)
     ctx.fillStyle = palette.lanePanel
-    ctx.fillRect(laneAreaX, 0, laneAreaW, this.height)
+    ctx.fillRect(laneAreaX - gap, 0, laneAreaW + gap * 2, this.height)
     if (this.settings.laneStyle === 'classic') {
       for (let lane = 1; lane < 4; lane += 2) {
         ctx.fillStyle = 'rgba(255,255,255,0.025)'
@@ -541,8 +543,8 @@ export class PlayfieldRenderer {
       ctx.fillStyle = hexToRgba(color, 0.9)
       ctx.fillRect(x, 0, 2, this.height)
     }
-    rail(laneAreaX - 2, palette.accent)
-    rail(laneAreaX + laneAreaW, palette.accent2)
+    rail(laneAreaX - gap - 2, palette.accent)
+    rail(laneAreaX + laneAreaW + gap, palette.accent2)
 
     // A beam shoots up the lane from a pressed receptor and fades after release.
     if (this.settings.reducedMotion) return
