@@ -1,39 +1,9 @@
 /** Small shared UI building blocks. Everything here is presentational and dependency-free. */
 import React, { useEffect, useState } from 'react'
-import type { Difficulty, Lane } from '../core/types'
+import type { Difficulty } from '../core/types'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../core/types'
 import { hexToRgba } from '../render/renderer'
 import { describeKey } from '../game/input'
-
-/* -------------------------------------------------------------------- marks */
-
-/** Rotation that turns the shared right-pointing silhouette into each lane's direction. */
-const LANE_ROTATION: Record<Lane, number> = { 0: 180, 1: 90, 2: -90, 3: 0 }
-
-/**
- * The playfield's actual note silhouette, as an SVG. Same proportions as the canvas path, so the
- * previews and tutorial show the thick arrow a player will see in a run instead of a font glyph.
- */
-export function LaneArrow({
-  lane,
-  className = '',
-}: {
-  lane: Lane
-  className?: string
-}): React.JSX.Element {
-  return (
-    <svg
-      className={`lane-arrow ${className}`.trim()}
-      viewBox="0 0 100 100"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <g transform={`rotate(${LANE_ROTATION[lane]} 50 50)`}>
-        <path d="M4 30 H52 V4 L98 50 L52 96 V70 H4 Z" />
-      </g>
-    </svg>
-  )
-}
 
 /* ------------------------------------------------------------------ layout */
 
