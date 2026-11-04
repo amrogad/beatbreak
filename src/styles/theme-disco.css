@@ -295,3 +295,19 @@
 [data-theme='disco'] .game-top-right .btn {
   letter-spacing: 0.015em;
 }
+
+/* The home preview is a slice of the real playfield: one dark highway, thin lane rules. */
+[data-theme='disco'] .hero-preview-board {
+  gap: 0;
+  background: #0e0a24;
+}
+
+[data-theme='disco'] .hero-preview-lane {
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+}
+
+[data-theme='disco'] .hero-preview-lane:first-child {
+  border-left: 0;
+}

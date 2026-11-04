@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { Difficulty, SongMeta } from '../../core/types'
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL, LANE_INFO } from '../../core/types'
-import { Button, Chip, LaneArrow, Panel } from '../components'
+import { Button, Chip, Panel } from '../components'
 import { formatDuration } from '../format'
 import type { BestScoreEntry, BestScores } from './bestScores'
 
@@ -103,10 +103,10 @@ export function HomeScreen({
                   <div
                     key={lane.id}
                     className="hero-preview-lane"
-                    style={{ '--lane': lane.color, '--delay': `${index * 0.42}s` } as React.CSSProperties}
+                    style={{ '--delay': `${PREVIEW_DELAYS[index]}s` } as React.CSSProperties}
                   >
-                    <span className="hero-preview-target"><LaneArrow lane={lane.lane} /></span>
-                    <span className="hero-preview-note"><LaneArrow lane={lane.lane} /></span>
+                    <PreviewArrow lane={index} kind="target" />
+                    <PreviewArrow lane={index} kind="note" color={PREVIEW_COLORS[index]} />
                   </div>
                 ))}
               </div>
@@ -237,5 +237,48 @@ export function HomeScreen({
       )}
 
     </div>
+  )
+}
+
+/** The same arrow the playfield draws, as SVG: rotated per lane, lit from the top. */
+const PREVIEW_ANGLE = [Math.PI, Math.PI / 2, -Math.PI / 2, 0]
+const PREVIEW_COLORS = ['#ff3d5a', '#3d8bff', '#ffd23d', '#ff3d5a']
+const PREVIEW_DELAYS = [-0.4, -1.25, -2.1, -2.95]
+const ARROW_SHAPE: [number, number][] = [
+  [-0.94, -0.3],
+  [0.02, -0.3],
+  [0.02, -0.9],
+  [0.96, 0],
+  [0.02, 0.9],
+  [0.02, 0.3],
+  [-0.94, 0.3],
+]
+
+function arrowPoints(lane: number): string {
+  const cos = Math.cos(PREVIEW_ANGLE[lane])
+  const sin = Math.sin(PREVIEW_ANGLE[lane])
+  return ARROW_SHAPE.map(([x, y]) => `${(50 + (x * cos - y * sin) * 44).toFixed(1)},${(50 + (x * sin + y * cos) * 44).toFixed(1)}`).join(' ')
+}
+
+function PreviewArrow({ lane, kind, color }: { lane: number; kind: 'target' | 'note'; color?: string }): React.JSX.Element {
+  const gradientId = `preview-fill-${lane}`
+  return (
+    <svg className={`hero-preview-${kind}`} viewBox="0 0 100 100" focusable="false">
+      {kind === 'note' && color && (
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffffff" stopOpacity="0.55" />
+            <stop offset="0.12" stopColor={color} />
+            <stop offset="1" stopColor={color} stopOpacity="0.55" />
+          </linearGradient>
+        </defs>
+      )}
+      <polygon
+        points={arrowPoints(lane)}
+        className="preview-arrow-body"
+        fill={kind === 'note' ? `url(#${gradientId})` : undefined}
+      />
+      <polygon points={arrowPoints(lane)} className="preview-arrow-rim" />
+    </svg>
   )
 }
