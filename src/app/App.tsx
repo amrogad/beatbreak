@@ -27,7 +27,7 @@ const EditorScreen = lazy(() =>
 )
 import { loadBestScores } from './screens/bestScores'
 import type { BestScores } from './screens/bestScores'
-import { Button } from './components'
+import { Button, Spinner } from './components'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Tutorial } from './Tutorial'
 import { listSongs } from '../store/repository'
@@ -353,13 +353,21 @@ function AppShell(): React.JSX.Element {
         return <AboutScreen onBack={backHome} />
       case 'editor':
         return (
-          <EditorScreen
-            songId={route.songId}
-            chartId={route.chartId}
-            onBack={() => setRoute({ name: 'setup', file: null, songId: route.songId, attempt: 0 })}
-            onToast={toast}
-            onChartsChanged={handleChartsChanged}
-          />
+          <Suspense
+            fallback={
+              <div className="page narrow">
+                <Spinner label="Loading editor" />
+              </div>
+            }
+          >
+            <EditorScreen
+              songId={route.songId}
+              chartId={route.chartId}
+              onBack={() => setRoute({ name: 'setup', file: null, songId: route.songId, attempt: 0 })}
+              onToast={toast}
+              onChartsChanged={handleChartsChanged}
+            />
+          </Suspense>
         )
       default:
         return <HomeScreen songs={songs} loading={loading} bestScores={bestScores} storageAvailable={storageAvailable} onImport={startImport} onPlayDemo={startDemo} onOpenSong={openSong} onDeleteSong={() => undefined} />
