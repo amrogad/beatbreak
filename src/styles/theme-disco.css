@@ -3,8 +3,7 @@
  *
  * Ink-violet surfaces, flat panels with solid rules, and the arrow colours as the only accents:
  * marquee yellow for the action you came for, hot pink for the brand, blue for focus. Headings use
- * Bungee (arcade marquee lettering) with a hard printed drop; everything else is Barlow Semi
- * Condensed. No glass, no glow, no gradient text. The canvas playfield reads the matching palette
+ * Bungee (arcade marquee lettering) with a hard printed drop; everything else is Barlow. No glass, no glow, no gradient text. The canvas playfield reads the matching palette
  * from `render/renderer.ts`.
  */
 
@@ -41,8 +40,8 @@
   --radius-sm: 4px;
   --shadow: none;
   --display: Bungee, 'Segoe UI', Arial, sans-serif;
-  --font: 'Barlow Semi Condensed', 'Segoe UI', Arial, sans-serif;
-  --mono: 'Barlow Semi Condensed', 'Segoe UI', Arial, sans-serif;
+  --font: Barlow, 'Segoe UI', Arial, sans-serif;
+  --mono: Barlow, 'Segoe UI', Arial, sans-serif;
 }
 
 [data-theme='disco'] body {

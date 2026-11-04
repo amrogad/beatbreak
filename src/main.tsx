@@ -11,9 +11,9 @@ import { App } from './app/App'
 import { registerServiceWorker } from './pwa/register'
 import { settingsStore } from './store/settings'
 import '@fontsource/bungee/latin-400.css'
-import '@fontsource/barlow-semi-condensed/latin-500.css'
-import '@fontsource/barlow-semi-condensed/latin-600.css'
-import '@fontsource/barlow-semi-condensed/latin-700.css'
+import '@fontsource/barlow/latin-500.css'
+import '@fontsource/barlow/latin-600.css'
+import '@fontsource/barlow/latin-700.css'
 import './styles/app.css'
 import './styles/theme-disco.css'
 
@@ -25,7 +25,7 @@ document.documentElement.dataset.theme = settingsStore.get().theme
 
 // The playfield canvas only gets these faces once they are loaded, so ask for them up front.
 void document.fonts?.load('30px Bungee')
-void document.fonts?.load('600 15px "Barlow Semi Condensed"')
+void document.fonts?.load('600 15px Barlow')
 
 createRoot(container).render(<App />)
 

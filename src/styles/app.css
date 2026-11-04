@@ -259,10 +259,10 @@ strong { font-weight: 700; }
   overflow: visible;
 }
 .hero-preview-target { top: 12px; }
-.hero-preview-target .preview-arrow-body { fill: #120f2a; stroke: #05040c; stroke-width: 9; stroke-linejoin: round; paint-order: stroke fill; }
-.hero-preview-target .preview-arrow-rim { fill: none; stroke: #c9c3e6; stroke-width: 4; stroke-linejoin: round; }
-.hero-preview-note .preview-arrow-body { stroke: #0a0716; stroke-width: 8; stroke-linejoin: round; paint-order: stroke fill; }
-.hero-preview-note .preview-arrow-rim { fill: none; stroke: rgba(255, 255, 255, 0.75); stroke-width: 2.5; stroke-linejoin: round; }
+.hero-preview-target .preview-arrow-body { fill: #120f2a; }
+.hero-preview-target .preview-arrow-rim { fill: none; stroke: var(--column); stroke-width: 4; stroke-linejoin: round; }
+.hero-preview-note .preview-arrow-body { stroke: none; }
+.hero-preview-note .preview-arrow-rim { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 2.5; stroke-linejoin: round; }
 .hero-preview-note {
   bottom: -50px;
   animation: hero-rise 3.4s linear infinite;

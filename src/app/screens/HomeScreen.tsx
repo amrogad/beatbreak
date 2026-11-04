@@ -103,7 +103,7 @@ export function HomeScreen({
                   <div
                     key={lane.id}
                     className="hero-preview-lane"
-                    style={{ '--delay': `${PREVIEW_DELAYS[index]}s` } as React.CSSProperties}
+                    style={{ '--delay': `${PREVIEW_DELAYS[index]}s`, '--column': PREVIEW_COLUMNS[index] } as React.CSSProperties}
                   >
                     <PreviewArrow lane={index} kind="target" />
                     <PreviewArrow lane={index} kind="note" color={PREVIEW_COLORS[index]} />
@@ -243,6 +243,7 @@ export function HomeScreen({
 /** The same arrow the playfield draws, as SVG: rotated per lane, lit from the top. */
 const PREVIEW_ANGLE = [Math.PI, Math.PI / 2, -Math.PI / 2, 0]
 const PREVIEW_COLORS = ['#ff3d5a', '#3d8bff', '#ffd23d', '#ff3d5a']
+const PREVIEW_COLUMNS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
 const PREVIEW_DELAYS = [-0.4, -1.25, -2.1, -2.95]
 const ARROW_SHAPE: [number, number][] = [
   [-0.94, -0.3],
@@ -267,9 +268,10 @@ function PreviewArrow({ lane, kind, color }: { lane: number; kind: 'target' | 'n
       {kind === 'note' && color && (
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#ffffff" stopOpacity="0.55" />
-            <stop offset="0.12" stopColor={color} />
-            <stop offset="1" stopColor={color} stopOpacity="0.55" />
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.45" stopColor={color} stopOpacity="0.85" />
+            <stop offset="0.5" stopColor={color} />
+            <stop offset="1" stopColor={color} />
           </linearGradient>
         </defs>
       )}
