@@ -260,7 +260,7 @@ export class PlayfieldRenderer {
     const { lane, judgment } = event
     this.flash = { judgment, lane, deltaMs: event.deltaMs, ageMs: 0, ...(event.holdDrop ? { holdDrop: true } : {}) }
     if (judgment === 'miss') return
-    const color = JUDGE_STYLE[judgment].burst
+    const color = this.noteColor.get(event.noteId) ?? JUDGE_STYLE[judgment].burst
     this.explosion[lane] = { color, at: performance.now() }
     if (this.settings.reducedMotion) return
     const geometry = this.layout()
@@ -269,16 +269,16 @@ export class PlayfieldRenderer {
     const density = this.quality === 2 ? 1 : this.quality === 1 ? 0.6 : 0
     if (density <= 0) return
     const strength = judgment === 'marvelous' ? 1.4 : judgment === 'perfect' ? 1.25 : judgment === 'great' ? 1 : 0.8
-    const count = judgment === 'marvelous' || judgment === 'perfect' ? 22 : judgment === 'great' ? 14 : 9
+    const count = judgment === 'marvelous' || judgment === 'perfect' ? 12 : judgment === 'great' ? 8 : 5
     this.particles.burst(x, geometry.receptorY, color, { count: Math.round(count * density), strength })
   }
 
   /** A hold reached its tail with the key still down: StepMania's OK. */
   holdComplete(lane: Lane): void {
-    this.explosion[lane] = { color: '#ffe066', at: performance.now() }
+    this.explosion[lane] = { color: '#ffffff', at: performance.now() }
     if (this.settings.reducedMotion || this.quality === 0) return
     const geometry = this.layout()
-    this.particles.burst(geometry.laneX[lane] + geometry.laneW / 2, geometry.receptorY, '#ffe066', { count: 18, strength: 1.3 })
+    this.particles.burst(geometry.laneX[lane] + geometry.laneW / 2, geometry.receptorY, '#ffffff', { count: 10, strength: 1.1 })
   }
 
   resize(): { width: number; height: number } {
@@ -423,8 +423,8 @@ export class PlayfieldRenderer {
 
     // A wash of colour that swells on every beat and drifts around the colour wheel.
     const glow = ctx.createRadialGradient(w / 2, h * 0.62, 0, w / 2, h * 0.62, Math.max(w, h) * 0.75)
-    glow.addColorStop(0, `hsla(${hue}, 95%, 58%, ${0.1 + pulse * 0.16})`)
-    glow.addColorStop(0.55, `hsla(${(hue + 60) % 360}, 95%, 50%, ${0.04 + pulse * 0.05})`)
+    glow.addColorStop(0, `hsla(${hue}, 90%, 55%, ${0.05 + pulse * 0.04})`)
+    glow.addColorStop(0.55, `hsla(${(hue + 60) % 360}, 90%, 50%, ${0.02 + pulse * 0.015})`)
     glow.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
     ctx.fillStyle = glow
     ctx.fillRect(0, 0, w, h)
@@ -442,7 +442,7 @@ export class PlayfieldRenderer {
         const tipX2 = originX + Math.cos(angle + spread) * length
         const tipY2 = Math.sin(angle + spread) * length
         const beam = ctx.createLinearGradient(originX, 0, (tipX1 + tipX2) / 2, (tipY1 + tipY2) / 2)
-        beam.addColorStop(0, `hsla(${lightHue}, 100%, 70%, ${0.1 + pulse * 0.08})`)
+        beam.addColorStop(0, `hsla(${lightHue}, 100%, 70%, 0.045)`)
         beam.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
         ctx.fillStyle = beam
         ctx.beginPath()
@@ -457,8 +457,8 @@ export class PlayfieldRenderer {
       const barFrac = (beat / 4) - Math.floor(beat / 4)
       if (beat >= 0) {
         const radius = Math.max(w, h) * 0.08 + barFrac * Math.max(w, h) * 0.7
-        ctx.strokeStyle = `hsla(${(hue + 180) % 360}, 100%, 65%, ${0.22 * (1 - barFrac)})`
-        ctx.lineWidth = 3 + 10 * (1 - barFrac)
+        ctx.strokeStyle = `hsla(${(hue + 180) % 360}, 100%, 65%, ${0.08 * (1 - barFrac)})`
+        ctx.lineWidth = 2 + 4 * (1 - barFrac)
         ctx.beginPath()
         ctx.arc(w / 2, h * 0.55, radius, 0, Math.PI * 2)
         ctx.stroke()
@@ -467,7 +467,7 @@ export class PlayfieldRenderer {
 
     // Halftone dots over the whole stage, swelling on every beat like a printed gig poster.
     const level = Math.min(5, Math.round(pulse * 5))
-    ctx.globalAlpha = 0.45 + pulse * 0.4
+    ctx.globalAlpha = 0.28 + pulse * 0.12
     ctx.fillStyle = this.dotPattern((Math.round(hue / 30) * 30) % 360, level)
     ctx.fillRect(0, 0, w, h)
     ctx.restore()
@@ -537,7 +537,7 @@ export class PlayfieldRenderer {
       const start = receptorY - direction * noteH * 0.2
       const end = receptorY + direction * length
       const beam = ctx.createLinearGradient(0, start, 0, end)
-      beam.addColorStop(0, `rgba(255,255,255,${0.2 * fade})`)
+      beam.addColorStop(0, `rgba(255,255,255,${0.09 * fade})`)
       beam.addColorStop(1, 'rgba(255,255,255,0)')
       ctx.fillStyle = beam
       ctx.fillRect(laneX[lane] + 2, Math.min(start, end), laneW - 4, Math.abs(end - start))
@@ -564,13 +564,13 @@ export class PlayfieldRenderer {
       let overlay = 0
       let zoom = 1
       if (this.laneHeld[lane]) {
-        overlay = sincePress < 200 ? 0.8 - 0.4 * (sincePress / 200) : 0.4
+        overlay = sincePress < 200 ? 0.35 - 0.17 * (sincePress / 200) : 0.18
       } else {
         const sinceRelease = this.nowMs - this.releaseAt[lane]
         if (sinceRelease < 200) {
           const t = sinceRelease / 200
-          overlay = 0.4 * (1 - t)
-          zoom = 1 + 0.2 * t
+          overlay = 0.18 * (1 - t)
+          zoom = 1 + 0.1 * t
         }
       }
       if (overlay > 0) {
@@ -591,7 +591,7 @@ export class PlayfieldRenderer {
     const reduced = this.settings.reducedMotion
     // The arrows shimmer with the beat, like StepMania's animated note skin.
     const beatFrac = beat - Math.floor(beat)
-    const shimmer = reduced ? 0 : Math.max(0, 1 - beatFrac * 4) * 0.35
+    const shimmer = reduced ? 0 : Math.max(0, 1 - beatFrac * 4) * 0.1
 
     // Holds already being played: the head stays pinned on the receptor while the body drains.
     session.forEachActiveHold(songTimeMs, (note, life) => {
@@ -604,11 +604,11 @@ export class PlayfieldRenderer {
       const color = this.noteColor.get(note.id) ?? OFF_GRID_COLOR
       const held = life >= 1
       this.drawHoldBody(x, receptorY, tailY, noteH, color, held ? 'active' : 'dropping', life)
-      const sprite = this.noteSprite('note', held ? color : '#8a8f9c', note.lane, noteH)
-      ctx.globalAlpha = held ? 1 : 0.4 + 0.6 * life
+      const sprite = this.noteSprite('note', color, note.lane, noteH)
+      ctx.globalAlpha = held ? 1 : 0.45 + 0.55 * life
       drawCentered(ctx, sprite, x, receptorY, noteH)
       ctx.globalAlpha = 1
-      if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY, noteH, color, note.lane)
+      if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY, noteH, color)
     })
 
     session.forEachPending(untilMs, (note: ChartNote) => {
@@ -652,7 +652,7 @@ export class PlayfieldRenderer {
     const bottom = Math.max(headY, tailY)
     const length = bottom - top
     if (length < 1) return
-    const base = state === 'dropping' ? '#7d8291' : color
+    const base = color
     const left = cx - bodyW / 2
     const gradient = ctx.createLinearGradient(left, 0, left + bodyW, 0)
     gradient.addColorStop(0, shade(base, -0.45))
@@ -684,18 +684,15 @@ export class PlayfieldRenderer {
   }
 
   /** The flickering glow on a receptor while its hold is down (StepMania's hold explosion). */
-  private drawHoldGlow(x: number, y: number, noteH: number, color: string, lane: Lane): void {
+  private drawHoldGlow(x: number, y: number, noteH: number, color: string): void {
     const ctx = this.ctx
-    const flicker = 0.55 + 0.35 * Math.abs(Math.sin(this.nowMs / 32))
+    const flicker = 0.22 + 0.12 * Math.abs(Math.sin(this.nowMs / 32))
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.globalAlpha = flicker
-    const glow = this.glowSprite(color, Math.round(noteH))
-    drawCentered(ctx, glow, x, y, noteH * 2.1)
-    ctx.globalAlpha = 0.5 * flicker
-    drawCentered(ctx, this.noteSprite('flash', '#ffffff', lane, noteH), x, y, noteH * 0.95)
+    drawCentered(ctx, this.glowSprite(color, Math.round(noteH)), x, y, noteH * 1.5)
     ctx.restore()
-    if (this.quality === 2 && Math.random() < 0.45) {
+    if (this.quality === 2 && Math.random() < 0.25) {
       this.particles.burst(x, y, color, { count: 1, strength: 0.7 })
     }
   }
@@ -709,18 +706,16 @@ export class PlayfieldRenderer {
       const blast = this.explosion[lane]
       if (!blast) continue
       const age = this.nowMs - blast.at
-      if (age > 600) {
+      if (age > 400) {
         this.explosion[lane] = null
         continue
       }
       // Full brightness for 100 ms, then a decelerating fade (StepMania's tap explosion timing).
-      const fade = age < 100 ? 1 : 1 - easeOut((age - 100) / 500)
-      const grow = this.settings.reducedMotion ? 1 : 1 + 0.35 * easeOut(Math.min(1, age / 300))
+      const fade = age < 80 ? 1 : 1 - easeOut((age - 80) / 320)
+      const grow = this.settings.reducedMotion ? 1 : 1 + 0.2 * easeOut(Math.min(1, age / 300))
       const x = laneX[lane] + laneW / 2
-      ctx.globalAlpha = fade
-      drawCentered(ctx, this.glowSprite(blast.color, Math.round(noteH)), x, receptorY, noteH * 2 * grow)
-      ctx.globalAlpha = Math.max(0, 1 - age / 160)
-      drawCentered(ctx, this.noteSprite('flash', '#ffffff', lane as Lane, noteH), x, receptorY, noteH * grow)
+      ctx.globalAlpha = fade * 0.35
+      drawCentered(ctx, this.glowSprite(blast.color, Math.round(noteH)), x, receptorY, noteH * 1.45 * grow)
     }
     ctx.restore()
   }
@@ -781,7 +776,7 @@ export class PlayfieldRenderer {
       ctx.stroke(path)
     } else {
       ctx.shadowColor = 'rgba(255,255,255,0.9)'
-      ctx.shadowBlur = size * 0.18 * scale
+      ctx.shadowBlur = size * 0.06 * scale
       ctx.fillStyle = 'rgba(255,255,255,0.95)'
       ctx.fill(path)
     }
