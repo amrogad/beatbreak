@@ -325,6 +325,8 @@ export function GameScreen({
           paused: pausedRef.current,
           autoPlay: autoPlayRef.current,
           showStats: settingsRef.current.showStats,
+          title: song.title,
+          subtitle: DIFFICULTY_LABEL[chart.difficulty].toUpperCase(),
         })
         // The countdown is driven by this loop, not a timer: no React re-renders during it, and
         // audio starts on the exact frame the number reaches zero.
@@ -350,6 +352,8 @@ export function GameScreen({
         paused: false,
         autoPlay: activeSession.isAutoPlay,
         showStats: settingsRef.current.showStats,
+        title: song.title,
+        subtitle: DIFFICULTY_LABEL[chart.difficulty].toUpperCase(),
       })
       if (!failedRef.current && !autoPlayRef.current && checkFail(settingsRef.current.failRule, state)) {
         failedRef.current = true
@@ -442,6 +446,11 @@ export function GameScreen({
     sessionRef.current?.setAutoPlay(autoPlay)
   }, [autoPlay])
 
+  const laneKeys = (slot: number): string =>
+    [settings.keyMap.left, settings.keyMap.down, settings.keyMap.up, settings.keyMap.right]
+      .map((keys) => describeKey(keys[slot] ?? keys[0]))
+      .join(' ')
+
   return (
     <div className="game-root" ref={rootRef}>
       <canvas
@@ -451,9 +460,11 @@ export function GameScreen({
         aria-label="Rhythm game playfield with four arrow lanes"
       />
 
-      <div className="game-top-left">
-        <span className="chip">{autoPlay ? 'AUTO-PLAY' : 'PLAYING'}</span>
-      </div>
+      {autoPlay && !paused && (
+        <div className="game-top-left">
+          <span className="chip">AUTO-PLAY</span>
+        </div>
+      )}
       <div className="game-top-right">
         <Button
           variant="ghost"
@@ -524,7 +535,7 @@ export function GameScreen({
           ? 'Auto-play: watch the arrows play themselves'
           : touchOnly
             ? 'Tap each lane as its arrow reaches the target'
-            : `${describeKey(settings.keyMap.up[0])} ${describeKey(settings.keyMap.left[0])} ${describeKey(settings.keyMap.down[0])} ${describeKey(settings.keyMap.right[0])} to hit · ${describeKey(settings.controls.pause[0])} pause · ${describeKey(settings.controls.restart[0])} restart`}
+            : `${laneKeys(0)} or ${laneKeys(1)} to hit · ${describeKey(settings.controls.pause[0])} pause · ${describeKey(settings.controls.restart[0])} restart`}
       </div>
     </div>
   )

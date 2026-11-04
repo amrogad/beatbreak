@@ -48,6 +48,7 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
 /** Flat playfield colours per theme; the DOM uses the matching CSS variables. */
 interface PlayfieldPalette {
   background: string
+  highway: string
   hudText: string
   hudMuted: string
   hudFaint: string
@@ -57,17 +58,19 @@ interface PlayfieldPalette {
 const PALETTES: Record<ThemeName, PlayfieldPalette> = {
   neon: {
     background: '#0b0b0d',
+    highway: '#0b0b0d',
     hudText: '#f3f5f7',
     hudMuted: '#b6bec8',
     hudFaint: '#8a939e',
     accent: '#56b4e9',
   },
   disco: {
-    background: '#0b0b0d',
-    hudText: '#f3f5f7',
-    hudMuted: '#b6bec8',
-    hudFaint: '#8a939e',
-    accent: '#56b4e9',
+    background: '#0c0c0e',
+    highway: '#141417',
+    hudText: '#ece8e1',
+    hudMuted: '#a29d94',
+    hudFaint: '#77736c',
+    accent: '#f2a33a',
   },
 }
 
@@ -82,6 +85,8 @@ export interface HudState {
   autoPlay: boolean
   /** Draw the frame-rate / quality readout (Settings → Show statistics). */
   showStats: boolean
+  title?: string
+  subtitle?: string
 }
 
 interface JudgmentFlash {
@@ -144,6 +149,7 @@ export class PlayfieldRenderer {
   private shapePathCache = new Map<string, Path2D>()
   private scoreTextCache = { value: -1, text: '' }
   private accuracyTextCache = { value: -1, text: '' }
+  private titleCache = { key: '', text: '' }
 
   /* ------------------------------------------------------------- self-tuning
    * The renderer watches its own frame time and sheds decoration when the machine cannot hold a
@@ -300,6 +306,7 @@ export class PlayfieldRenderer {
     this.drawReceptors()
     if (!reduced && this.quality > 0) this.particles.draw(this.ctx)
     this.drawJudgmentFlash()
+    this.drawCombo(hud)
     this.drawHud(hud)
     this.drawCountdown(hud)
   }
@@ -316,6 +323,8 @@ export class PlayfieldRenderer {
     // Flat lane beds. No gradients, no pulsing, no hit shine: only a constant tint and a thin
     // vertical separator keep the four columns legible.
     const tint = style === 'minimal' ? 0 : style === 'classic' ? 0.04 : 0.065
+    ctx.fillStyle = PALETTES[this.settings.theme].highway
+    ctx.fillRect(laneAreaX, 0, laneAreaW, this.height)
     for (let lane = 0; lane < 4; lane++) {
       const x = laneX[lane]
       if (tint > 0) {
@@ -329,7 +338,8 @@ export class PlayfieldRenderer {
         ctx.fillRect(x + 1, 0, laneW - 1, this.height)
       }
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.08)'
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'
+    ctx.fillRect(laneAreaX, 0, 1, this.height)
     ctx.fillRect(laneAreaX + laneAreaW - 1, 0, 1, this.height)
   }
 
@@ -600,66 +610,147 @@ export class PlayfieldRenderer {
     }
   }
 
+  /** Judgment and combo sit together in the middle of the highway, clear of the receptors. */
+  private judgmentY(): number {
+    const { receptorY, direction } = this.layout()
+    const travel = direction === 1 ? this.height - receptorY : receptorY
+    return receptorY + direction * travel * 0.34
+  }
+
   private drawJudgmentFlash(): void {
     const flash = this.flash
     if (!flash) return
-    const { laneX, laneW, receptorY, direction } = this.layout()
+    const { laneAreaX, laneAreaW } = this.layout()
     const age = flash.ageMs
     const fade = Math.max(0, 1 - age / 700)
     if (fade <= 0) return
     const ctx = this.ctx
-    const color = JUDGMENT_COLOR[flash.judgment]
-    const x = laneX[flash.lane] + laneW / 2
-    // The text floats away from the receptor into the free area behind it.
-    const y = receptorY + direction * (54 + Math.min(30, age * 0.05))
+    const x = laneAreaX + laneAreaW / 2
+    const y = this.judgmentY()
+    const pop = this.settings.reducedMotion ? 1 : 1 + Math.max(0, 1 - age / 90) * 0.18
+    const text = (flash.holdDrop ? 'LET GO' : JUDGMENT_LABEL[flash.judgment]).toUpperCase()
     ctx.save()
-    const text = flash.holdDrop ? 'LET GO' : JUDGMENT_LABEL[flash.judgment]
-    ctx.font = `800 ${flash.judgment === 'marvelous' ? 21 : flash.judgment === 'perfect' ? 19 : 17}px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.globalAlpha = fade
-    ctx.fillStyle = color
-    ctx.fillText(text, x, y)
+    ctx.translate(x, y)
+    ctx.scale(pop, pop)
+    ctx.font = `800 24px ${FONT}`
+    ctx.fillStyle = JUDGMENT_COLOR[flash.judgment]
+    ctx.fillText(text, 0, 0)
+    ctx.restore()
     if (flash.judgment !== 'miss' && Math.abs(flash.deltaMs) >= 3) {
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
       ctx.globalAlpha = fade * 0.75
       ctx.font = `600 11px ${FONT}`
       ctx.fillStyle = 'rgba(255,255,255,0.8)'
-      ctx.fillText(`${flash.deltaMs > 0 ? '+' : ''}${flash.deltaMs.toFixed(0)} ms`, x, y + 17)
+      ctx.fillText(`${flash.deltaMs > 0 ? '+' : ''}${flash.deltaMs.toFixed(0)} ms`, x, y + 20)
+      ctx.restore()
     }
+  }
+
+  private drawCombo(hud: HudState): void {
+    if (hud.combo < 3) return
+    const ctx = this.ctx
+    const palette = PALETTES[this.settings.theme]
+    const { laneAreaX, laneAreaW } = this.layout()
+    const x = laneAreaX + laneAreaW / 2
+    const y = this.judgmentY() + 50
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.globalAlpha = 0.9
+    ctx.font = `900 40px ${FONT}`
+    ctx.fillStyle = palette.hudText
+    ctx.fillText(String(hud.combo), x, y)
+    ctx.font = `700 11px ${FONT}`
+    ctx.fillStyle = palette.hudMuted
+    ctx.fillText('COMBO', x, y + 28)
     ctx.restore()
+  }
+
+  /** Cut text with an ellipsis so it fits `maxWidth` at the current font. Cached by input. */
+  private fitTitle(text: string, maxWidth: number): string {
+    const key = `${text}|${Math.round(maxWidth)}`
+    if (this.titleCache.key === key) return this.titleCache.text
+    let fitted = text
+    if (this.ctx.measureText(fitted).width > maxWidth) {
+      while (fitted.length > 1 && this.ctx.measureText(`${fitted}…`).width > maxWidth) fitted = fitted.slice(0, -1)
+      fitted = `${fitted.trimEnd()}…`
+    }
+    this.titleCache = { key, text: fitted }
+    return fitted
   }
 
   private drawHud(hud: HudState): void {
     const ctx = this.ctx
     const palette = PALETTES[this.settings.theme]
-    ctx.save()
-    ctx.textBaseline = 'top'
-    // Score, top left. Locale formatting and fixed-decimal strings are cached by value: they only
-    // change when the score does, not every frame.
+    const { laneAreaX, laneAreaW } = this.layout()
+    // Locale formatting and fixed-decimal strings are cached by value: they only change when the
+    // score does, not every frame.
     if (this.scoreTextCache.value !== hud.score) {
       this.scoreTextCache = { value: hud.score, text: hud.score.toLocaleString('en-US') }
     }
-    ctx.textAlign = 'left'
-    ctx.font = `800 26px ${FONT}`
-    ctx.fillStyle = palette.hudText
-    // Dropped below the DOM chips (pause / fullscreen) so the score can never sit under them.
-    ctx.fillText(this.scoreTextCache.text, 22, 58)
-    ctx.font = `600 11px ${FONT}`
-    ctx.fillStyle = palette.hudMuted
-    ctx.fillText(hud.autoPlay ? 'SCORE · AUTO-PLAY' : 'SCORE', 22, 90)
-
-    // Accuracy, top right.
     const accuracy = Math.round(hud.accuracy * 10000) / 10000
     if (this.accuracyTextCache.value !== accuracy) {
       this.accuracyTextCache = { value: accuracy, text: `${(accuracy * 100).toFixed(2)}%` }
     }
-    ctx.textAlign = 'right'
-    ctx.font = `800 26px ${FONT}`
-    ctx.fillStyle = palette.hudText
-    ctx.fillText(this.accuracyTextCache.text, this.width - 22, 58)
-    ctx.font = `600 11px ${FONT}`
-    ctx.fillStyle = palette.hudMuted
-    ctx.fillText('ACCURACY', this.width - 22, 90)
+    const progress = Math.max(0, Math.min(1, hud.progress))
+    ctx.save()
+    ctx.textBaseline = 'top'
+
+    if (laneAreaX >= 180) {
+      // Wide screens: two columns hugging the highway, score on the left, the song on the right.
+      const leftX = laneAreaX - 28
+      const rightX = laneAreaX + laneAreaW + 28
+      const top = 76
+      ctx.textAlign = 'right'
+      ctx.font = `600 11px ${FONT}`
+      ctx.fillStyle = palette.hudMuted
+      ctx.fillText('SCORE', leftX, top)
+      ctx.font = `800 28px ${FONT}`
+      ctx.fillStyle = palette.hudText
+      ctx.fillText(this.scoreTextCache.text, leftX, top + 16)
+      ctx.font = `600 11px ${FONT}`
+      ctx.fillStyle = palette.hudMuted
+      ctx.fillText('ACCURACY', leftX, top + 64)
+      ctx.font = `800 22px ${FONT}`
+      ctx.fillStyle = palette.hudText
+      ctx.fillText(this.accuracyTextCache.text, leftX, top + 80)
+
+      ctx.textAlign = 'left'
+      const columnW = Math.min(200, this.width - rightX - 24)
+      if (hud.title) {
+        ctx.font = `700 15px ${FONT}`
+        ctx.fillStyle = palette.hudText
+        ctx.fillText(this.fitTitle(hud.title, columnW), rightX, top)
+      }
+      if (hud.subtitle) {
+        ctx.font = `700 11px ${FONT}`
+        ctx.fillStyle = palette.accent
+        ctx.fillText(hud.subtitle, rightX, top + 24)
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.1)'
+      ctx.fillRect(rightX, top + 48, columnW, 3)
+      ctx.fillStyle = palette.accent
+      ctx.fillRect(rightX, top + 48, columnW * progress, 3)
+    } else {
+      // Narrow screens: one compact row above the receptors, below the pause/fullscreen buttons.
+      const y = 50
+      ctx.font = `800 20px ${FONT}`
+      ctx.fillStyle = palette.hudText
+      ctx.textAlign = 'left'
+      ctx.fillText(this.scoreTextCache.text, 16, y)
+      ctx.textAlign = 'right'
+      ctx.fillText(this.accuracyTextCache.text, this.width - 16, y)
+      ctx.fillStyle = 'rgba(255,255,255,0.08)'
+      ctx.fillRect(0, 0, this.width, 4)
+      ctx.fillStyle = palette.accent
+      ctx.fillRect(0, 0, this.width * progress, 4)
+    }
+
     // Frame rate / quality readout (Settings → Show statistics). Shows the adaptive level so a
     // performance drop is visible instead of felt.
     if (hud.showStats) {
@@ -668,34 +759,7 @@ export class PlayfieldRenderer {
       ctx.font = `600 11px ${FONT}`
       ctx.fillStyle = palette.hudFaint
       ctx.fillText(`${fps} FPS · Q${this.quality + 1}`, this.width - 22, this.height - 30)
-      ctx.textAlign = 'left'
     }
-    ctx.textAlign = 'left'
-
-    // Combo, left margin — clear of the note path, mirroring the score column.
-    if (hud.combo >= 3) {
-      ctx.textAlign = 'left'
-      const comboY = this.height * 0.46
-      const scale = 1 + Math.min(0.12, hud.combo / 1200)
-      ctx.save()
-      ctx.translate(22, comboY)
-      ctx.scale(scale, scale)
-      ctx.font = `900 54px ${FONT}`
-      ctx.fillStyle = palette.hudText
-      ctx.fillText(String(hud.combo), 0, 0)
-      ctx.restore()
-      ctx.font = `700 12px ${FONT}`
-      ctx.fillStyle = palette.hudMuted
-      ctx.fillText('COMBO', 22, comboY + 34)
-    }
-
-    // Progress bar across the very top: one flat accent, no gradient.
-    const barH = 4
-    ctx.fillStyle = 'rgba(255,255,255,0.08)'
-    ctx.fillRect(0, 0, this.width, barH)
-    const progress = Math.max(0, Math.min(1, hud.progress))
-    ctx.fillStyle = palette.accent
-    ctx.fillRect(0, 0, this.width * progress, barH)
     ctx.restore()
   }
 

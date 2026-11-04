@@ -202,7 +202,7 @@ export function encodeWav(samples: Float32Array, sampleRate: number, channels = 
 export function createTestSongFile(options: SynthOptions = {}): { file: File; truth: SynthResult } {
   const truth = renderTestRhythm(options)
   const wav = encodeWav(truth.samples, truth.sampleRate, 1)
-  const fileName = `pulsegrid-test-rhythm-${Math.round(truth.bpm)}bpm.wav`
+  const fileName = `Demo Rhythm (${Math.round(truth.bpm)} BPM).wav`
   const file = new File([wav], fileName, { type: 'audio/wav', lastModified: Date.now() })
   return { file, truth }
 }
