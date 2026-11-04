@@ -73,9 +73,12 @@ export function GameScreen({
   // Touch devices have no keyboard: the hint should teach the gesture that actually works.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 
+  // Every settings update rebuilds `customWindows`, so the memo keys on its values. A new object
+  // here would rebuild the whole run (the volume slider in the pause menu used to do that).
+  const customWindowsKey = JSON.stringify(settings.customWindows)
   const windows = useMemo(
     () => windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows),
-    [settings.windowPreset, settings.customWindows, chart.difficulty],
+    [settings.windowPreset, customWindowsKey, chart.difficulty],
   )
 
   /**
@@ -223,7 +226,9 @@ export function GameScreen({
     renderer?.release(lane)
     const session = sessionRef.current
     const engine = engineRef.current
-    if (!session || !engine || !judgingRef.current || session.isAutoPlay) return
+    // A release while paused still counts: otherwise letting go during the pause menu and not
+    // pressing again would complete the hold with full credit.
+    if (!session || !engine || finishedRef.current || session.isAutoPlay) return
     const now = performance.now()
     // Releasing starts the StepMania hold-life drain (250 ms). Pressing the lane again refills
     // it; if it runs out before the tail the session scores a LetGo (miss).
@@ -399,10 +404,12 @@ export function GameScreen({
 
     // Audio must never keep playing in a background tab: hiding the tab pauses the run.
     const onVisibility = (): void => {
-      if (document.visibilityState === 'hidden' && engineRef.current?.isPlaying) pause()
+      if (document.visibilityState !== 'hidden') return
+      if (engineRef.current?.isPlaying || (!engineRef.current && !engagingRef.current)) pause()
     }
+    // Leaving during the countdown pauses too; otherwise the song starts while nobody is looking.
     const onBlur = (): void => {
-      if (engineRef.current?.isPlaying) pause()
+      if (engineRef.current?.isPlaying || (!engineRef.current && !engagingRef.current)) pause()
     }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)

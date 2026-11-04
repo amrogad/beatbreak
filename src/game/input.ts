@@ -160,8 +160,15 @@ export class InputRouter {
     this.held.clear()
   }
 
+  /** Keyups are lost while the window is unfocused, so release every held lane here. */
   private onBlur = (): void => {
+    const released = [...this.held]
     this.held.clear()
+    const now = performance.now()
+    for (const code of released) {
+      const lane = laneForKey(code, this.options.keyMap)
+      if (lane !== null) this.handlers.onLaneUp?.(lane, now, code)
+    }
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
@@ -169,6 +176,11 @@ export class InputRouter {
     const code = event.code || event.key
     const controls = this.options.controls ?? CONTROL_DEFAULTS
     const enabled = this.options.enabled?.() ?? true
+    const isControl = controls.pause.includes(code) || controls.restart.includes(code) || controls.fullscreen.includes(code)
+    if (isControl && event.repeat) {
+      event.preventDefault()
+      return
+    }
 
     if (controls.pause.includes(code)) {
       event.preventDefault()
