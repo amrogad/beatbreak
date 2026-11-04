@@ -26,6 +26,8 @@ export interface GameSessionOptions {
   autoPlay?: boolean
   /** Fired for every judgement, in judgement order. */
   onJudgment?: (event: HitEvent) => void
+  /** A hold was kept down all the way to its tail (StepMania's OK). */
+  onHoldComplete?: (lane: Lane) => void
   /** Fired once when the run ends (all notes judged or the tail of the song reached). */
   onComplete?: (state: ScoreState) => void
   /** Extra milliseconds after the last note before the run is forced to end. */
@@ -213,6 +215,7 @@ export class GameSession {
     if (songTimeMs >= hold.tailMs) {
       // The tail has arrived (the frame may not have ticked yet): the hold was completed.
       this.activeHolds[lane] = null
+      this.options.onHoldComplete?.(lane)
       return false
     }
     if (hold.releasedAt === null) hold.releasedAt = songTimeMs
@@ -244,7 +247,10 @@ export class GameSession {
   private expireHolds(songTimeMs: number): void {
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const hold = this.activeHolds[lane]
-      if (hold && songTimeMs >= hold.tailMs) this.activeHolds[lane] = null
+      if (hold && songTimeMs >= hold.tailMs) {
+        this.activeHolds[lane] = null
+        this.options.onHoldComplete?.(lane as Lane)
+      }
     }
   }
 
@@ -334,6 +340,11 @@ export class GameSession {
       this.autoCursor++
       if (this.judged[index]) continue
       this.commitJudgment(index, 'marvelous', songTimeMs - this.noteTimesMs[index], songTimeMs)
+      // Auto-play holds its holds too, so the watch mode shows them being held to the end.
+      const note = this.notes[index]
+      if (note.kind === 'hold' && (note.duration ?? 0) > 0) {
+        this.activeHolds[note.lane] = { index, tailMs: (note.time + (note.duration ?? 0)) * 1000, releasedAt: null }
+      }
     }
   }
 

@@ -196,7 +196,7 @@ export function GameScreen({
     countdownStartRef.current = performance.now()
     setPaused(false)
     setHud({ score: 0, combo: 0, accuracy: 1, judged: 0 })
-    rendererRef.current?.setChart(buffer.duration)
+    rendererRef.current?.setChart(buffer.duration, chart)
   }, [buffer.duration, chart])
 
   const toggleFullscreen = useCallback(async () => {
@@ -259,7 +259,7 @@ export function GameScreen({
       reducedMotion: settingsRef.current.reducedMotion,
     })
     rendererRef.current = renderer
-    renderer.setChart(buffer.duration)
+    renderer.setChart(buffer.duration, chart)
     renderer.resize()
     const observer = new ResizeObserver(() => renderer.resize())
     observer.observe(canvas)
@@ -274,6 +274,7 @@ export function GameScreen({
         // and judgment text carry the timing instead.
         renderer.notify(event, session.scoreState.combo)
       },
+      onHoldComplete: (lane) => renderer.holdComplete(lane),
       onComplete: () => {
         runCompleteRef.current = true
         // A failed run stops at the failure and goes to results immediately. A cleared chart

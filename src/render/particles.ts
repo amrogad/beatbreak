@@ -97,8 +97,8 @@ export class ParticleSystem {
 
   draw(ctx: CanvasRenderingContext2D): void {
     ctx.save()
-    // Flat compositing: hit sparks are small solid flecks, not additive glow.
-    ctx.globalCompositeOperation = 'source-over'
+    // Additive sparks: overlapping flecks bloom into a bright burst.
+    ctx.globalCompositeOperation = 'lighter'
     for (const p of this.particles) {
       if (!p.active) continue
       const t = Math.max(0, Math.min(1, p.life / p.maxLife))
