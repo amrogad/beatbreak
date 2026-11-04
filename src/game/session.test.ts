@@ -415,13 +415,25 @@ describe('hold notes', () => {
     expect(checkFail('never', s.scoreState)).toBe(false)
   })
 
-  it('keeps a hold released only inside the last hold window (the tail arrives first)', () => {
+  it('drops a hold let go early even when the tail arrives inside the hold window', () => {
     const s = holdSession(1) // tail at 2000 ms
     s.handleTap(0, 1000)
-    s.releaseLane(0, 1900) // 100 ms before the tail: the life outlasts the note
+    s.releaseLane(0, 1850) // 150 ms early and never pressed again
+    s.update(2001)
+    expect(s.scoreState.droppedHolds).toBe(1)
+    expect(s.scoreState.combo).toBe(0)
+  })
+
+  it('counts a release in the last moment before the tail as held to the end', () => {
+    const completed: number[] = []
+    const chart = holdChart(1)
+    const s = new GameSession({ chart, windows: DEFAULT_WINDOWS, onHoldComplete: (lane) => completed.push(lane) })
+    s.handleTap(0, 1000)
+    expect(s.releaseLane(0, 1950)).toBe(false) // 50 ms before the tail
     s.update(2001)
     expect(s.scoreState.droppedHolds).toBe(0)
     expect(s.scoreState.combo).toBe(1)
+    expect(completed).toEqual([0])
   })
 
   it('emits a LET GO event for the drop so the playfield can react', () => {

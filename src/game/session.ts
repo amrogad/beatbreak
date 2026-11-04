@@ -49,6 +49,8 @@ export interface TapResult {
  * out, StepMania (dance, `ImmediateHoldLetGo`) scores a LetGo: a miss. We do the same.
  */
 export const HOLD_RELEASE_WINDOW_MS = 250
+/** Letting go this close to the tail still counts as holding it to the end. */
+export const HOLD_TAIL_GRACE_MS = 80
 
 interface ActiveHold {
   index: number
@@ -212,8 +214,8 @@ export class GameSession {
     if (this.finished) return false
     const hold = this.activeHolds[lane]
     if (!hold) return false
-    if (songTimeMs >= hold.tailMs) {
-      // The tail has arrived (the frame may not have ticked yet): the hold was completed.
+    if (songTimeMs >= hold.tailMs - HOLD_TAIL_GRACE_MS) {
+      // At (or just before) the tail: the hold was completed.
       this.activeHolds[lane] = null
       this.options.onHoldComplete?.(lane)
       return false
@@ -222,13 +224,15 @@ export class GameSession {
     return true
   }
 
-  /** Released holds whose life runs out before the tail are LetGo — a miss, as in StepMania. */
+  /**
+   * A released hold is a LetGo (a miss) unless it is pressed again within the hold window. The
+   * tail arriving while it is still released does not save it: only holding to the end counts.
+   */
   private drainHolds(songTimeMs: number): void {
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const hold = this.activeHolds[lane]
       if (!hold || hold.releasedAt === null) continue
-      const expiryMs = hold.releasedAt + HOLD_RELEASE_WINDOW_MS
-      if (expiryMs >= hold.tailMs) continue // the tail arrives first: the hold completes
+      const expiryMs = Math.min(hold.releasedAt + HOLD_RELEASE_WINDOW_MS, hold.tailMs)
       if (songTimeMs < expiryMs) continue
       this.dropHold(lane as Lane, hold)
     }
