@@ -528,15 +528,21 @@ export class PlayfieldRenderer {
       ctx.fillRect(laneX[lane], 0, 1, this.height)
     }
     // Neon edge rails, glowing in their colour.
-    ctx.save()
-    if (this.quality > 0) ctx.shadowBlur = 14
-    ctx.shadowColor = palette.accent
-    ctx.fillStyle = hexToRgba(palette.accent, 0.85)
-    ctx.fillRect(laneAreaX - 2, 0, 2, this.height)
-    ctx.shadowColor = palette.accent2
-    ctx.fillStyle = hexToRgba(palette.accent2, 0.85)
-    ctx.fillRect(laneAreaX + laneAreaW, 0, 2, this.height)
-    ctx.restore()
+    // The halo is a plain horizontal gradient: a full-height shadow blur costs too much per frame.
+    const rail = (x: number, color: string): void => {
+      if (this.quality > 0) {
+        const halo = ctx.createLinearGradient(x - 10, 0, x + 12, 0)
+        halo.addColorStop(0, hexToRgba(color, 0))
+        halo.addColorStop(0.5, hexToRgba(color, 0.35))
+        halo.addColorStop(1, hexToRgba(color, 0))
+        ctx.fillStyle = halo
+        ctx.fillRect(x - 10, 0, 22, this.height)
+      }
+      ctx.fillStyle = hexToRgba(color, 0.9)
+      ctx.fillRect(x, 0, 2, this.height)
+    }
+    rail(laneAreaX - 2, palette.accent)
+    rail(laneAreaX + laneAreaW, palette.accent2)
 
     // A beam shoots up the lane from a pressed receptor and fades after release.
     if (this.settings.reducedMotion) return
