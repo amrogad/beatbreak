@@ -1,7 +1,7 @@
 /** A short, plain-language walkthrough shown once and available from every screen. */
 import React, { useEffect, useState } from 'react'
-import { LANE_INFO } from '../core/types'
-import { Button, LaneArrow } from './components'
+import { Button } from './components'
+import { PlayfieldPreview } from './PlayfieldPreview'
 
 export interface TutorialProps {
   open: boolean
@@ -28,20 +28,17 @@ const STEPS = [
 ] as const
 
 function LaneArt(): React.JSX.Element {
-  const keys = ['A', 'S', 'W', 'D']
+  // The real playfield on auto-play, with each column's keys underneath it.
   return (
     <div className="tutorial-art" aria-hidden="true">
-      {LANE_INFO.map((lane, index) => (
-        <div className="tutorial-lane" key={lane.id} style={{ '--lane': lane.color } as React.CSSProperties}>
-          <span className="tutorial-arrow" style={{ animationDelay: `${index * 0.18}s` }}>
-            <LaneArrow lane={lane.lane} />
+      <PlayfieldPreview />
+      <div className="tutorial-keys">
+        {['A  ←', 'S  ↓', 'W  ↑', 'D  →'].map((label) => (
+          <span className="keycap" key={label}>
+            {label}
           </span>
-          <span className="tutorial-target" aria-hidden="true">
-            <LaneArrow lane={lane.lane} />
-          </span>
-          <span className="keycap">{keys[index]}</span>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

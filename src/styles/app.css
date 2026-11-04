@@ -221,60 +221,12 @@ strong { font-weight: 700; }
   border: 1px solid var(--border);
   background: var(--bg-soft);
 }
-.hero-preview-board {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  height: 240px;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 0;
-  background: var(--surface-2);
-}
-.hero-preview-lane {
-  position: relative;
-  overflow: hidden;
-  border-radius: 0;
-  border: 1px solid var(--border);
-  background: var(--panel);
-}
-.lane-arrow {
+.hero-preview-canvas {
   display: block;
   width: 100%;
-  height: 100%;
-  fill: currentColor;
-  stroke: rgba(255, 255, 255, 0.9);
-  stroke-width: 4;
-  stroke-linejoin: miter;
-  paint-order: stroke fill;
+  height: 270px;
 }
-.hero-preview-target,
-.hero-preview-note {
-  position: absolute;
-  left: 50%;
-  display: block;
-  width: 46px;
-  height: 46px;
-  transform: translateX(-50%);
-  overflow: visible;
-}
-.hero-preview-target { top: 12px; }
-.hero-preview-target .preview-arrow-body { fill: #120f2a; }
-.hero-preview-target .preview-arrow-rim { fill: none; stroke: var(--column); stroke-width: 4; stroke-linejoin: round; }
-.hero-preview-note .preview-arrow-body { stroke: none; }
-.hero-preview-note .preview-arrow-rim { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 2.5; stroke-linejoin: round; }
-.hero-preview-note {
-  bottom: -50px;
-  animation: hero-rise 3.4s linear infinite;
-  animation-delay: var(--delay);
-}
-@keyframes hero-rise {
-  0% { transform: translate(-50%, 0); opacity: 0; }
-  10% { opacity: 1; }
-  86% { transform: translate(-50%, -232px); opacity: 1; }
-  92% { transform: translate(-50%, -232px); opacity: 0; }
-  100% { transform: translate(-50%, -232px); opacity: 0; }
-}
+
 
 
 .grid { display: grid; gap: 18px; }
@@ -882,46 +834,17 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
   background: var(--panel-strong);
 }
 .tutorial-card h2 { font-size: 22px; }
-.tutorial-art { display: flex; justify-content: center; gap: 10px; margin: 24px 0 8px; }
-.tutorial-lane {
-  position: relative;
-  width: 64px;
-  height: 148px;
-  overflow: hidden;
-  border-radius: 0;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
+.tutorial-art { margin: 20px 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.tutorial-art .hero-preview-canvas { height: 220px; }
+.tutorial-keys {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 84%;
+  margin: 0 auto;
+  padding: 10px 0 12px;
 }
-.tutorial-arrow {
-  position: absolute;
-  left: 50%;
-  top: 8px;
-  display: block;
-  width: 32px;
-  height: 32px;
-  transform: translateX(-50%);
-  color: var(--lane);
-  animation: tutorial-arrow 2.2s ease-in-out infinite;
-}
-.tutorial-target {
-  position: absolute;
-  left: 50%;
-  bottom: 40px;
-  display: block;
-  width: 32px;
-  height: 32px;
-  transform: translateX(-50%);
-  color: var(--lane);
-  opacity: 0.4;
-}
-.tutorial-lane .keycap {
-  position: absolute;
-  left: 50%;
-  bottom: 7px;
-  transform: translateX(-50%);
-  border-color: var(--lane);
-  color: var(--lane);
-}
+.tutorial-keys .keycap { justify-content: center; text-align: center; white-space: pre; }
 .tutorial-dots { display: flex; justify-content: center; gap: 6px; margin-top: 22px; }
 .tutorial-dots span {
   width: 8px;
@@ -931,25 +854,19 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
   transition: width 140ms ease, background 140ms ease;
 }
 .tutorial-dots span.is-current { width: 20px; background: var(--cyan); }
-@keyframes tutorial-arrow {
-  0%, 12% { transform: translate(-50%, 0); opacity: 0; }
-  22% { opacity: 1; }
-  72% { transform: translate(-50%, 84px); opacity: 1; }
-  86%, 100% { transform: translate(-50%, 92px); opacity: 0; }
-}
+
 
 @media (max-width: 900px) {
   .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr); gap: 26px; }
-  .hero-preview-board { height: 160px; }
+  .hero-preview-canvas { height: 180px; }
 }
 
 @media (max-width: 720px) {
   .difficulty-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .difficulty-copy { min-height: 0; }
-  .tutorial-lane { width: 54px; height: 132px; }
   .option-row { align-items: flex-start; }
   .hero-grid { grid-template-columns: 1fr; }
-  .hero-preview-board { height: 132px; }
+  .hero-preview-canvas { height: 150px; }
   .hero-side { flex-direction: row; align-items: stretch; flex-wrap: wrap; }
   .hero-preview { flex: 1 1 240px; }
   .hero-side > .stat { flex: 0 1 150px; }
@@ -979,7 +896,5 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tutorial-arrow { animation: none; }
   .difficulty-card { transition: none; }
-  .hero-preview-note { animation: none; bottom: 56px; opacity: 0.9; }
 }
