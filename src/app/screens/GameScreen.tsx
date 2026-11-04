@@ -256,6 +256,7 @@ export function GameScreen({
       noteShape: settingsRef.current.noteShape,
       scrollDirection: settingsRef.current.scrollDirection,
       theme: settingsRef.current.theme,
+      arrowColors: settingsRef.current.arrowColors,
       reducedMotion: settingsRef.current.reducedMotion,
     })
     rendererRef.current = renderer
@@ -319,10 +320,11 @@ export function GameScreen({
       const engine = engineRef.current
       if (!activeSession || !engine) {
         // Countdown phase: draw *before* the song starts, so the playfield is empty and the first
-        // arrows rise from the bottom as the countdown reaches zero. Drawing at t = 0 put the
-        // opening notes on the receptors for the whole countdown.
+        // arrows rise from the bottom as the countdown reaches zero. The clock counts down to
+        // the start of the playable window, not to 0: a trimmed song starts later in the file,
+        // and counting to 0 made its first arrows pop up mid-screen on GO.
         const remaining = countdownRemaining()
-        renderer.render(activeSession ?? session, -remaining, {
+        renderer.render(activeSession ?? session, playPlan.windowStart * 1000 - remaining, {
           score: 0,
           combo: 0,
           accuracy: 1,
@@ -446,6 +448,7 @@ export function GameScreen({
       noteShape: settings.noteShape,
       scrollDirection: settings.scrollDirection,
       theme: settings.theme,
+      arrowColors: settings.arrowColors,
       reducedMotion: settings.reducedMotion,
     })
   }, [settings])
