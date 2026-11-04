@@ -16,6 +16,7 @@ import '@fontsource/barlow/latin-600.css'
 import '@fontsource/barlow/latin-700.css'
 import './styles/app.css'
 import './styles/theme-disco.css'
+import './styles/theme-mono.css'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('#root is missing from index.html')

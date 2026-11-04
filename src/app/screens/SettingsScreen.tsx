@@ -191,6 +191,25 @@ export function SettingsScreen({
             format={(value) => `${Math.round(value * 100)}%`}
             hint="Tap notes, hold tails and target outlines scale together."
           />
+          <Select
+            label="Theme"
+            value={settings.theme === 'mono' ? 'mono' : 'disco'}
+            options={[
+              { value: 'disco', label: 'Arcade, in colour' },
+              { value: 'mono', label: 'Blackout, white light only' },
+            ]}
+            onChange={(value) => onUpdate({ theme: value })}
+          />
+          <Select
+            label="Arrow colours"
+            value={settings.arrowColors}
+            options={[
+              { value: 'column', label: 'One colour per column' },
+              { value: 'random', label: 'Shuffle colours every song' },
+            ]}
+            onChange={(value) => onUpdate({ arrowColors: value })}
+            hint="The Blackout theme keeps every arrow white."
+          />
           <Toggle
             label="Reduced motion"
             checked={settings.reducedMotion}

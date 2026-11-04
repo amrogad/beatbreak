@@ -11,7 +11,7 @@ import type { ControlMap, KeyMap } from '../game/input'
 import { CONTROL_DEFAULTS, DEFAULT_KEYMAP } from '../game/input'
 import type { CustomWindows, WindowPreset } from '../game/judgment'
 import { normalizeCustomWindows } from '../game/judgment'
-import type { LaneStyle, NoteShape, ScrollDirection, ThemeName } from '../render/renderer'
+import type { ArrowColors, LaneStyle, NoteShape, ScrollDirection, ThemeName } from '../render/renderer'
 
 /** Windowed play always; `fullscreen` asks the browser for fullscreen when a run starts. */
 export type DisplayMode = 'window' | 'fullscreen'
@@ -33,6 +33,7 @@ export interface Settings {
   laneStyle: LaneStyle
   noteShape: NoteShape
   theme: ThemeName
+  arrowColors: ArrowColors
   displayMode: DisplayMode
   reducedMotion: boolean
   keyMap: KeyMap
@@ -64,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   laneStyle: 'neon',
   noteShape: 'arrow',
   theme: 'disco',
+  arrowColors: 'column',
   displayMode: 'window',
   reducedMotion: false,
   keyMap: DEFAULT_KEYMAP,
@@ -166,7 +168,8 @@ export function sanitizeSettings(input: unknown): Settings {
       : 'arrow'
   const scrollDirection: ScrollDirection = raw.scrollDirection === 'down' ? 'down' : 'up'
   // The phosphor-green terminal skin was removed: any old saved value falls back to disco.
-  const theme: ThemeName = raw.theme === 'neon' ? 'neon' : 'disco'
+  const theme: ThemeName = raw.theme === 'neon' ? 'neon' : raw.theme === 'mono' ? 'mono' : 'disco'
+  const arrowColors: ArrowColors = raw.arrowColors === 'random' ? 'random' : 'column'
   const displayMode: DisplayMode = raw.displayMode === 'fullscreen' ? 'fullscreen' : 'window'
   const failRule: FailRule =
     typeof raw.failRule === 'string' && (FAIL_RULES as readonly string[]).includes(raw.failRule)
@@ -184,6 +187,7 @@ export function sanitizeSettings(input: unknown): Settings {
     laneStyle,
     noteShape,
     theme,
+    arrowColors,
     displayMode,
     reducedMotion: typeof raw.reducedMotion === 'boolean' ? raw.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     keyMap: sanitizeKeyMap(raw.keyMap),

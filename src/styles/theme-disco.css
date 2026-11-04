@@ -49,12 +49,13 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   background-color: #14112b;
-  background-image: radial-gradient(rgba(255, 61, 127, 0.16) 1.4px, transparent 1.8px);
-  background-size: 16px 16px;
+  background-image:
+    radial-gradient(50vmax 40vmax at 8% -10%, rgba(255, 61, 127, 0.14), transparent 70%),
+    radial-gradient(45vmax 40vmax at 100% 20%, rgba(61, 155, 255, 0.12), transparent 70%);
   background-attachment: fixed;
 }
 
-/* Halftone fades out below the fold so text never sits on busy dots. */
+/* The stage light fades out below the fold. */
 [data-theme='disco'] .app {
   background: linear-gradient(180deg, rgba(20, 17, 43, 0) 0, rgba(20, 17, 43, 0.85) 420px, #14112b 760px);
 }

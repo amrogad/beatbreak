@@ -1,0 +1,332 @@
+/**
+ * Blackout: a pitch-black room where the only light is white. Same structure as the arcade skin
+ * (the selectors mirror theme-disco.css), with every colour pulled to black, white and greys.
+ * Difficulty colours are overridden to white so nothing on screen carries a hue.
+ */
+
+[data-theme='mono'] {
+  --bg: #000000;
+  --bg-soft: #050505;
+  --panel: #000000;
+  --panel-strong: #0d0d0d;
+  --border: #3a3a3a;
+  --border-strong: #8a8a8a;
+  --text: #ffffff;
+  --muted: #bdbdbd;
+  --faint: #8a8a8a;
+  --cyan: #ffffff;
+  --amber: #ffffff;
+  --green: #ffffff;
+  --red: #ffffff;
+  --yellow: #ffffff;
+  --focus: #ffffff;
+  --magenta: #ffffff;
+  --violet: #ffffff;
+  --lane-left: #ffffff;
+  --lane-down: #ffffff;
+  --lane-up: #ffffff;
+  --lane-right: #ffffff;
+  --surface-1: #000000;
+  --surface-2: #050505;
+  --surface-3: #111111;
+  --control: #0d0d0d;
+  --control-hover: #1c1c1c;
+  --solid: #ffffff;
+  --on-solid: #000000;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: none;
+  --display: Bungee, 'Segoe UI', Arial, sans-serif;
+  --font: Barlow, 'Segoe UI', Arial, sans-serif;
+  --mono: Barlow, 'Segoe UI', Arial, sans-serif;
+}
+
+[data-theme='mono'] body {
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  background-color: #000000;
+  background-image:
+    radial-gradient(50vmax 40vmax at 8% -10%, rgba(255, 255, 255, 0.07), transparent 70%),
+    radial-gradient(45vmax 40vmax at 100% 20%, rgba(255, 255, 255, 0.05), transparent 70%);
+  background-attachment: fixed;
+}
+
+/* The stage light fades out below the fold. */
+[data-theme='mono'] .app {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0.88) 420px, #000000 760px);
+}
+
+[data-theme='mono'] h1,
+[data-theme='mono'] h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.12;
+}
+
+[data-theme='mono'] h1 {
+  color: var(--text);
+  text-shadow: 3px 3px 0 #4a4a4a;
+}
+
+[data-theme='mono'] h2 {
+  font-size: clamp(16px, 2vw, 19px);
+}
+
+[data-theme='mono'] h3 {
+  font-weight: 700;
+}
+
+[data-theme='mono'] .topbar {
+  background: #000000;
+  border-bottom: 2px solid var(--border);
+  backdrop-filter: none;
+}
+
+[data-theme='mono'] .brand-text b {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+}
+
+[data-theme='mono'] .brand-text small {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+[data-theme='mono'] .panel,
+[data-theme='mono'] .hero {
+  border-radius: var(--radius);
+  border: 2px solid var(--border);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+/* The hero is the cabinet's marquee: a yellow rule and a hard pink drop. */
+[data-theme='mono'] .hero {
+  border-color: var(--amber);
+  box-shadow: 8px 8px 0 #2e2e2e;
+}
+
+[data-theme='mono'] .btn {
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-strong);
+  background: var(--control);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+[data-theme='mono'] .btn:hover:not(:disabled) {
+  background: var(--control-hover);
+  border-color: var(--text);
+}
+
+/* The one loud control: a yellow arcade button that physically presses in. */
+[data-theme='mono'] .btn-primary {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--on-solid);
+  box-shadow: 0 4px 0 #6a6a6a;
+  transform: translateY(-2px);
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+
+[data-theme='mono'] .btn-primary:hover:not(:disabled) {
+  background: #e6e6e6;
+  border-color: #e6e6e6;
+  filter: none;
+}
+
+[data-theme='mono'] .btn-primary:active:not(:disabled) {
+  background: var(--amber);
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #6a6a6a;
+}
+
+[data-theme='mono'] .btn-primary:disabled {
+  box-shadow: none;
+  transform: none;
+}
+
+[data-theme='mono'] .btn-danger {
+  border-color: var(--red);
+  color: var(--red);
+  background: transparent;
+}
+
+[data-theme='mono'] .btn-danger:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--red);
+}
+
+[data-theme='mono'] .btn-ghost {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+[data-theme='mono'] .btn-ghost:hover:not(:disabled) {
+  border-color: var(--muted);
+  background: var(--control);
+  color: var(--text);
+}
+
+[data-theme='mono'] .chip {
+  border-radius: var(--radius-sm);
+  background: var(--control);
+  border-color: var(--border-strong);
+}
+
+[data-theme='mono'] .keycap,
+[data-theme='mono'] .toast {
+  border-radius: var(--radius-sm);
+}
+
+[data-theme='mono'] .keycap {
+  border: 2px solid var(--border-strong);
+  border-bottom-width: 4px;
+  background: var(--control);
+}
+
+[data-theme='mono'] .toast {
+  background: var(--panel-strong);
+  border: 2px solid var(--amber);
+  box-shadow: 4px 4px 0 #000000;
+}
+
+[data-theme='mono'] input[type='text'],
+[data-theme='mono'] input[type='number'],
+[data-theme='mono'] select {
+  border-radius: var(--radius-sm);
+  background: #000000;
+  border: 2px solid var(--border);
+  color: var(--text);
+}
+
+[data-theme='mono'] input[type='text']:focus,
+[data-theme='mono'] input[type='number']:focus,
+[data-theme='mono'] select:focus {
+  outline-color: var(--focus);
+}
+
+[data-theme='mono'] .toggle-track {
+  border-radius: var(--radius-sm);
+}
+
+[data-theme='mono'] .toggle-thumb {
+  border-radius: 2px;
+}
+
+[data-theme='mono'] .toggle input:checked + .toggle-track {
+  background: var(--magenta);
+  border-color: var(--magenta);
+}
+
+[data-theme='mono'] .toggle input:checked + .toggle-track .toggle-thumb {
+  background: #ffffff;
+}
+
+[data-theme='mono'] .hero-preview {
+  background: #000000;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+[data-theme='mono'] .tab.active {
+  background: var(--magenta);
+  border-color: var(--magenta);
+  color: #ffffff;
+}
+
+[data-theme='mono'] .song-row {
+  border-radius: var(--radius-sm);
+  border-width: 2px;
+}
+
+[data-theme='mono'] .song-row:hover {
+  border-color: var(--amber);
+  background: var(--panel-strong);
+}
+
+[data-theme='mono'] .song-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+[data-theme='mono'] .difficulty-card {
+  border-radius: var(--radius-sm);
+  border-width: 2px;
+}
+
+[data-theme='mono'] .difficulty-name {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 17px;
+}
+
+/* The chosen difficulty is stamped on: its own colour as the rule and a hard drop. */
+[data-theme='mono'] .difficulty-card.is-selected {
+  background: var(--panel-strong);
+  border-color: var(--difficulty);
+  box-shadow: 5px 5px 0 var(--difficulty);
+  transform: translate(-2px, -2px);
+}
+
+[data-theme='mono'] .stat-value {
+  font-family: var(--display);
+  font-weight: 400;
+}
+
+[data-theme='mono'] .game-overlay .panel {
+  border-color: var(--amber);
+  box-shadow: 8px 8px 0 #2e2e2e;
+}
+
+[data-theme='mono'] .game-hint,
+[data-theme='mono'] .game-top-left .chip,
+[data-theme='mono'] .game-top-right .btn {
+  letter-spacing: 0.015em;
+}
+
+/* The home preview is a slice of the real playfield: one dark highway, thin lane rules. */
+[data-theme='mono'] .hero-preview-board {
+  gap: 0;
+  background: #000000;
+}
+
+[data-theme='mono'] .hero-preview-lane {
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+}
+
+[data-theme='mono'] .hero-preview-lane:first-child {
+  border-left: 0;
+}
+
+/* Difficulties are white here; the colour of each one is set inline, so the override is forced. */
+[data-theme='mono'] .difficulty-card,
+[data-theme='mono'] .difficulty-chip {
+  --difficulty: #ffffff !important;
+}
+
+[data-theme='mono'] .difficulty-name {
+  color: #ffffff !important;
+}
+
+[data-theme='mono'] .brand-mark rect {
+  fill: #ffffff;
+}
+
+[data-theme='mono'] .hero-preview-lane {
+  --column: #ffffff !important;
+}
+
+[data-theme='mono'] .hero-preview-note polygon.preview-arrow-body {
+  fill: #f4f4f4;
+}
