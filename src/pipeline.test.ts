@@ -159,6 +159,14 @@ describe('chart generation', () => {
     }
   })
 
+  it('uses a finer grid on Hard/Expert when the detected tempo is slow', () => {
+    const truth = renderTestRhythm({ bpm: 96, bars: 12, seed: 3 })
+    const analysis = analyzeSamples(truth.samples, truth.sampleRate)
+    const timing = TimingMap.single(analysis.bpm, analysis.offset)
+    const charts = generateAllDifficulties({ analysis, timing, duration: truth.duration, songId: 'slow' })
+    expect(charts.map((chart) => chart.stepsPerBeat)).toEqual([1, 2, 8, 8])
+  })
+
   it('produces physically playable charts at every difficulty', () => {
     const { analysis, duration } = analyseDemo()
     const timing = TimingMap.single(analysis.bpm, analysis.offset)

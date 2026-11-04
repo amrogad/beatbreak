@@ -31,7 +31,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.1'
+export const GENERATOR_VERSION = 'pulsegrid-gen-3.2'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -1046,9 +1046,17 @@ export function clipNotesToEdit(
   return { notes: result, shortened, downgraded }
 }
 
+const SLOW_TEMPO_BPM = 110
+
 export function generateChart(input: GenerateChartInput): Chart {
   const { analysis, timing, duration, songId, difficulty } = input
-  const settings = resolveSettings(difficulty, { ...input.options?.overrides, ...input.settings })
+  const overrides = { ...input.options?.overrides, ...input.settings }
+  const settings = resolveSettings(difficulty, overrides)
+  // Fast songs (170+ BPM) are often detected at half tempo. Their 16th notes then fall between the
+  // 16th grid of the detected beat, so Hard/Expert use a twice-as-fine grid below 110 BPM.
+  if (overrides.stepsPerBeat === undefined && settings.stepsPerBeat >= 4 && timing.primaryBpm < SLOW_TEMPO_BPM) {
+    settings.stepsPerBeat *= 2
+  }
   // Stable by song + difficulty + generator version. Deliberately excludes the detected BPM and
   // offset: a re-analysis that shifts the grid by a millisecond must not reshuffle every lane.
   const seed =
