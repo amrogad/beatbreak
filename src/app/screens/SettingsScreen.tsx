@@ -151,6 +151,12 @@ export function SettingsScreen({
             format={(value) => `${Math.round(value * 100)}%`}
             hint="Defaults to 100%. Your system volume still applies."
           />
+          <Toggle
+            label="Menu music"
+            checked={settings.menuMusic}
+            onChange={(value) => onUpdate({ menuMusic: value })}
+            hint="Plays a loop of your latest song behind the menus."
+          />
         </div>
       </Panel>
 

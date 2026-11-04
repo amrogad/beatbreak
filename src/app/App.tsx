@@ -8,7 +8,10 @@
  */
 import React, { useCallback, useEffect, lazy, useMemo, useRef, useState, Suspense, useSyncExternalStore } from 'react'
 import type { Chart, Difficulty, RunResults, SongMeta } from '../core/types'
-import { createTestSongFile } from '../audio/synth'
+import { createTestSongFile, renderTestRhythm } from '../audio/synth'
+import { getAudioContext, resumeAudioContext } from '../audio/engine'
+import { configureMenuMusic, playMenuMusic, previewStart, stopMenuMusic } from '../audio/menuMusic'
+import { loadSongBundle } from '../store/library'
 import { attachUiSounds, configureSfx } from '../audio/sfx'
 import { listRuns, deleteSong as deleteSongRecord, saveRun, updateSong } from '../store/repository'
 import type { StoredRun } from '../store/db'
@@ -112,6 +115,64 @@ function AppShell(): React.JSX.Element {
     const detach = attachUiSounds()
     return detach
   }, [])
+
+  useEffect(() => {
+    configureMenuMusic({ enabled: settings.menuMusic, volume: settings.volume })
+  }, [settings.menuMusic, settings.volume])
+
+  // Browsers keep audio locked until the first click or key press; unlock it then so the menu
+  // music can start.
+  useEffect(() => {
+    const unlock = (): void => {
+      void resumeAudioContext().catch(() => undefined)
+    }
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
+  // Menu music: the song being set up, the song just played, or the latest song in the library.
+  // With an empty library the demo beat plays instead.
+  useEffect(() => {
+    if (!settings.menuMusic) return
+    if (route.name === 'game' || route.name === 'editor') {
+      stopMenuMusic(0.3)
+      return
+    }
+    if (route.name === 'setup' && !route.songId) return
+    const latest = [...songs].sort((a, b) => (b.lastPlayedAt || b.createdAt) - (a.lastPlayedAt || a.createdAt))[0]
+    const songId = route.name === 'setup' || route.name === 'results' ? route.songId : latest?.id ?? null
+    let cancelled = false
+    if (!songId) {
+      try {
+        playMenuMusic('demo', demoBuffer(), 0)
+      } catch {
+        // No Web Audio: the menus simply stay silent.
+      }
+      return
+    }
+    const start = (buffer: AudioBuffer, duration: number, sections: { start: number; energy: number }[]): void => {
+      if (!cancelled) playMenuMusic(songId, buffer, previewStart(duration, sections))
+    }
+    const cached = runtime.get(songId)
+    if (cached?.buffer) {
+      start(cached.buffer, cached.meta.duration, cached.meta.analysis.sections)
+    } else {
+      void loadSongBundle(songId)
+        .then((bundle) => {
+          if (!bundle?.buffer) return
+          runtime.put(bundle)
+          start(bundle.buffer, bundle.meta.duration, bundle.meta.analysis.sections)
+        })
+        .catch(() => undefined)
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [route, songs, settings.menuMusic])
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     settingsStore.update(patch)
@@ -421,4 +482,16 @@ function AppShell(): React.JSX.Element {
       <Tutorial open={tutorialOpen} onClose={closeTutorial} />
     </div>
   )
+}
+
+let demoCache: AudioBuffer | null = null
+
+/** The built-in demo beat as an AudioBuffer, rendered once. */
+function demoBuffer(): AudioBuffer {
+  if (demoCache) return demoCache
+  const rhythm = renderTestRhythm({ bpm: 128, bars: 12, sampleRate: 32000, melody: true })
+  const buffer = getAudioContext().createBuffer(1, rhythm.samples.length, rhythm.sampleRate)
+  buffer.copyToChannel(rhythm.samples, 0)
+  demoCache = buffer
+  return buffer
 }

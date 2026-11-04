@@ -46,6 +46,8 @@ export interface Settings {
   autoPlay: boolean
   /** Show the lightweight in-game performance readout. */
   showStats: boolean
+  /** Loop a preview of a song behind the menus. */
+  menuMusic: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -69,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tutorialSeen: false,
   autoPlay: false,
   showStats: false,
+  menuMusic: true,
 }
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -188,6 +191,7 @@ export function sanitizeSettings(input: unknown): Settings {
     tutorialSeen: typeof raw.tutorialSeen === 'boolean' ? raw.tutorialSeen : DEFAULT_SETTINGS.tutorialSeen,
     autoPlay: typeof raw.autoPlay === 'boolean' ? raw.autoPlay : DEFAULT_SETTINGS.autoPlay,
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
+    menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
   }
 }
 
