@@ -138,7 +138,7 @@ describe('chart generation', () => {
     }
   })
 
-  it('keeps hard note heads on the detected onsets, ordered and inside the song', () => {
+  it('snaps hard note heads to the grid near a detected onset, ordered and inside the song', () => {
     const { analysis, duration } = analyseDemo()
     const timing = TimingMap.single(analysis.bpm, analysis.offset)
     const chart = generateChart({ analysis, timing, duration, songId: 'demo', difficulty: 'hard' })
@@ -149,12 +149,11 @@ describe('chart generation', () => {
       previous = note.time
       expect(note.time).toBeGreaterThanOrEqual(0)
       expect(note.time).toBeLessThanOrEqual(duration)
-      // Hard/Expert keep the raw attack time: the arrow is not moved to a grid line that can be
-      // tens of milliseconds away from the sound it represents.
       const nearestOnset = Math.min(...analysis.onsets.map((onset) => Math.abs(onset.time - note.time)))
-      expect(nearestOnset).toBeLessThan(1e-6)
-      const gridTime = timing.stepToTime(note.step, chart.stepsPerBeat)
-      expect(Math.abs(gridTime - note.time)).toBeLessThan(0.07)
+      expect(nearestOnset).toBeLessThan(0.056)
+      const beat = timing.timeToBeat(note.time)
+      const onGrid = Math.abs(beat * 4 - Math.round(beat * 4)) < 1e-6 || Math.abs(beat * 6 - Math.round(beat * 6)) < 1e-6
+      expect(onGrid).toBe(true)
       expect(note.lane).toBeGreaterThanOrEqual(0)
       expect(note.lane).toBeLessThanOrEqual(3)
     }

@@ -31,7 +31,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.0'
+export const GENERATOR_VERSION = 'pulsegrid-gen-3.1'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -176,8 +176,10 @@ export interface GenerateOptions {
 /** A quantized candidate before lane assignment. */
 export interface Candidate {
   step: number
-  /** Playback time. Hard/Expert keep the detected onset; Easy/Normal use the grid step. */
+  /** Playback time: the grid step, or a triplet for a strong off-grid hit. */
   time: number
+  /** Detected attack time of the strongest hit on this step. */
+  attack: number
   strength: number
   band: number
   brightness: number
@@ -286,11 +288,12 @@ export function selectCandidates(
   let droppedOffGrid = 0
   let droppedOffGridWeak = 0
   let droppedSilence = 0
-  // Quarter/eighth charts stay exactly on the grid: a readable Easy/Normal pattern should not
-  // wobble. Hard/Expert keep the detected attack time, because a note that is up to 55 ms away
-  // from the sound it represents is exactly what makes a chart feel "off" even when the grid says
-  // it is correct. The grid step is still stored for export and the editor.
-  const keepOnsetTime = settings.stepsPerBeat >= 4
+  // Every difficulty snaps to the fitted grid. Detected attack times scatter by 20-30 ms on a
+  // good share of hits (a hat under a decaying kick, reverb tails), so raw times made Hard and
+  // Expert streams uneven and put the same sound at different times on different difficulties.
+  // Strong off-grid hits on the 16th-note charts snap to the triplet grid instead, or are dropped.
+  const fineGrid = settings.stepsPerBeat >= 4
+  const TRIPLET_TOLERANCE_MS = 25
 
   for (const onset of onsets) {
     if (onset.strength + 1e-9 < floorAt(onset.time)) {
@@ -308,16 +311,18 @@ export function selectCandidates(
     }
     const stepTime = timing.stepToTime(step, settings.stepsPerBeat)
     const deltaMs = Math.abs(stepTime - onset.time) * 1000
+    let noteTime = stepTime
     if (deltaMs > settings.snapToleranceMs) {
-      // Too far from the grid to trust: keep only clearly strong syncopated hits, and only when
-      // the difficulty uses a fine enough grid to represent them.
-      const strongSyncopation = keepOnsetTime && onset.strength >= Math.max(floor + 0.15, 0.6)
-      if (!strongSyncopation) {
+      // Too far from the grid to trust: keep only clearly strong hits that sit on a triplet, and
+      // only when the difficulty uses a fine enough grid to represent them.
+      const strongSyncopation = fineGrid && onset.strength >= Math.max(floor + 0.15, 0.6)
+      const tripletTime = timing.stepToTime(Math.round(timing.timeToBeat(onset.time) * 6), 6)
+      if (!strongSyncopation || Math.abs(tripletTime - onset.time) * 1000 > TRIPLET_TOLERANCE_MS) {
         droppedOffGridWeak++
         continue
       }
+      noteTime = tripletTime
     }
-    const noteTime = keepOnsetTime ? onset.time : stepTime
     const existing = byStep.get(step)
     if (existing) {
       existing.hits++
@@ -327,8 +332,8 @@ export function selectCandidates(
         existing.strength = onset.strength
         existing.band = onset.band
         existing.brightness = onset.brightness
-        // On Hard/Expert the strongest attack defines the moment the player hears the hit.
-        if (keepOnsetTime) existing.time = onset.time
+        existing.time = noteTime
+        existing.attack = onset.time
       }
       if (onset.heldSeconds !== undefined) {
         existing.heldSeconds = Math.max(existing.heldSeconds ?? 0, onset.heldSeconds)
@@ -338,6 +343,7 @@ export function selectCandidates(
     byStep.set(step, {
       step,
       time: noteTime,
+      attack: onset.time,
       strength: onset.strength,
       band: onset.band,
       brightness: onset.brightness,
@@ -361,7 +367,7 @@ export function selectCandidates(
     let simultaneousHits = 0
     const bands = new Set<number>()
     for (let i = 0; i < candidate.hitTimes.length; i++) {
-      if (Math.abs(candidate.hitTimes[i] - candidate.time) > CHORD_SIMULTANEOUS_SECONDS) continue
+      if (Math.abs(candidate.hitTimes[i] - candidate.attack) > CHORD_SIMULTANEOUS_SECONDS) continue
       simultaneousHits++
       bands.add(candidate.hitBands[i])
     }
