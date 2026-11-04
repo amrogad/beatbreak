@@ -137,11 +137,12 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
 
   onStage?.('Generating charts')
   onProgress?.({ stage: 'Generating charts', fraction: 0.97 })
-  const title = options.title?.trim() || titleFromFileName(file.name)
-  const artist = options.artist?.trim() || ''
   const existing = (await listSongs()).find(
     (song) => song.fileName === file.name && song.fileSize === file.size && song.lastModified === file.lastModified,
   )
+  // Re-attaching the same file keeps a title or artist the player typed in.
+  const title = options.title?.trim() || existing?.title || titleFromFileName(file.name)
+  const artist = options.artist?.trim() || existing?.artist || ''
   // Stable id derived from the file identity instead of a clock/random pair. Two different files
   // colliding on all three fields is not realistic; the same file always lands on the same row.
   const songId = existing?.id ?? `song_${hashString(`${file.name}|${file.size}|${file.lastModified}`).toString(36)}`
@@ -205,8 +206,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     charts = requested
       .map(
         (difficulty) =>
-          byDifficulty.get(difficulty) ??
-          existingCharts.find((chart) => chart.difficulty === difficulty && chart.edited),
+          byDifficulty.get(difficulty) ?? existingCharts.find((chart) => chart.difficulty === difficulty),
       )
       .filter((chart): chart is Chart => chart !== undefined)
   }
@@ -235,20 +235,27 @@ export async function regenerateCharts(input: {
   edit?: EditPlan | null
   /** Increment for a new arrow variation; omit to reproduce the current chart exactly. */
   salt?: number
+  /** The song's current charts. Hand-edited ones are kept as they are, never regenerated. */
+  existing?: Chart[]
 }): Promise<Chart[]> {
   const timing = TimingMap.single(input.bpm, input.offset)
-  const charts = generateAllDifficulties({
+  const edited = (input.existing ?? []).filter((chart) => chart.edited)
+  const generated = generateAllDifficulties({
     analysis: input.analysis,
     timing,
     duration: input.duration,
     songId: input.songId,
     title: input.title,
-    difficulties: input.difficulties ?? [...DIFFICULTIES],
+    difficulties: (input.difficulties ?? [...DIFFICULTIES]).filter(
+      (difficulty) => !edited.some((chart) => chart.difficulty === difficulty),
+    ),
     edit: input.edit ?? null,
     options: { salt: input.salt ?? 0 },
   })
-  await saveCharts(charts)
-  return charts
+  await saveCharts(generated)
+  return [...generated, ...edited].sort(
+    (a, b) => DIFFICULTIES.indexOf(a.difficulty) - DIFFICULTIES.indexOf(b.difficulty),
+  )
 }
 
 /**

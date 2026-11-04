@@ -254,6 +254,7 @@ export function SetupScreen({
           bpm: updated.analysis.bpm,
           offset: updated.analysis.offset,
           edit: planForMeta(updated),
+          existing: bundle.charts,
         })
         adopt({ ...bundle, meta: updated, charts: regenerated })
         const trimmedStart = trim.start > 0.05
@@ -295,9 +296,15 @@ export function SetupScreen({
         offset: updated.analysis.offset,
         edit: planForMeta(updated),
         salt,
+        existing: bundle.charts,
       })
       adopt({ ...bundle, meta: updated, charts: regenerated })
-      onToast('New arrows built. Your old high scores stay on the song.', 'success')
+      onToast(
+        bundle.charts.some((chart) => chart.edited)
+          ? 'New arrows built. Charts you edited by hand were kept.'
+          : 'New arrows built. Your old high scores stay on the song.',
+        'success',
+      )
     } catch (caught) {
       onToast(caught instanceof Error ? caught.message : String(caught), 'error')
     } finally {
