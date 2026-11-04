@@ -1,185 +1,188 @@
 /**
- * PULSEGRID's default skin.
+ * PULSEGRID's default skin: an arcade cabinet at night.
  *
- * An arcade night: a deep violet sky with slow-moving coloured light, glassy panels, bold italic
- * headings and hot magenta-to-violet primary buttons that glow. Every lane also has a distinct
- * arrow shape, so colour is never the only cue. The canvas playfield reads the matching palette
+ * Ink-violet surfaces, flat panels with solid rules, and the arrow colours as the only accents:
+ * marquee yellow for the action you came for, hot pink for the brand, blue for focus. Headings use
+ * Bungee (arcade marquee lettering) with a hard printed drop; everything else is Barlow Semi
+ * Condensed. No glass, no glow, no gradient text. The canvas playfield reads the matching palette
  * from `render/renderer.ts`.
  */
 
 [data-theme='disco'] {
-  --bg: #0b0620;
-  --bg-soft: #120a2e;
-  --panel: rgba(26, 15, 62, 0.74);
-  --panel-strong: rgba(44, 26, 98, 0.82);
-  --border: rgba(170, 130, 255, 0.24);
-  --border-strong: rgba(190, 160, 255, 0.5);
-  --text: #ffffff;
-  --muted: #cbc2f0;
-  --faint: #9d93cc;
-  --cyan: #3be8ff;
+  --bg: #14112b;
+  --bg-soft: #1a1538;
+  --panel: #1f1946;
+  --panel-strong: #2a2260;
+  --border: #3b3280;
+  --border-strong: #5a4fb0;
+  --text: #f6f3ff;
+  --muted: #b8b0e0;
+  --faint: #8d84c0;
+  --cyan: #5fb2ff;
   --amber: #ffd23d;
-  --green: #45ff8f;
-  --red: #ff4d6d;
-  --yellow: #ffe94d;
-  --focus: #3be8ff;
-  --magenta: #ff4fd8;
-  --violet: #8c5cff;
+  --green: #4fe08a;
+  --red: #ff4d63;
+  --yellow: #ffd23d;
+  --focus: #5fb2ff;
+  --magenta: #ff3d7f;
+  --violet: #8c6cff;
   --lane-left: #56b4e9;
   --lane-down: #e69f00;
   --lane-up: #009e73;
   --lane-right: #f2f5f7;
-  --surface-1: rgba(26, 15, 62, 0.74);
-  --surface-2: rgba(16, 9, 40, 0.8);
-  --surface-3: rgba(52, 32, 112, 0.8);
-  --control: rgba(255, 255, 255, 0.06);
-  --control-hover: rgba(255, 255, 255, 0.12);
-  --solid: #ff4fd8;
-  --on-solid: #ffffff;
-  --radius: 16px;
-  --radius-sm: 10px;
-  --shadow: 0 14px 40px rgba(4, 2, 16, 0.45);
-  --font: 'Segoe UI', 'Helvetica Neue', system-ui, Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, monospace;
+  --surface-1: #1f1946;
+  --surface-2: #19143b;
+  --surface-3: #2a2260;
+  --control: #262056;
+  --control-hover: #312a6c;
+  --solid: #ffd23d;
+  --on-solid: #241400;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: none;
+  --display: Bungee, 'Segoe UI', Arial, sans-serif;
+  --font: 'Barlow Semi Condensed', 'Segoe UI', Arial, sans-serif;
+  --mono: 'Barlow Semi Condensed', 'Segoe UI', Arial, sans-serif;
 }
 
 [data-theme='disco'] body {
-  background:
-    radial-gradient(60vmax 60vmax at 12% 0%, rgba(255, 79, 216, 0.24), transparent 62%),
-    radial-gradient(55vmax 55vmax at 92% 28%, rgba(59, 232, 255, 0.18), transparent 62%),
-    radial-gradient(75vmax 70vmax at 50% 112%, rgba(140, 92, 255, 0.32), transparent 62%),
-    #0b0620;
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  background-color: #14112b;
+  background-image: radial-gradient(rgba(255, 61, 127, 0.16) 1.4px, transparent 1.8px);
+  background-size: 16px 16px;
   background-attachment: fixed;
 }
 
-/* A slow wheel of coloured light behind everything. */
-[data-theme='disco'] body::before {
-  content: '';
-  position: fixed;
-  inset: -30%;
-  z-index: -1;
-  pointer-events: none;
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    rgba(255, 79, 216, 0.1),
-    rgba(59, 232, 255, 0.08),
-    rgba(140, 92, 255, 0.12),
-    rgba(255, 210, 61, 0.06),
-    rgba(255, 79, 216, 0.1)
-  );
-  filter: blur(60px);
-  animation: disco-spin 48s linear infinite;
-}
-
-@keyframes disco-spin {
-  to { transform: rotate(360deg); }
+/* Halftone fades out below the fold so text never sits on busy dots. */
+[data-theme='disco'] .app {
+  background: linear-gradient(180deg, rgba(20, 17, 43, 0) 0, rgba(20, 17, 43, 0.85) 420px, #14112b 760px);
 }
 
 [data-theme='disco'] h1,
 [data-theme='disco'] h2 {
-  font-style: italic;
-  font-weight: 900;
-  letter-spacing: 0.005em;
+  font-family: var(--display);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.12;
 }
 
 [data-theme='disco'] h1 {
-  background: linear-gradient(100deg, #ffffff 10%, #ffb8f0 45%, #3be8ff 95%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text);
+  text-shadow: 3px 3px 0 var(--magenta);
+}
+
+[data-theme='disco'] h2 {
+  font-size: clamp(16px, 2vw, 19px);
+}
+
+[data-theme='disco'] h3 {
+  font-weight: 700;
 }
 
 [data-theme='disco'] .topbar {
-  background: rgba(11, 6, 32, 0.7);
-  border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(12px);
+  background: #14112b;
+  border-bottom: 2px solid var(--border);
+  backdrop-filter: none;
 }
 
 [data-theme='disco'] .brand-text b {
-  font-style: italic;
-  font-weight: 900;
-  background: linear-gradient(90deg, #ff4fd8, #3be8ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+}
+
+[data-theme='disco'] .brand-text small {
+  font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 [data-theme='disco'] .panel,
 [data-theme='disco'] .hero {
   border-radius: var(--radius);
-  border-color: var(--border);
+  border: 2px solid var(--border);
   background: var(--panel);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
+  box-shadow: none;
 }
 
+/* The hero is the cabinet's marquee: a yellow rule and a hard pink drop. */
 [data-theme='disco'] .hero {
-  border-color: rgba(255, 79, 216, 0.4);
-  box-shadow: var(--shadow), 0 0 0 1px rgba(59, 232, 255, 0.12), 0 0 60px rgba(255, 79, 216, 0.16);
+  border-color: var(--amber);
+  box-shadow: 8px 8px 0 var(--magenta);
 }
 
 [data-theme='disco'] .btn {
   border-radius: var(--radius-sm);
-  border-color: rgba(255, 255, 255, 0.18);
+  border: 2px solid var(--border-strong);
   background: var(--control);
   color: var(--text);
-  font-weight: 800;
+  font-weight: 700;
+  font-size: 15px;
   letter-spacing: 0.01em;
-  transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 [data-theme='disco'] .btn:hover:not(:disabled) {
   background: var(--control-hover);
-  border-color: rgba(255, 255, 255, 0.45);
-  transform: translateY(-1px);
+  border-color: var(--text);
 }
 
-[data-theme='disco'] .btn:active:not(:disabled) {
-  transform: translateY(1px) scale(0.98);
-}
-
+/* The one loud control: a yellow arcade button that physically presses in. */
 [data-theme='disco'] .btn-primary {
-  background: linear-gradient(135deg, #ff4fd8 0%, #8c5cff 100%);
-  border-color: transparent;
-  color: #ffffff;
-  box-shadow: 0 0 22px rgba(255, 79, 216, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  text-shadow: 0 1px 2px rgba(40, 0, 60, 0.5);
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--on-solid);
+  box-shadow: 0 4px 0 #b36b00;
+  transform: translateY(-2px);
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
 }
 
 [data-theme='disco'] .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ff6fe0 0%, #9d74ff 100%);
-  border-color: transparent;
-  box-shadow: 0 0 32px rgba(255, 79, 216, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  background: #ffdc66;
+  border-color: #ffdc66;
   filter: none;
+}
+
+[data-theme='disco'] .btn-primary:active:not(:disabled) {
+  background: var(--amber);
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #b36b00;
+}
+
+[data-theme='disco'] .btn-primary:disabled {
+  box-shadow: none;
+  transform: none;
 }
 
 [data-theme='disco'] .btn-danger {
   border-color: var(--red);
   color: var(--red);
-  background: rgba(255, 77, 109, 0.1);
+  background: transparent;
 }
 
 [data-theme='disco'] .btn-danger:hover:not(:disabled) {
-  background: rgba(255, 77, 109, 0.22);
+  background: rgba(255, 77, 99, 0.14);
   border-color: var(--red);
 }
 
 [data-theme='disco'] .btn-ghost {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+  background: transparent;
   color: var(--muted);
 }
 
 [data-theme='disco'] .btn-ghost:hover:not(:disabled) {
-  border-color: rgba(59, 232, 255, 0.6);
-  background: rgba(59, 232, 255, 0.1);
+  border-color: var(--muted);
+  background: var(--control);
   color: var(--text);
 }
 
 [data-theme='disco'] .chip {
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-sm);
+  background: var(--control);
+  border-color: var(--border-strong);
 }
 
 [data-theme='disco'] .keycap,
@@ -187,23 +190,24 @@
   border-radius: var(--radius-sm);
 }
 
-[data-theme='disco'] .toast {
-  background: rgba(30, 16, 70, 0.92);
-  border-color: rgba(255, 79, 216, 0.45);
-  box-shadow: 0 0 24px rgba(255, 79, 216, 0.3);
+[data-theme='disco'] .keycap {
+  border: 2px solid var(--border-strong);
+  border-bottom-width: 4px;
+  background: var(--control);
 }
 
-[data-theme='disco'] .keycap {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.08);
+[data-theme='disco'] .toast {
+  background: var(--panel-strong);
+  border: 2px solid var(--amber);
+  box-shadow: 4px 4px 0 #0b0920;
 }
 
 [data-theme='disco'] input[type='text'],
 [data-theme='disco'] input[type='number'],
 [data-theme='disco'] select {
   border-radius: var(--radius-sm);
-  background: rgba(8, 4, 24, 0.6);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: #120f2a;
+  border: 2px solid var(--border);
   color: var(--text);
 }
 
@@ -214,16 +218,16 @@
 }
 
 [data-theme='disco'] .toggle-track {
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 
 [data-theme='disco'] .toggle-thumb {
-  border-radius: 50%;
+  border-radius: 2px;
 }
 
 [data-theme='disco'] .toggle input:checked + .toggle-track {
-  background: linear-gradient(90deg, #ff4fd8, #8c5cff);
-  border-color: transparent;
+  background: var(--magenta);
+  border-color: var(--magenta);
 }
 
 [data-theme='disco'] .toggle input:checked + .toggle-track .toggle-thumb {
@@ -231,62 +235,63 @@
 }
 
 [data-theme='disco'] .hero-preview {
-  background: rgba(8, 4, 24, 0.55);
-  border-color: var(--border);
+  background: #120f2a;
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
 [data-theme='disco'] .tab.active {
-  background: linear-gradient(135deg, #ff4fd8, #8c5cff);
-  border-color: transparent;
+  background: var(--magenta);
+  border-color: var(--magenta);
   color: #ffffff;
 }
 
 [data-theme='disco'] .song-row {
-  border-radius: 12px;
-  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  border-radius: var(--radius-sm);
+  border-width: 2px;
 }
 
 [data-theme='disco'] .song-row:hover {
-  transform: translateX(4px);
-  border-color: rgba(59, 232, 255, 0.55);
-  background: rgba(59, 232, 255, 0.07);
-  box-shadow: 0 0 22px rgba(59, 232, 255, 0.18);
+  border-color: var(--amber);
+  background: var(--panel-strong);
+}
+
+[data-theme='disco'] .song-title {
+  font-size: 17px;
+  font-weight: 700;
 }
 
 [data-theme='disco'] .difficulty-card {
-  border-radius: 14px;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  border-radius: var(--radius-sm);
+  border-width: 2px;
 }
 
-[data-theme='disco'] .difficulty-card:hover {
-  transform: translateY(-2px);
+[data-theme='disco'] .difficulty-name {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 17px;
 }
 
+/* The chosen difficulty is stamped on: its own colour as the rule and a hard drop. */
 [data-theme='disco'] .difficulty-card.is-selected {
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 0 0 2px var(--difficulty), 0 0 26px color-mix(in srgb, var(--difficulty) 45%, transparent);
-  animation: card-pulse 1.6s ease-in-out infinite;
+  background: var(--panel-strong);
+  border-color: var(--difficulty);
+  box-shadow: 5px 5px 0 var(--difficulty);
+  transform: translate(-2px, -2px);
 }
 
-@keyframes card-pulse {
-  50% { box-shadow: inset 0 0 0 2px var(--difficulty), 0 0 38px color-mix(in srgb, var(--difficulty) 65%, transparent); }
+[data-theme='disco'] .stat-value {
+  font-family: var(--display);
+  font-weight: 400;
 }
 
 [data-theme='disco'] .game-overlay .panel {
-  border-color: rgba(255, 79, 216, 0.5);
-  box-shadow: 0 0 60px rgba(255, 79, 216, 0.25);
+  border-color: var(--amber);
+  box-shadow: 8px 8px 0 var(--magenta);
 }
 
 [data-theme='disco'] .game-hint,
 [data-theme='disco'] .game-top-left .chip,
 [data-theme='disco'] .game-top-right .btn {
   letter-spacing: 0.015em;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-theme='disco'] body::before,
-  [data-theme='disco'] .difficulty-card.is-selected {
-    animation: none;
-  }
 }
