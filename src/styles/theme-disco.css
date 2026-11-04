@@ -1,41 +1,41 @@
 /**
  * PULSEGRID's default skin.
  *
- * A dark arcade instrument panel: solid near-black surfaces, square corners, no gradients, no glow.
- * The accents are the original neon palette (cyan, violet, magenta and amber), and every lane also
- * has a distinct arrow shape, so colour is never the only cue. The canvas playfield reads the
+ * A quiet charcoal console: warm off-white text, square corners, thin borders and one amber accent.
+ * Primary actions are outlined in amber over a dark amber fill instead of a solid block. Every lane
+ * also has a distinct arrow shape, so colour is never the only cue. The canvas playfield reads the
  * matching palette from `render/renderer.ts`.
  */
 
 [data-theme='disco'] {
-  --bg: #05060e;
-  --bg-soft: #0b0d1a;
-  --panel: #0f1326;
-  --panel-strong: #141a32;
-  --border: #252b4a;
-  --border-strong: #3d4770;
-  --text: #e8eeff;
-  --muted: #98a2c8;
-  --faint: #737fa8;
-  --cyan: #22e0ff;
-  --amber: #ffc73a;
+  --bg: #0c0c0e;
+  --bg-soft: #111114;
+  --panel: #151518;
+  --panel-strong: #1b1b1f;
+  --border: #2a2a30;
+  --border-strong: #3f3f47;
+  --text: #ece8e1;
+  --muted: #a29d94;
+  --faint: #7c776f;
+  --cyan: #6fb7e8;
+  --amber: #f2a33a;
   --green: #5ce69a;
-  --red: #ff4d6d;
+  --red: #ff5a4f;
   --yellow: #f0e442;
-  --focus: #22e0ff;
-  --magenta: #ff3ea5;
-  --violet: #a06bff;
+  --focus: #f2a33a;
+  --magenta: #e8743b;
+  --violet: #9aa8c8;
   --lane-left: #56b4e9;
   --lane-down: #e69f00;
   --lane-up: #009e73;
   --lane-right: #f2f5f7;
-  --surface-1: #0f1326;
-  --surface-2: #0a0d1c;
-  --surface-3: #171d38;
-  --control: #121730;
-  --control-hover: #1c2444;
-  --solid: #22e0ff;
-  --on-solid: #041018;
+  --surface-1: #151518;
+  --surface-2: #101013;
+  --surface-3: #1d1d22;
+  --control: #17171b;
+  --control-hover: #222227;
+  --solid: #f2a33a;
+  --on-solid: #1a1206;
   --radius: 0px;
   --radius-sm: 0px;
   --shadow: none;
@@ -78,26 +78,27 @@
 }
 
 [data-theme='disco'] .btn-primary {
-  background: var(--solid);
+  background: rgba(242, 163, 58, 0.16);
   border-color: var(--solid);
-  color: var(--on-solid);
+  color: var(--solid);
   box-shadow: none;
 }
 
 [data-theme='disco'] .btn-primary:hover:not(:disabled) {
-  background: #6de9ff;
-  border-color: #6de9ff;
+  background: rgba(242, 163, 58, 0.28);
+  border-color: #f7bd6a;
+  color: #f7bd6a;
   filter: none;
 }
 
 [data-theme='disco'] .btn-danger {
   border-color: var(--red);
   color: var(--red);
-  background: rgba(255, 77, 109, 0.1);
+  background: rgba(255, 90, 79, 0.1);
 }
 
 [data-theme='disco'] .btn-danger:hover:not(:disabled) {
-  background: rgba(255, 77, 109, 0.2);
+  background: rgba(255, 90, 79, 0.2);
   border-color: var(--red);
 }
 
@@ -115,7 +116,7 @@
 
 [data-theme='disco'] .chip {
   border-radius: 0;
-  background: #1c2444;
+  background: var(--control-hover);
   border-color: var(--border-strong);
 }
 
@@ -155,9 +156,9 @@
 }
 
 [data-theme='disco'] .tab.active {
-  background: var(--solid);
+  background: rgba(242, 163, 58, 0.16);
   border-color: var(--solid);
-  color: var(--on-solid);
+  color: var(--solid);
 }
 
 [data-theme='disco'] .game-hint,
