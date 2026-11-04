@@ -112,6 +112,9 @@ const QUANT_COLORS: readonly [number, string][] = [
 ]
 const OFF_GRID_COLOR = '#a7b0c4'
 
+/** Each column's own colour: its target is rimmed in it and lights up in it when pressed. */
+const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
+
 interface JudgeStyle {
   fill: string
   /** Hard drop shadow under the letters, and the colour of the hit explosion. */
@@ -163,7 +166,7 @@ export function scrollPixelsPerSecond(speed: number, travelDistance: number): nu
 
 /** Arcade marquee face for big numbers and judgments; a condensed sans for small labels. */
 const DISPLAY = 'Bungee, "Segoe UI", Arial, sans-serif'
-const FONT = '"Barlow Semi Condensed", "Segoe UI", Arial, sans-serif'
+const FONT = 'Barlow, "Segoe UI", Arial, sans-serif'
 
 /** Rotation (radians) that turns a right-pointing arrow into each lane's direction. */
 const LANE_ANGLE = [Math.PI, Math.PI / 2, -Math.PI / 2, 0]
@@ -415,8 +418,7 @@ export class PlayfieldRenderer {
 
     const w = this.width
     const h = this.height
-    const bar = Math.floor(beat / 4)
-    const hue = (songSeconds * 14 + bar * 47) % 360
+    const hue = (((songSeconds * 6) % 360) + 360) % 360
 
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
@@ -465,10 +467,9 @@ export class PlayfieldRenderer {
       }
     }
 
-    // Halftone dots over the whole stage, swelling on every beat like a printed gig poster.
-    const level = Math.min(5, Math.round(pulse * 5))
-    ctx.globalAlpha = 0.28 + pulse * 0.12
-    ctx.fillStyle = this.dotPattern((Math.round(hue / 30) * 30) % 360, level)
+    // Halftone dots over the whole stage, drifting slowly through the colour wheel.
+    ctx.globalAlpha = 0.3
+    ctx.fillStyle = this.dotPattern((Math.round(hue / 6) * 6) % 360, 2)
     ctx.fillRect(0, 0, w, h)
     ctx.restore()
 
@@ -537,8 +538,8 @@ export class PlayfieldRenderer {
       const start = receptorY - direction * noteH * 0.2
       const end = receptorY + direction * length
       const beam = ctx.createLinearGradient(0, start, 0, end)
-      beam.addColorStop(0, `rgba(255,255,255,${0.09 * fade})`)
-      beam.addColorStop(1, 'rgba(255,255,255,0)')
+      beam.addColorStop(0, hexToRgba(COLUMN_COLORS[lane], 0.14 * fade))
+      beam.addColorStop(1, hexToRgba(COLUMN_COLORS[lane], 0))
       ctx.fillStyle = beam
       ctx.fillRect(laneX[lane] + 2, Math.min(start, end), laneW - 4, Math.abs(end - start))
     }
@@ -555,7 +556,7 @@ export class PlayfieldRenderer {
       const sincePress = this.nowMs - this.pressAt[lane]
       const squash = sincePress < 110 ? 0.85 + 0.15 * (sincePress / 110) : 1
       const size = noteH * squash
-      const sprite = this.noteSprite('receptor', '#ffffff', lane as Lane, noteH)
+      const sprite = this.noteSprite('receptor', COLUMN_COLORS[lane], lane as Lane, noteH)
       ctx.globalAlpha = 0.78 + 0.22 * pulse
       drawCentered(ctx, sprite, x, receptorY, size)
       ctx.globalAlpha = 1
@@ -564,17 +565,17 @@ export class PlayfieldRenderer {
       let overlay = 0
       let zoom = 1
       if (this.laneHeld[lane]) {
-        overlay = sincePress < 200 ? 0.35 - 0.17 * (sincePress / 200) : 0.18
+        overlay = sincePress < 200 ? 0.8 - 0.25 * (sincePress / 200) : 0.55
       } else {
         const sinceRelease = this.nowMs - this.releaseAt[lane]
         if (sinceRelease < 200) {
           const t = sinceRelease / 200
-          overlay = 0.18 * (1 - t)
+          overlay = 0.55 * (1 - t)
           zoom = 1 + 0.1 * t
         }
       }
       if (overlay > 0) {
-        const flash = this.noteSprite('flash', '#ffffff', lane as Lane, noteH)
+        const flash = this.noteSprite('flash', COLUMN_COLORS[lane], lane as Lane, noteH)
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
         ctx.globalAlpha = overlay
@@ -741,43 +742,49 @@ export class PlayfieldRenderer {
     const path = tracePath(shape, size, angle, c)
     ctx.lineJoin = 'round'
     if (kind === 'note') {
+      // Candy-gloss arrow: bright body, a hard white highlight on the top half, a light rim.
       const gradient = ctx.createLinearGradient(0, c - size / 2, 0, c + size / 2)
-      gradient.addColorStop(0, shade(color, 0.55))
-      gradient.addColorStop(0.45, color)
-      gradient.addColorStop(1, shade(color, -0.5))
+      gradient.addColorStop(0, shade(color, 0.7))
+      gradient.addColorStop(0.3, shade(color, 0.15))
+      gradient.addColorStop(0.75, color)
+      gradient.addColorStop(1, shade(color, -0.25))
       ctx.fillStyle = gradient
       ctx.fill(path)
-      // Gloss across the upper half.
       ctx.save()
       ctx.clip(path)
-      const gloss = ctx.createLinearGradient(0, c - size / 2, 0, c)
-      gloss.addColorStop(0, 'rgba(255,255,255,0.45)')
+      const gloss = ctx.createLinearGradient(0, c - size / 2, 0, c + size * 0.02)
+      gloss.addColorStop(0, 'rgba(255,255,255,0.85)')
+      gloss.addColorStop(0.55, 'rgba(255,255,255,0.35)')
       gloss.addColorStop(1, 'rgba(255,255,255,0)')
       ctx.fillStyle = gloss
-      ctx.fillRect(0, 0, box, c)
+      ctx.fillRect(0, 0, box, c + size * 0.02)
+      // A thin specular glint along the lower edge, like light bouncing off plastic.
+      const glint = ctx.createLinearGradient(0, c + size * 0.3, 0, c + size / 2)
+      glint.addColorStop(0, 'rgba(255,255,255,0)')
+      glint.addColorStop(1, 'rgba(255,255,255,0.35)')
+      ctx.fillStyle = glint
+      ctx.fillRect(0, c + size * 0.3, box, size * 0.2)
       ctx.restore()
-      ctx.lineWidth = Math.max(2, size * 0.075)
-      ctx.strokeStyle = '#0a0716'
-      ctx.stroke(path)
-      ctx.lineWidth = Math.max(1, size * 0.028)
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)'
+      ctx.lineWidth = Math.max(1.5, size * 0.035)
+      ctx.strokeStyle = shade(color, 0.6)
       ctx.stroke(path)
     } else if (kind === 'receptor') {
       ctx.fillStyle = 'rgba(14, 12, 30, 0.75)'
       ctx.fill(path)
-      ctx.lineWidth = Math.max(2, size * 0.09)
-      ctx.strokeStyle = '#05040c'
-      ctx.stroke(path)
       const rim = ctx.createLinearGradient(0, c - size / 2, 0, c + size / 2)
-      rim.addColorStop(0, '#ffffff')
-      rim.addColorStop(1, '#8d93a8')
+      rim.addColorStop(0, shade(color, 0.55))
+      rim.addColorStop(1, shade(color, -0.2))
       ctx.lineWidth = Math.max(1.5, size * 0.045)
       ctx.strokeStyle = rim
       ctx.stroke(path)
     } else {
-      ctx.shadowColor = 'rgba(255,255,255,0.9)'
-      ctx.shadowBlur = size * 0.06 * scale
-      ctx.fillStyle = 'rgba(255,255,255,0.95)'
+      // The lit-up target: the column's colour, bright at the top, with a soft halo.
+      ctx.shadowColor = color
+      ctx.shadowBlur = size * 0.12 * scale
+      const lit = ctx.createLinearGradient(0, c - size / 2, 0, c + size / 2)
+      lit.addColorStop(0, shade(color, 0.75))
+      lit.addColorStop(1, color)
+      ctx.fillStyle = lit
       ctx.fill(path)
     }
     canvas.dataset.tile = String(size)
@@ -1056,7 +1063,14 @@ function drawStyledText(ctx: CanvasRenderingContext2D, text: string, x: number, 
   const drop = Math.max(2, Math.round(size * 0.09))
   ctx.fillStyle = style.shadow
   ctx.fillText(text, x, y + drop)
-  ctx.fillStyle = style.fill
+  // Chrome lettering: a near-white top half that breaks sharply into the colour at the middle.
+  const top = y - size * 0.45
+  const shine = ctx.createLinearGradient(0, top, 0, y + size * 0.45)
+  shine.addColorStop(0, '#ffffff')
+  shine.addColorStop(0.42, shade(style.fill, 0.55))
+  shine.addColorStop(0.5, style.fill)
+  shine.addColorStop(1, shade(style.fill, -0.18))
+  ctx.fillStyle = shine
   ctx.fillText(text, x, y)
   ctx.restore()
 }
