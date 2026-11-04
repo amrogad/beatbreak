@@ -86,13 +86,13 @@ const PALETTES: Record<ThemeName, PlayfieldPalette> = {
     accent2: '#7c5cff',
   },
   disco: {
-    skyTop: '#1d0b45',
-    skyBottom: '#05030f',
-    lanePanel: 'rgba(6, 3, 18, 0.6)',
-    hudText: '#ffffff',
-    hudMuted: '#c3b8f0',
-    accent: '#ff4fd8',
-    accent2: '#3be8ff',
+    skyTop: '#221a52',
+    skyBottom: '#0e0a24',
+    lanePanel: 'rgba(10, 7, 28, 0.66)',
+    hudText: '#f6f3ff',
+    hudMuted: '#b8b0e0',
+    accent: '#ff3d7f',
+    accent2: '#ffd23d',
   },
 }
 
@@ -113,17 +113,18 @@ const QUANT_COLORS: readonly [number, string][] = [
 const OFF_GRID_COLOR = '#a7b0c4'
 
 interface JudgeStyle {
-  top: string
-  bottom: string
-  glow: string
+  fill: string
+  /** Hard drop shadow under the letters, and the colour of the hit explosion. */
+  shadow: string
+  burst: string
 }
 
 const JUDGE_STYLE: Record<Judgment, JudgeStyle> = {
-  marvelous: { top: '#ffffff', bottom: '#7fe9ff', glow: '#3fd8ff' },
-  perfect: { top: '#fff4a8', bottom: '#ffb300', glow: '#ffb300' },
-  great: { top: '#d4ffb8', bottom: '#33d65a', glow: '#33d65a' },
-  good: { top: '#c4e0ff', bottom: '#3d86ff', glow: '#3d86ff' },
-  miss: { top: '#ffc0c0', bottom: '#ff3030', glow: '#ff2020' },
+  marvelous: { fill: '#eafcff', shadow: '#1683b8', burst: '#5fe1ff' },
+  perfect: { fill: '#ffd23d', shadow: '#a8520c', burst: '#ffc21f' },
+  great: { fill: '#62f08e', shadow: '#17783a', burst: '#3fe07a' },
+  good: { fill: '#79aeff', shadow: '#26449c', burst: '#4d8dff' },
+  miss: { fill: '#ff5468', shadow: '#7c1324', burst: '#ff3a50' },
 }
 
 interface JudgmentFlash {
@@ -160,19 +161,12 @@ export function scrollPixelsPerSecond(speed: number, travelDistance: number): nu
   return reference * (travelDistance / referenceDistance)
 }
 
-const FONT = '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+/** Arcade marquee face for big numbers and judgments; a condensed sans for small labels. */
+const DISPLAY = 'Bungee, "Segoe UI", Arial, sans-serif'
+const FONT = '"Barlow Semi Condensed", "Segoe UI", Arial, sans-serif'
 
 /** Rotation (radians) that turns a right-pointing arrow into each lane's direction. */
 const LANE_ANGLE = [Math.PI, Math.PI / 2, -Math.PI / 2, 0]
-
-interface Bokeh {
-  x: number
-  y: number
-  r: number
-  speed: number
-  hue: number
-  phase: number
-}
 
 export class PlayfieldRenderer {
   private canvas: HTMLCanvasElement
@@ -192,11 +186,9 @@ export class PlayfieldRenderer {
   private pressAt = [-1e9, -1e9, -1e9, -1e9]
   private releaseAt = [-1e9, -1e9, -1e9, -1e9]
   private explosion: ({ color: string; at: number } | null)[] = [null, null, null, null]
-  private holdOkAt = [-1e9, -1e9, -1e9, -1e9]
   private flash: JudgmentFlash | null = null
   private lastCombo = 0
   private comboBumpAt = -1e9
-  private bokeh: Bokeh[] = []
 
   /* ------------------------------------------------------------------ caches
    * Everything below is rebuilt lazily and only when the geometry or the skin changes, so the
@@ -205,6 +197,8 @@ export class PlayfieldRenderer {
   private layoutKey = ''
   private spriteCache = new Map<string, HTMLCanvasElement>()
   private skyCache: { key: string; gradient: CanvasGradient } | null = null
+  private vignetteCache: { key: string; gradient: CanvasGradient } | null = null
+  private patternCache = new Map<string, CanvasPattern>()
   private scoreTextCache = { value: -1, text: '' }
   private accuracyTextCache = { value: -1, text: '' }
   private titleCache = { key: '', text: '' }
@@ -224,16 +218,6 @@ export class PlayfieldRenderer {
     this.canvas = canvas
     this.ctx = ctx
     this.settings = { ...settings }
-    for (let i = 0; i < 28; i++) {
-      this.bokeh.push({
-        x: Math.random(),
-        y: Math.random(),
-        r: 0.02 + Math.random() * 0.06,
-        speed: 0.015 + Math.random() * 0.05,
-        hue: Math.random() * 360,
-        phase: Math.random() * Math.PI * 2,
-      })
-    }
   }
 
   setSettings(settings: Partial<RenderSettings>): void {
@@ -276,7 +260,7 @@ export class PlayfieldRenderer {
     const { lane, judgment } = event
     this.flash = { judgment, lane, deltaMs: event.deltaMs, ageMs: 0, ...(event.holdDrop ? { holdDrop: true } : {}) }
     if (judgment === 'miss') return
-    const color = JUDGE_STYLE[judgment].glow
+    const color = JUDGE_STYLE[judgment].burst
     this.explosion[lane] = { color, at: performance.now() }
     if (this.settings.reducedMotion) return
     const geometry = this.layout()
@@ -291,7 +275,6 @@ export class PlayfieldRenderer {
 
   /** A hold reached its tail with the key still down: StepMania's OK. */
   holdComplete(lane: Lane): void {
-    this.holdOkAt[lane] = performance.now()
     this.explosion[lane] = { color: '#ffe066', at: performance.now() }
     if (this.settings.reducedMotion || this.quality === 0) return
     const geometry = this.layout()
@@ -322,7 +305,9 @@ export class PlayfieldRenderer {
     this.layoutCache = null
     this.layoutKey = ''
     this.spriteCache.clear()
+    this.patternCache.clear()
     this.skyCache = null
+    this.vignetteCache = null
   }
 
   private layout(): PlayfieldLayout {
@@ -398,13 +383,12 @@ export class PlayfieldRenderer {
     // 1 on the beat, decaying over it: the heartbeat every pulse in the scene follows.
     const pulse = reduced ? 0 : Math.exp(-beatFrac * 5)
 
-    this.drawBackground(songSeconds, beat, pulse, dtMs)
+    this.drawBackground(songSeconds, beat, pulse)
     this.drawLanes()
     this.drawReceptors(pulse)
     this.drawNotes(session, songTimeMs, beat)
     this.drawExplosions()
     if (!reduced && this.quality > 0) this.particles.draw(ctx)
-    this.drawHoldOk()
     this.drawJudgmentFlash()
     this.drawCombo(hud)
     this.drawHud(hud, pulse)
@@ -413,7 +397,7 @@ export class PlayfieldRenderer {
 
   /* ------------------------------------------------------------- background */
 
-  private drawBackground(songSeconds: number, beat: number, pulse: number, dtMs: number): void {
+  private drawBackground(songSeconds: number, beat: number, pulse: number): void {
     const ctx = this.ctx
     const palette = PALETTES[this.settings.theme]
     const skyKey = `${this.width}x${this.height}:${this.settings.theme}`
@@ -481,21 +465,44 @@ export class PlayfieldRenderer {
       }
     }
 
-    // Soft lights floating through the scene, brightening on the beat.
-    const step = dtMs / 1000
-    const travel = this.settings.scrollDirection === 'down' ? 1 : -1
-    for (const light of this.bokeh) {
-      light.y += travel * light.speed * step * (1 + pulse * 0.6)
-      if (light.y < -0.1) light.y += 1.2
-      if (light.y > 1.1) light.y -= 1.2
-      const radius = light.r * Math.max(w, h)
-      const lightHue = (Math.round(((light.hue + hue) % 360) / 30) * 30) % 360
-      const sprite = this.glowSprite(`hsl(${lightHue}, 100%, 65%)`, 48)
-      ctx.globalAlpha = 0.12 + pulse * 0.12 + Math.sin(songSeconds * 1.3 + light.phase) * 0.05
-      const size = radius * 2
-      ctx.drawImage(sprite, light.x * w - radius, light.y * h - radius, size, size)
-    }
+    // Halftone dots over the whole stage, swelling on every beat like a printed gig poster.
+    const level = Math.min(5, Math.round(pulse * 5))
+    ctx.globalAlpha = 0.45 + pulse * 0.4
+    ctx.fillStyle = this.dotPattern((Math.round(hue / 30) * 30) % 360, level)
+    ctx.fillRect(0, 0, w, h)
     ctx.restore()
+
+    // Darken the edges so the dots fade out toward the corners.
+    const vignetteKey = `${w}x${h}:${palette.skyBottom}`
+    if (!this.vignetteCache || this.vignetteCache.key !== vignetteKey) {
+      const vignette = ctx.createRadialGradient(w / 2, h * 0.55, Math.min(w, h) * 0.2, w / 2, h * 0.55, Math.max(w, h) * 0.75)
+      vignette.addColorStop(0, hexToRgba(palette.skyBottom, 0))
+      vignette.addColorStop(1, hexToRgba(palette.skyBottom, 0.92))
+      this.vignetteCache = { key: vignetteKey, gradient: vignette }
+    }
+    ctx.fillStyle = this.vignetteCache.gradient
+    ctx.fillRect(0, 0, w, h)
+  }
+
+  /** A tile of dots for the halftone backdrop; `level` 0..5 sets the dot size. */
+  private dotPattern(hue: number, level: number): CanvasPattern {
+    const key = `dots|${hue}|${level}`
+    const cached = this.patternCache.get(key)
+    if (cached) return cached
+    const spacing = 18
+    const tile = document.createElement('canvas')
+    tile.width = Math.ceil(spacing * this.dpr)
+    tile.height = Math.ceil(spacing * this.dpr)
+    const tctx = tile.getContext('2d')!
+    tctx.scale(this.dpr, this.dpr)
+    tctx.fillStyle = `hsla(${hue}, 95%, 66%, 0.8)`
+    tctx.beginPath()
+    tctx.arc(spacing / 2, spacing / 2, 1.1 + level * 0.55, 0, Math.PI * 2)
+    tctx.fill()
+    const pattern = this.ctx.createPattern(tile, 'repeat')!
+    pattern.setTransform(new DOMMatrix().scale(1 / this.dpr))
+    this.patternCache.set(key, pattern)
+    return pattern
   }
 
   private drawLanes(): void {
@@ -718,25 +725,6 @@ export class PlayfieldRenderer {
     ctx.restore()
   }
 
-  private drawHoldOk(): void {
-    const ctx = this.ctx
-    const { laneX, laneW, receptorY, noteH, direction } = this.layout()
-    for (let lane = 0; lane < 4; lane++) {
-      const age = this.nowMs - this.holdOkAt[lane]
-      if (age > 650) continue
-      const zoom = age < 90 ? 1.4 - 0.4 * (age / 90) : 1
-      const alpha = age < 450 ? 1 : 1 - (age - 450) / 200
-      const x = laneX[lane] + laneW / 2
-      const y = receptorY + direction * (noteH * 0.95)
-      ctx.save()
-      ctx.translate(x, y)
-      ctx.scale(zoom, zoom)
-      ctx.globalAlpha = Math.max(0, alpha)
-      drawStyledText(ctx, 'OK', 0, 0, 20, { top: '#fff7c2', bottom: '#ffc400', glow: '#ffb300' }, this.quality === 2)
-      ctx.restore()
-    }
-  }
-
   /* ---------------------------------------------------------------- sprites */
 
   /** Cached arrow tile: 'note' is the coloured arrow, 'receptor' the grey target, 'flash' white. */
@@ -851,18 +839,8 @@ export class PlayfieldRenderer {
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
     ctx.globalAlpha = Math.max(0, alpha)
-    drawStyledText(ctx, text, 0, 0, Math.min(34, laneAreaW / 8.5), JUDGE_STYLE[flash.judgment], this.quality === 2)
+    drawStyledText(ctx, text, 0, 0, Math.min(30, laneAreaW / 10), JUDGE_STYLE[flash.judgment])
     ctx.restore()
-    if (flash.judgment !== 'miss' && Math.abs(flash.deltaMs) >= 3) {
-      ctx.save()
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.globalAlpha = Math.max(0, alpha) * 0.8
-      ctx.font = `700 12px ${FONT}`
-      ctx.fillStyle = flash.deltaMs > 0 ? '#ffb3a6' : '#a6d8ff'
-      ctx.fillText(`${flash.deltaMs > 0 ? 'LATE' : 'EARLY'} ${Math.abs(flash.deltaMs).toFixed(0)} ms`, x, y + 24)
-      ctx.restore()
-    }
   }
 
   private drawCombo(hud: HudState): void {
@@ -870,29 +848,21 @@ export class PlayfieldRenderer {
     const ctx = this.ctx
     const { laneAreaX, laneAreaW } = this.layout()
     const x = laneAreaX + laneAreaW / 2
-    const y = this.judgmentY() + 62
+    const y = this.judgmentY() + 42
     const sinceBump = this.nowMs - this.comboBumpAt
-    const zoom = this.settings.reducedMotion ? 1 : sinceBump < 120 ? 1.18 - 0.18 * (sinceBump / 120) : 1
+    const zoom = this.settings.reducedMotion ? 1 : sinceBump < 120 ? 1.14 - 0.14 * (sinceBump / 120) : 1
     const hot = hud.combo >= 100
     ctx.save()
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
-    drawStyledText(
-      ctx,
-      String(hud.combo),
-      0,
-      0,
-      48,
-      hot ? { top: '#fff6c4', bottom: '#ffb300', glow: '#ff9d00' } : { top: '#ffffff', bottom: '#b8f2ff', glow: '#3fd8ff' },
-      this.quality === 2,
-    )
+    drawStyledText(ctx, String(hud.combo), 0, 0, 38, hot ? { fill: '#ffd23d', shadow: '#a8520c', burst: '' } : { fill: '#ffffff', shadow: '#4a3a9c', burst: '' })
     ctx.restore()
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = `italic 800 13px ${FONT}`
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'
-    ctx.fillText('COMBO', x, y + 34)
+    ctx.font = `700 14px ${FONT}`
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'
+    ctx.fillText('combo', x, y + 28)
     ctx.restore()
   }
 
@@ -946,39 +916,38 @@ export class PlayfieldRenderer {
       const rightX = laneAreaX + laneAreaW + 30
       const top = 76
       ctx.textAlign = 'right'
-      ctx.font = `italic 800 12px ${FONT}`
+      ctx.font = `600 15px ${FONT}`
       ctx.fillStyle = palette.hudMuted
-      ctx.fillText('SCORE', leftX, top)
-      ctx.font = `italic 900 32px ${FONT}`
+      ctx.fillText('Score', leftX, top)
+      ctx.font = `30px ${DISPLAY}`
+      ctx.fillStyle = palette.accent
+      ctx.fillText(this.scoreTextCache.text, leftX + 2, top + 21)
       ctx.fillStyle = palette.hudText
-      ctx.shadowColor = palette.accent
-      ctx.shadowBlur = this.quality === 2 ? 12 : 0
-      ctx.fillText(this.scoreTextCache.text, leftX, top + 16)
-      ctx.shadowBlur = 0
-      ctx.font = `italic 800 12px ${FONT}`
+      ctx.fillText(this.scoreTextCache.text, leftX, top + 18)
+      ctx.font = `600 15px ${FONT}`
       ctx.fillStyle = palette.hudMuted
-      ctx.fillText('ACCURACY', leftX, top + 66)
-      ctx.font = `italic 900 24px ${FONT}`
+      ctx.fillText('Accuracy', leftX, top + 68)
+      ctx.font = `22px ${DISPLAY}`
       ctx.fillStyle = palette.hudText
-      ctx.fillText(this.accuracyTextCache.text, leftX, top + 82)
+      ctx.fillText(this.accuracyTextCache.text, leftX, top + 88)
 
       ctx.textAlign = 'left'
       const columnW = Math.min(220, this.width - rightX - 24)
       if (hud.title) {
-        ctx.font = `800 17px ${FONT}`
+        ctx.font = `700 19px ${FONT}`
         ctx.fillStyle = palette.hudText
         ctx.fillText(this.fitTitle(hud.title, columnW), rightX, top)
       }
       if (hud.subtitle) {
-        ctx.font = `italic 900 13px ${FONT}`
-        ctx.fillStyle = palette.accent
-        ctx.fillText(hud.subtitle, rightX, top + 26)
+        ctx.font = `13px ${DISPLAY}`
+        ctx.fillStyle = palette.accent2
+        ctx.fillText(hud.subtitle, rightX, top + 28)
       }
       progressBar(rightX, top + 52, columnW, 5)
     } else {
       // Narrow screens: one compact row above the receptors, below the pause/fullscreen buttons.
       const y = 50
-      ctx.font = `italic 900 21px ${FONT}`
+      ctx.font = `19px ${DISPLAY}`
       ctx.fillStyle = palette.hudText
       ctx.textAlign = 'left'
       ctx.fillText(this.scoreTextCache.text, 16, y)
@@ -1012,7 +981,7 @@ export class PlayfieldRenderer {
     ctx.save()
     if (!reduced) {
       ctx.globalCompositeOperation = 'lighter'
-      ctx.strokeStyle = `rgba(255, 79, 216, ${0.5 * (1 - phase)})`
+      ctx.strokeStyle = `rgba(255, 210, 61, ${0.5 * (1 - phase)})`
       ctx.lineWidth = 6
       ctx.beginPath()
       ctx.arc(x, y, 60 + phase * 140, 0, Math.PI * 2)
@@ -1021,15 +990,7 @@ export class PlayfieldRenderer {
     }
     ctx.translate(x, y)
     ctx.scale(scale, scale)
-    drawStyledText(
-      ctx,
-      number > 0 ? String(number) : 'GO!',
-      0,
-      0,
-      104,
-      { top: '#ffffff', bottom: '#ffb8f0', glow: '#ff4fd8' },
-      this.quality > 0,
-    )
+    drawStyledText(ctx, number > 0 ? String(number) : 'GO!', 0, 0, 96, { fill: '#ffffff', shadow: '#ff3d7f', burst: '' })
     ctx.restore()
   }
 }
@@ -1091,33 +1052,16 @@ function drawCentered(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, 
   ctx.drawImage(sprite, x - w / 2, y - w / 2, w, w)
 }
 
-/** Big arcade text: dark outline, vertical gradient fill and an optional coloured glow. */
-function drawStyledText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  size: number,
-  style: JudgeStyle,
-  glow: boolean,
-): void {
+/** Big arcade text: a flat fill sitting on a hard, darker drop, like a printed marquee. */
+function drawStyledText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, style: JudgeStyle): void {
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.font = `italic 900 ${Math.round(size)}px ${FONT}`
-  ctx.lineJoin = 'round'
-  ctx.lineWidth = Math.max(3, size * 0.16)
-  ctx.strokeStyle = 'rgba(6, 4, 16, 0.92)'
-  if (glow) {
-    ctx.shadowColor = style.glow
-    ctx.shadowBlur = size * 0.45
-  }
-  ctx.strokeText(text, x, y)
-  ctx.shadowBlur = 0
-  const gradient = ctx.createLinearGradient(0, y - size / 2, 0, y + size / 2)
-  gradient.addColorStop(0, style.top)
-  gradient.addColorStop(1, style.bottom)
-  ctx.fillStyle = gradient
+  ctx.font = `${Math.round(size)}px ${DISPLAY}`
+  const drop = Math.max(2, Math.round(size * 0.09))
+  ctx.fillStyle = style.shadow
+  ctx.fillText(text, x, y + drop)
+  ctx.fillStyle = style.fill
   ctx.fillText(text, x, y)
   ctx.restore()
 }
