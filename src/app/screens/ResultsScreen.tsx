@@ -53,7 +53,7 @@ export function ResultsScreen({
           <h1 className="mt-8">{song.title}</h1>
           <p className="muted small">{results.totalNotes} arrows in this chart</p>
         </div>
-        {results.autoPlay && <Chip color="#e69f00">Auto-play — not counted as a score</Chip>}
+        {results.autoPlay && <Chip color="#ff7a3d">Auto-play — not counted as a score</Chip>}
       </div>
 
       <Panel>
@@ -80,7 +80,7 @@ export function ResultsScreen({
                 <Stat
                   label="Long arrows dropped"
                   value={results.droppedHolds ?? 0}
-                  color="#e69f00"
+                  color="#ff7a3d"
                   hint="released before the tail ended; each one counts as a miss"
                 />
               )}
@@ -88,16 +88,16 @@ export function ResultsScreen({
           </div>
           <div className="col gap-12">
             {results.failed && (
-              <Chip color="#d55e00">
+              <Chip color="#ff4f9a">
                 Run ended after {judged.toLocaleString('en-US')} of {results.totalNotes.toLocaleString('en-US')} arrows
               </Chip>
             )}
             {isNewBest && !results.autoPlay && <Chip color="#ffc93d">New personal best</Chip>}
             {!isNewBest && !previousBest && !results.autoPlay && !results.failed && results.score > 0 && (
-              <Chip color="#009e73">First score on this chart</Chip>
+              <Chip color="#3fe08a">First score on this chart</Chip>
             )}
-            {marvelousFullCombo && <Chip color="#f0e442">Marvelous full combo</Chip>}
-            {fullCombo && !marvelousFullCombo && <Chip color="#009e73">Full combo</Chip>}
+            {marvelousFullCombo && <Chip color="#3de9ff">Marvelous full combo</Chip>}
+            {fullCombo && !marvelousFullCombo && <Chip color="#3fe08a">Full combo</Chip>}
             {!isNewBest && previousBest && !results.autoPlay && (
               <Stat
                 label="Previous best"

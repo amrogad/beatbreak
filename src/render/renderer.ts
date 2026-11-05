@@ -72,6 +72,8 @@ export interface HudState {
   showStats: boolean
   title?: string
   subtitle?: string
+  /** Colour of the subtitle: the chosen difficulty's own colour. */
+  subtitleColor?: string
 }
 
 interface PlayfieldPalette {
@@ -100,7 +102,7 @@ const PALETTES: Record<ThemeName, PlayfieldPalette> = {
     lanePanel: 'rgba(10, 7, 28, 0.66)',
     hudText: '#f6f3ff',
     hudMuted: '#b8b0e0',
-    accent: '#ff3d7f',
+    accent: '#b35cff',
     accent2: '#ffd23d',
   },
   mono: {
@@ -206,6 +208,7 @@ export class PlayfieldRenderer {
   private deadHolds: { note: ChartNote; headTime: number }[] = []
   private lastCombo = 0
   private comboBumpAt = -1e9
+  private comboMilestoneAt = -1e9
 
   /* ------------------------------------------------------------------ caches
    * Everything below is rebuilt lazily and only when the geometry or the skin changes, so the
@@ -426,6 +429,7 @@ export class PlayfieldRenderer {
     }
     if (hud.combo !== this.lastCombo) {
       if (hud.combo > this.lastCombo) this.comboBumpAt = now
+      if (Math.floor(hud.combo / 50) > Math.floor(this.lastCombo / 50) && hud.combo >= 50) this.comboMilestoneAt = now
       this.lastCombo = hud.combo
     }
     if (!reduced && this.quality > 0) this.particles.update(dtMs)
@@ -704,8 +708,12 @@ export class PlayfieldRenderer {
   ): void {
     const ctx = this.ctx
     const bodyW = noteH * 0.56
-    const top = Math.min(headY, tailY)
-    const bottom = Math.max(headY, tailY)
+    // Start the ribbon a little behind the head arrow's centre with a rounded end, so its corners
+    // never poke out around the arrow's sides.
+    const towardTail = tailY >= headY ? 1 : -1
+    const start = headY + towardTail * noteH * 0.12
+    const top = Math.min(start, tailY)
+    const bottom = Math.max(start, tailY)
     const length = bottom - top
     if (length < 1) return
     const base = color
@@ -718,10 +726,11 @@ export class PlayfieldRenderer {
     ctx.globalAlpha = state === 'waiting' ? 0.78 : state === 'active' ? 1 : 0.35 + 0.5 * life
     ctx.fillStyle = gradient
     ctx.beginPath()
-    roundedBar(ctx, left, top, bodyW, length, bodyW / 2, tailY > headY ? 'bottom' : 'top')
+    ctx.roundRect(left, top, bodyW, length, Math.min(bodyW / 2, length / 2))
     ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = 'rgba(8, 6, 20, 0.85)'
+    // A light rim in the hold's own colour instead of a dark outline.
+    ctx.lineWidth = 1.2
+    ctx.strokeStyle = shade(base, 0.5)
     ctx.stroke()
     if (state === 'active' && !this.settings.reducedMotion) {
       // Light bands racing toward the receptor sell "you are holding this".
@@ -927,28 +936,41 @@ export class PlayfieldRenderer {
     const { laneAreaX, laneAreaW } = this.layout()
     const x = laneAreaX + laneAreaW / 2
     const y = this.judgmentY() + 42 * this.textScale()
+    const reduced = this.settings.reducedMotion
     const sinceBump = this.nowMs - this.comboBumpAt
-    const zoom = this.settings.reducedMotion ? 1 : sinceBump < 120 ? 1.14 - 0.14 * (sinceBump / 120) : 1
-    const hot = hud.combo >= 100
+    const sinceMilestone = this.nowMs - this.comboMilestoneAt
+    // Every hit gives a small pop; every 50 gives a bigger one and a ring.
+    const bump = sinceBump < 120 ? 0.14 * (1 - sinceBump / 120) : 0
+    const milestone = sinceMilestone < 260 ? 0.35 * (1 - sinceMilestone / 260) : 0
+    const zoom = reduced ? 1 : 1 + Math.max(bump, milestone)
+    const tier = comboTier(hud.combo)
+    const style: JudgeStyle = this.settings.theme === 'mono' ? MONO_JUDGE : tier
+    // The glow grows with the combo.
+    const glow = 0.35 + Math.min(0.75, hud.combo / 400)
+    if (!reduced && sinceMilestone < 500 && this.quality > 0) {
+      const t = sinceMilestone / 500
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.strokeStyle = hexToRgba(style.burst, 0.6 * (1 - t))
+      ctx.lineWidth = 4 * (1 - t) + 1
+      ctx.beginPath()
+      ctx.arc(x, y, 30 + t * 90, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
     ctx.save()
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
-    const comboStyle: JudgeStyle =
-      this.settings.theme === 'mono'
-        ? MONO_JUDGE
-        : hot
-          ? { fill: '#ff7a3d', shadow: '#8a3a10', burst: '#ff7a3d' }
-          : { fill: '#3d9bff', shadow: '#163e80', burst: '#3d9bff' }
-    drawStyledText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), comboStyle, this.quality > 0)
+    drawStyledText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), style, this.quality > 0, glow)
     ctx.restore()
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = `700 14px ${FONT}`
-    ctx.fillStyle = '#ffffff'
+    ctx.font = `15px ${DISPLAY}`
+    ctx.fillStyle = style.fill
     if (this.quality > 0) {
-      ctx.shadowColor = comboStyle.burst
-      ctx.shadowBlur = 10
+      ctx.shadowColor = style.burst
+      ctx.shadowBlur = 8 + glow * 8
     }
     ctx.fillText('COMBO', x, y + 28 * this.textScale())
     ctx.restore()
@@ -988,8 +1010,9 @@ export class PlayfieldRenderer {
       ctx.fillStyle = 'rgba(255,255,255,0.12)'
       ctx.fillRect(x, y, w, h)
       const fill = ctx.createLinearGradient(x, 0, x + w, 0)
-      fill.addColorStop(0, palette.accent)
-      fill.addColorStop(1, palette.accent2)
+      const mono = this.settings.theme === 'mono'
+      fill.addColorStop(0, mono ? palette.accent : this.railColors[0])
+      fill.addColorStop(1, mono ? palette.accent2 : this.railColors[1])
       ctx.fillStyle = fill
       ctx.fillRect(x, y, w * progress, h)
       if (progress > 0 && progress < 1) {
@@ -1007,33 +1030,29 @@ export class PlayfieldRenderer {
       ctx.font = `600 15px ${FONT}`
       ctx.fillStyle = palette.hudMuted
       ctx.fillText('Score', leftX, top)
-      ctx.font = `30px ${DISPLAY}`
-      ctx.fillStyle = this.settings.theme === 'mono' ? '#4a4a4a' : palette.accent
-      ctx.fillText(this.scoreTextCache.text, leftX + 2, top + 21)
-      ctx.fillStyle = palette.hudText
-      ctx.fillText(this.scoreTextCache.text, leftX, top + 18)
-      ctx.font = `600 15px ${FONT}`
-      ctx.fillStyle = palette.hudMuted
-      ctx.fillText('Accuracy', leftX, top + 68)
       ctx.font = `22px ${DISPLAY}`
       ctx.fillStyle = palette.hudText
-      ctx.fillText(this.accuracyTextCache.text, leftX, top + 88)
+      ctx.fillText(this.scoreTextCache.text, leftX, top + 20)
+      ctx.font = `600 15px ${FONT}`
+      ctx.fillStyle = palette.hudMuted
+      ctx.fillText('Accuracy', leftX, top + 58)
+      ctx.font = `22px ${DISPLAY}`
+      ctx.fillStyle = palette.hudText
+      ctx.fillText(this.accuracyTextCache.text, leftX, top + 78)
 
       ctx.textAlign = 'left'
       // The title may use the whole column out to the screen edge; only the bar keeps a set width.
       const titleW = this.width - rightX - 24
-      const columnW = Math.min(220, titleW)
       if (hud.title) {
         ctx.font = `700 19px ${FONT}`
         ctx.fillStyle = palette.hudText
         ctx.fillText(this.fitTitle(hud.title, titleW), rightX, top)
       }
       if (hud.subtitle) {
-        ctx.font = `13px ${DISPLAY}`
-        ctx.fillStyle = palette.accent2
+        ctx.font = `18px ${DISPLAY}`
+        ctx.fillStyle = this.settings.theme === 'mono' ? palette.hudText : hud.subtitleColor ?? palette.accent2
         ctx.fillText(hud.subtitle, rightX, top + 28)
       }
-      progressBar(rightX, top + 52, columnW, 5)
     } else {
       // Narrow screens: one compact row above the receptors, below the pause/fullscreen buttons.
       const y = 50
@@ -1043,8 +1062,9 @@ export class PlayfieldRenderer {
       ctx.fillText(this.scoreTextCache.text, 16, y)
       ctx.textAlign = 'right'
       ctx.fillText(this.accuracyTextCache.text, this.width - 16, y)
-      progressBar(0, 0, this.width, 4)
     }
+    // Song progress runs along the very top of the window on every screen size.
+    progressBar(0, 0, this.width, 5)
 
     // Frame rate / quality readout (Settings → Show statistics). Shows the adaptive level so a
     // performance drop is visible instead of felt.
@@ -1085,7 +1105,7 @@ export class PlayfieldRenderer {
     if (number === 0) ctx.globalAlpha = Math.max(0, 1 - goAge / 700)
     if (!reduced) {
       ctx.globalCompositeOperation = 'lighter'
-      ctx.strokeStyle = this.settings.theme === 'mono' ? `rgba(255, 255, 255, ${0.35 * (1 - phase)})` : `rgba(255, 210, 61, ${0.5 * (1 - phase)})`
+      ctx.strokeStyle = this.settings.theme === 'mono' ? `rgba(255, 255, 255, ${0.35 * (1 - phase)})` : hexToRgba(this.columnColors[(3 - number + 4) % 4], 0.5 * (1 - phase))
       ctx.lineWidth = 6
       ctx.beginPath()
       ctx.arc(x, y, 60 + phase * 140, 0, Math.PI * 2)
@@ -1094,7 +1114,10 @@ export class PlayfieldRenderer {
     }
     ctx.translate(x, y)
     ctx.scale(scale, scale)
-    const countStyle: JudgeStyle = this.settings.theme === 'mono' ? MONO_JUDGE : { fill: '#ff4f9a', shadow: '#8a1648', burst: '#ff4f9a' }
+    // Each of 3, 2, 1 and GO takes one of the four column colours.
+    const countColor = this.columnColors[(3 - number + 4) % 4]
+    const countStyle: JudgeStyle =
+      this.settings.theme === 'mono' ? MONO_JUDGE : { fill: countColor, shadow: shade(countColor, -0.5), burst: countColor }
     drawStyledText(ctx, number > 0 ? String(number) : 'GO!', 0, 0, 96, countStyle, this.quality > 0)
     ctx.restore()
   }
@@ -1105,6 +1128,19 @@ export class PlayfieldRenderer {
 function validColors(colors: string[] | undefined): string[] {
   const ok = Array.isArray(colors) && colors.length === 4 && colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))
   return ok ? [...colors] : [...COLUMN_COLORS]
+}
+
+/** Combo colour climbs with the combo: white, then yellow, orange, pink, purple and cyan. */
+function comboTier(combo: number): JudgeStyle {
+  const tiers: [number, string, string][] = [
+    [500, '#3de9ff', '#13708a'],
+    [300, '#b35cff', '#55208a'],
+    [200, '#ff4f9a', '#8a1648'],
+    [100, '#ff7a3d', '#8a3a10'],
+    [50, '#ffc93d', '#8a5a06'],
+  ]
+  for (const [min, fill, shadow] of tiers) if (combo >= min) return { fill, shadow, burst: fill }
+  return { fill: '#ffffff', shadow: '#4a4a66', burst: '#ffffff' }
 }
 
 function shuffledColors(): string[] {
@@ -1172,6 +1208,7 @@ function drawStyledText(
   size: number,
   style: JudgeStyle,
   glow = false,
+  glowScale = 0.5,
 ): void {
   ctx.save()
   ctx.textAlign = 'center'
@@ -1192,37 +1229,10 @@ function drawStyledText(
   ctx.fillStyle = shine
   if (glow) {
     ctx.shadowColor = style.burst
-    ctx.shadowBlur = size * 0.5
+    ctx.shadowBlur = size * glowScale
   }
   ctx.fillText(text, x, y)
   ctx.restore()
-}
-
-/** A bar with one rounded end (the hold's tail cap). */
-function roundedBar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-  roundEnd: 'top' | 'bottom',
-): void {
-  const radius = Math.min(r, h / 2, w / 2)
-  if (roundEnd === 'bottom') {
-    ctx.moveTo(x, y)
-    ctx.lineTo(x + w, y)
-    ctx.lineTo(x + w, y + h - radius)
-    ctx.arc(x + w / 2, y + h - radius, w / 2, 0, Math.PI)
-    ctx.lineTo(x, y)
-  } else {
-    ctx.moveTo(x, y + h)
-    ctx.lineTo(x, y + radius)
-    ctx.arc(x + w / 2, y + radius, w / 2, Math.PI, 0)
-    ctx.lineTo(x + w, y + h)
-    ctx.lineTo(x, y + h)
-  }
-  ctx.closePath()
 }
 
 function easeOut(t: number): number {

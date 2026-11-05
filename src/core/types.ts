@@ -22,10 +22,10 @@ export const LANE_INFO: readonly {
 }[] = [
   // Okabe–Ito colours: sky blue, orange, bluish green and white. Direction is also encoded by the
   // arrow shape, so the four lanes stay readable with any form of colour vision.
-  { lane: 0, id: 'left', label: 'Left', color: '#56b4e9', glow: '#56b4e9', arrow: '←' },
-  { lane: 1, id: 'down', label: 'Down', color: '#e69f00', glow: '#e69f00', arrow: '↓' },
-  { lane: 2, id: 'up', label: 'Up', color: '#009e73', glow: '#009e73', arrow: '↑' },
-  { lane: 3, id: 'right', label: 'Right', color: '#f2f5f7', glow: '#f2f5f7', arrow: '→' },
+  { lane: 0, id: 'left', label: 'Left', color: '#ff4f9a', glow: '#ff4f9a', arrow: '←' },
+  { lane: 1, id: 'down', label: 'Down', color: '#3d9bff', glow: '#3d9bff', arrow: '↓' },
+  { lane: 2, id: 'up', label: 'Up', color: '#3fe08a', glow: '#3fe08a', arrow: '↑' },
+  { lane: 3, id: 'right', label: 'Right', color: '#ffc93d', glow: '#ffc93d', arrow: '→' },
 ] as const
 
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'expert'
@@ -41,10 +41,10 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 
 /** Colour per difficulty, used by chips, rating badges and the editor. */
 export const DIFFICULTY_COLOR: Record<Difficulty, string> = {
-  easy: '#009e73',
-  normal: '#56b4e9',
-  hard: '#e69f00',
-  expert: '#d55e00',
+  easy: '#3fe08a',
+  normal: '#3d9bff',
+  hard: '#ff7a3d',
+  expert: '#ff4f9a',
 }
 
 export type NoteKind = 'tap' | 'hold'

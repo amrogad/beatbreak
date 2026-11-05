@@ -152,23 +152,24 @@ export interface Grade {
   color: string
 }
 
+/** Grade colours come from the arrow palette, best to worst. */
 export const GRADES: { min: number; label: string; color: string }[] = [
-  { min: 0.995, label: 'SSS', color: '#56b4e9' },
-  { min: 0.98, label: 'SS', color: '#42c7a5' },
-  { min: 0.95, label: 'S', color: '#009e73' },
-  { min: 0.9, label: 'A', color: '#f0e442' },
-  { min: 0.8, label: 'B', color: '#e69f00' },
-  { min: 0.7, label: 'C', color: '#d98c00' },
-  { min: 0.6, label: 'D', color: '#d55e00' },
-  { min: 0, label: 'F', color: '#e5484d' },
+  { min: 0.995, label: 'SSS', color: '#3de9ff' },
+  { min: 0.98, label: 'SS', color: '#b35cff' },
+  { min: 0.95, label: 'S', color: '#3fe08a' },
+  { min: 0.9, label: 'A', color: '#ffc93d' },
+  { min: 0.8, label: 'B', color: '#3d9bff' },
+  { min: 0.7, label: 'C', color: '#ff7a3d' },
+  { min: 0.6, label: 'D', color: '#ff4f9a' },
+  { min: 0, label: 'F', color: '#8a8fa3' },
 ]
 
 export function gradeFor(accuracy: number, failed = false): Grade {
-  if (failed) return { label: 'F', color: '#e5484d' }
+  if (failed) return { label: 'F', color: '#8a8fa3' }
   for (const grade of GRADES) {
     if (accuracy >= grade.min) return { label: grade.label, color: grade.color }
   }
-  return { label: 'F', color: '#e5484d' }
+  return { label: 'F', color: '#8a8fa3' }
 }
 
 /** Maximum achievable score for a chart, used for the progress bar and the results readout. */

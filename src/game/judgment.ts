@@ -125,12 +125,13 @@ export const JUDGMENT_LABEL: Record<Judgment, string> = {
   miss: 'Miss',
 }
 
+/** The same colours the playfield uses for each judgment. */
 export const JUDGMENT_COLOR: Record<Judgment, string> = {
-  marvelous: '#56b4e9',
-  perfect: '#009e73',
-  great: '#f0e442',
-  good: '#e69f00',
-  miss: '#d55e00',
+  marvelous: '#3de9ff',
+  perfect: '#ffc93d',
+  great: '#3fe08a',
+  good: '#b35cff',
+  miss: '#ff4f9a',
 }
 
 /** A tap that is early/late but still a hit gives feedback text in the combo area. */

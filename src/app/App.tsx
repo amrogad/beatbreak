@@ -8,8 +8,8 @@
  */
 import React, { useCallback, useEffect, lazy, useMemo, useRef, useState, Suspense, useSyncExternalStore } from 'react'
 import type { Chart, Difficulty, RunResults, SongMeta } from '../core/types'
-import { createTestSongFile, renderTestRhythm } from '../audio/synth'
-import { getAudioContext, resumeAudioContext } from '../audio/engine'
+import { createTestSongFile } from '../audio/synth'
+import { resumeAudioContext } from '../audio/engine'
 import { configureMenuMusic, playMenuMusic, previewStart, stopMenuMusic } from '../audio/menuMusic'
 import { loadSongBundle } from '../store/library'
 import { attachUiSounds, configureSfx } from '../audio/sfx'
@@ -134,26 +134,18 @@ function AppShell(): React.JSX.Element {
     }
   }, [])
 
-  // Menu music: the song being set up, the song just played, or the latest song in the library.
-  // With an empty library the demo beat plays instead.
+  // Menu music: the song being set up or the song just played.
   useEffect(() => {
     if (!settings.menuMusic) return
-    if (route.name === 'game' || route.name === 'editor') {
+    // Music plays only around a song (its setup and its results). The home page, Settings and
+    // About stay quiet (Amro, 2026-11-06), and the game and editor play the song itself.
+    if (route.name !== 'setup' && route.name !== 'results') {
       stopMenuMusic(0.3)
       return
     }
-    if (route.name === 'setup' && !route.songId) return
-    const latest = [...songs].sort((a, b) => (b.lastPlayedAt || b.createdAt) - (a.lastPlayedAt || a.createdAt))[0]
-    const songId = route.name === 'setup' || route.name === 'results' ? route.songId : latest?.id ?? null
+    const songId = route.songId
+    if (!songId) return
     let cancelled = false
-    if (!songId) {
-      try {
-        playMenuMusic('demo', demoBuffer(), 0)
-      } catch {
-        // No Web Audio: the menus simply stay silent.
-      }
-      return
-    }
     const start = (buffer: AudioBuffer, duration: number, sections: { start: number; energy: number }[]): void => {
       if (!cancelled) playMenuMusic(songId, buffer, previewStart(duration, sections))
     }
@@ -172,7 +164,7 @@ function AppShell(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [route, songs, settings.menuMusic])
+  }, [route, settings.menuMusic])
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     settingsStore.update(patch)
@@ -217,6 +209,19 @@ function AppShell(): React.JSX.Element {
     },
     [refreshLibrary, toast],
   )
+
+  const clearAllSongs = useCallback(async () => {
+    try {
+      for (const song of songs) {
+        await deleteSongRecord(song.id)
+        runtime.evict(song.id)
+      }
+      await refreshLibrary()
+      toast('All songs removed.', 'success')
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }, [refreshLibrary, songs, toast])
 
   const startGame = useCallback(
     async (request: { songId: string; chartId: string; difficulty: Difficulty; autoPlay: boolean }) => {
@@ -297,6 +302,7 @@ function AppShell(): React.JSX.Element {
             onPlayDemo={startDemo}
             onOpenSong={openSong}
             onDeleteSong={(songId) => void handleDeleteSong(songId)}
+            onClearAll={() => void clearAllSongs()}
           />
         )
       case 'setup':
@@ -431,7 +437,7 @@ function AppShell(): React.JSX.Element {
           </Suspense>
         )
       default:
-        return <HomeScreen songs={songs} loading={loading} bestScores={bestScores} storageAvailable={storageAvailable} onImport={startImport} onPlayDemo={startDemo} onOpenSong={openSong} onDeleteSong={() => undefined} />
+        return <HomeScreen songs={songs} loading={loading} bestScores={bestScores} storageAvailable={storageAvailable} onImport={startImport} onPlayDemo={startDemo} onOpenSong={openSong} onDeleteSong={() => undefined} onClearAll={() => undefined} />
     }
   }
 
@@ -482,16 +488,4 @@ function AppShell(): React.JSX.Element {
       <Tutorial open={tutorialOpen} onClose={closeTutorial} />
     </div>
   )
-}
-
-let demoCache: AudioBuffer | null = null
-
-/** The built-in demo beat as an AudioBuffer, rendered once. */
-function demoBuffer(): AudioBuffer {
-  if (demoCache) return demoCache
-  const rhythm = renderTestRhythm({ bpm: 128, bars: 12, sampleRate: 32000, melody: true })
-  const buffer = getAudioContext().createBuffer(1, rhythm.samples.length, rhythm.sampleRate)
-  buffer.copyToChannel(rhythm.samples, 0)
-  demoCache = buffer
-  return buffer
 }

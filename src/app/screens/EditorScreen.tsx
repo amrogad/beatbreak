@@ -830,9 +830,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
         </div>
         <div className="mt-16">
           {playability.ok ? (
-            <Chip color="#009e73">Playable — no errors, {playability.warnings} warnings</Chip>
+            <Chip color="#3fe08a">Playable — no errors, {playability.warnings} warnings</Chip>
           ) : (
-            <Chip color="#d55e00">{playability.errors} errors, {playability.warnings} warnings</Chip>
+            <Chip color="#ff4f9a">{playability.errors} errors, {playability.warnings} warnings</Chip>
           )}
           <ul className="bullets muted small mt-12">
             {errors.slice(0, 6).map((issue, index) => (

@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Chart, RunResults, SongMeta } from '../../core/types'
-import { DIFFICULTY_LABEL } from '../../core/types'
+import { DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
 import { AudioEngine, getAudioContext, resumeAudioContext } from '../../audio/engine'
 import { buildEditPlan, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { sfxFail } from '../../audio/sfx'
@@ -344,6 +344,7 @@ export function GameScreen({
           showStats: settingsRef.current.showStats,
           title: song.title,
           subtitle: DIFFICULTY_LABEL[chart.difficulty].toUpperCase(),
+        subtitleColor: DIFFICULTY_COLOR[chart.difficulty],
         })
         // The countdown is driven by this loop, not a timer: no React re-renders during it, and
         // audio starts on the exact frame the number reaches zero.
@@ -371,6 +372,7 @@ export function GameScreen({
         showStats: settingsRef.current.showStats,
         title: song.title,
         subtitle: DIFFICULTY_LABEL[chart.difficulty].toUpperCase(),
+        subtitleColor: DIFFICULTY_COLOR[chart.difficulty],
       })
       if (!failedRef.current && !autoPlayRef.current && checkFail(settingsRef.current.failRule, state)) {
         failedRef.current = true

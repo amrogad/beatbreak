@@ -24,11 +24,11 @@ export interface SettingsScreenProps {
 }
 
 const NOTE_SKINS: { value: NoteShape; label: string; color: string }[] = [
-  { value: 'arrow', label: 'Arrow', color: '#56b4e9' },
-  { value: 'chevron', label: 'Chevron', color: '#e69f00' },
-  { value: 'diamond', label: 'Diamond', color: '#009e73' },
+  { value: 'arrow', label: 'Arrow', color: '#3d9bff' },
+  { value: 'chevron', label: 'Chevron', color: '#ff7a3d' },
+  { value: 'diamond', label: 'Diamond', color: '#3fe08a' },
   { value: 'orb', label: 'Orb', color: '#f0e442' },
-  { value: 'star', label: 'Star', color: '#d55e00' },
+  { value: 'star', label: 'Star', color: '#ff4f9a' },
   { value: 'hex', label: 'Hex', color: '#a9b6c2' },
   { value: 'bar', label: 'Bar', color: '#f2f5f7' },
 ]

@@ -16,6 +16,7 @@ export interface HomeScreenProps {
   onPlayDemo: () => void
   onOpenSong: (songId: string) => void
   onDeleteSong: (songId: string) => void
+  onClearAll: () => void
 }
 
 const DIFFICULTY_ORDER: Difficulty[] = ['easy', 'normal', 'hard', 'expert']
@@ -42,6 +43,7 @@ export function HomeScreen({
   onPlayDemo,
   onOpenSong,
   onDeleteSong,
+  onClearAll,
 }: HomeScreenProps): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -127,6 +129,19 @@ export function HomeScreen({
       <Panel
         title="Your songs"
         subtitle={loading ? 'Loading…' : songs.length === 1 ? '1 song' : `${songs.length} songs`}
+        actions={
+          songs.length > 0 ? (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                if (window.confirm(`Remove all ${songs.length} songs, their charts and scores?`)) onClearAll()
+              }}
+            >
+              Clear all songs
+            </Button>
+          ) : undefined
+        }
       >
         {songs.length === 0 && !loading && (
           <div className="empty-state">

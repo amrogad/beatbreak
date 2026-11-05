@@ -23,12 +23,12 @@
   --red: #ff4d63;
   --yellow: #ffd23d;
   --focus: #5fb2ff;
-  --magenta: #ff3d7f;
+  --magenta: #b35cff;
   --violet: #8c6cff;
-  --lane-left: #56b4e9;
-  --lane-down: #e69f00;
-  --lane-up: #009e73;
-  --lane-right: #f2f5f7;
+  --lane-left: #ff4f9a;
+  --lane-down: #3d9bff;
+  --lane-up: #3fe08a;
+  --lane-right: #ffc93d;
   --surface-1: #1f1946;
   --surface-2: #19143b;
   --surface-3: #2a2260;
@@ -50,7 +50,7 @@
   font-variant-numeric: tabular-nums;
   background-color: #14112b;
   background-image:
-    radial-gradient(50vmax 40vmax at 8% -10%, rgba(255, 61, 127, 0.14), transparent 70%),
+    radial-gradient(50vmax 40vmax at 8% -10%, rgba(179, 92, 255, 0.14), transparent 70%),
     radial-gradient(45vmax 40vmax at 100% 20%, rgba(61, 155, 255, 0.12), transparent 70%);
   background-attachment: fixed;
 }
