@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   uiSounds: true,
   windowPreset: 'standard',
-  customWindows: { marvelous: 18, perfect: 40, great: 75, good: 100 },
+  customWindows: { marvelous: 15, perfect: 33, great: 60, good: 80 },
   // Casual-friendly default: a first run should reach the results screen even while the player
   // is still learning the lanes. Arcade failure is one click away in Settings.
   failRule: 'never',
@@ -98,7 +98,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 9
+const SETTINGS_SCHEMA = 10
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -229,6 +229,8 @@ export function loadSettings(): Settings {
       parsed.autoPlay = false
       // v9: the default timing windows got tighter; the old default preset moves to the new one.
       if ((parsed.schema ?? 1) < 9 && parsed.windowPreset === 'stepmania') parsed.windowPreset = 'standard'
+      // v10: the windows tightened again; every preset except a hand-set one moves to the default.
+      if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
       if ((parsed.schema ?? 1) < 8) {
         // v8: the mixer used to start at 90%. A full mixer is the closest a browser can get to
         // "follow the system volume" (the OS level is applied after this gain). The old note and

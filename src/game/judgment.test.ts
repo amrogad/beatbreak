@@ -22,14 +22,14 @@ describe('judge: window boundaries', () => {
     expect(judge(10, w)).toBe('marvelous')
     expect(judge(-10, w)).toBe('marvelous')
     expect(judge(30, w)).toBe('perfect')
-    expect(judge(40, w)).toBe('perfect')
-    expect(judge(-40, w)).toBe('perfect')
-    expect(judge(70, w)).toBe('great')
-    expect(judge(75, w)).toBe('great')
-    expect(judge(90, w)).toBe('good')
-    expect(judge(100, w)).toBe('good')
-    expect(judge(-100, w)).toBe('good')
-    expect(judge(110, w)).toBe('miss')
+    expect(judge(33, w)).toBe('perfect')
+    expect(judge(-33, w)).toBe('perfect')
+    expect(judge(55, w)).toBe('great')
+    expect(judge(60, w)).toBe('great')
+    expect(judge(70, w)).toBe('good')
+    expect(judge(80, w)).toBe('good')
+    expect(judge(-80, w)).toBe('good')
+    expect(judge(90, w)).toBe('miss')
     expect(judge(500, w)).toBe('miss')
   })
 
@@ -90,7 +90,7 @@ describe('window presets and difficulty scaling', () => {
       expect(hard[tier]).toBeGreaterThanOrEqual(expert[tier])
     }
     expect(hard).toEqual(DEFAULT_WINDOWS) // standard preset is the reference point
-    expect(expert).toEqual({ marvelous: 17, perfect: 37, great: 69, good: 92, missAfter: 92 })
+    expect(expert).toEqual({ marvelous: 14, perfect: 30, great: 55, good: 74, missAfter: 74 })
     expect(easy).toEqual(DEFAULT_WINDOWS)
   })
 

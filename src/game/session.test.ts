@@ -78,9 +78,9 @@ describe('tap judgement', () => {
       [0, 1],
       [0, 1.1],
     ])
-    const result = s.handleTap(0, 1060)
-    expect(result!.noteId).toBe('l0@1.1') // −40 ms is closer than +60 ms
-    expect(result!.deltaMs).toBeCloseTo(-40, 6)
+    const result = s.handleTap(0, 1070)
+    expect(result!.noteId).toBe('l0@1.1') // −30 ms is closer than +70 ms
+    expect(result!.deltaMs).toBeCloseTo(-30, 6)
     expect(result!.judgment).toBe('perfect')
   })
 
@@ -248,7 +248,7 @@ describe('scoring through a run', () => {
     ])
     s.handleTap(0, 1000) // marvelous, combo 0 → 1, +100
     s.handleTap(0, 1200) // marvelous, combo 1 → 2, +100
-    s.handleTap(0, 1475) // great (delta +75, the edge), combo 2 → 3, +72
+    s.handleTap(0, 1460) // great (delta +60, the edge), combo 2 → 3, +72
     s.update(1600 + DEFAULT_WINDOWS.missAfter + 1) // the 1.6 s note is missed
     s.handleTap(0, 1800) // marvelous again, combo reset to 0 → +100
     const state = s.scoreState
@@ -268,7 +268,7 @@ describe('scoring through a run', () => {
     s.handleTap(0, 1000) // marvelous
     s.handleTap(0, 1200) // marvelous
     expect(s.scoreState.combo).toBe(2)
-    s.handleTap(0, 1300) // note 1.4 is 100 ms early → good (edge of the window), combo survives
+    s.handleTap(0, 1320) // note 1.4 is 80 ms early → good (edge of the window), combo survives
     expect(s.scoreState.combo).toBe(3)
     const before = s.scoreState.score
     s.update(1600 + DEFAULT_WINDOWS.missAfter + 1) // the 1.6 s note misses → combo breaks

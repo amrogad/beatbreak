@@ -13,16 +13,15 @@
 import type { Difficulty, Judgment, JudgmentWindows } from '../core/types'
 
 /**
- * The default windows. Tighter than StepMania's on the outside (Good ends at 100 ms instead of
- * 135 ms): a tap more than a tenth of a second early is visibly before the arrow reaches its
- * target, and counting it felt like the game was guessing.
+ * The default windows, well inside StepMania's (Good ends at 80 ms instead of 135 ms). Amro,
+ * 2026-11-05: early presses counting made the game too easy; at 100 ms it still was.
  */
 export const DEFAULT_WINDOWS: JudgmentWindows = {
-  marvelous: 18,
-  perfect: 40,
-  great: 75,
-  good: 100,
-  missAfter: 100,
+  marvelous: 15,
+  perfect: 33,
+  great: 60,
+  good: 80,
+  missAfter: 80,
 }
 
 /** The four hit windows a player can set by hand; `missAfter` always follows `good`. */
@@ -36,7 +35,7 @@ export interface CustomWindows {
 export type WindowPreset = 'strict' | 'standard' | 'stepmania' | 'lenient' | 'custom'
 
 export const WINDOW_PRESETS: Record<Exclude<WindowPreset, 'custom'>, JudgmentWindows> = {
-  strict: { marvelous: 10, perfect: 27, great: 54, good: 82, missAfter: 82 },
+  strict: { marvelous: 10, perfect: 22, great: 40, good: 55, missAfter: 55 },
   standard: DEFAULT_WINDOWS,
   /**
    * StepMania's own windows (`TimingWindowSecondsInit` in Player.cpp): W1 22.5 ms, W2 45 ms,
