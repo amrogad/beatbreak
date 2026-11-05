@@ -5,7 +5,7 @@ import { DIFFICULTY_COLOR, DIFFICULTY_LABEL, JUDGMENTS } from '../../core/types'
 import type { StoredRun } from '../../store/db'
 import { JUDGMENT_COLOR, JUDGMENT_LABEL } from '../../game/judgment'
 import { comboRecognition, gradeFor, maxScore, DIFFICULTY_SCORE_SCALE } from '../../game/score'
-import { Button, Chip, Panel, Stat } from '../components'
+import { Icon, Button, Chip, Panel, Stat } from '../components'
 import { formatPercent } from '../format'
 
 export interface ResultsScreenProps {
@@ -129,7 +129,8 @@ export function ResultsScreen({
 
       <div className="row gap-12 wrap">
         <Button variant="primary" size="lg" onClick={onRetry}>
-          ↻ Play again
+          <Icon name="replay" />
+          Play again
         </Button>
         <Button size="lg" onClick={onSetup}>
           Change difficulty

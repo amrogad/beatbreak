@@ -11,7 +11,7 @@ import type { NoteShape } from '../../render/renderer'
 import type { Settings } from '../../store/settings'
 import { storageSummary, clearScores, idbAudioClearAndFlag, wipeEverything } from '../../store/maintenance'
 import type { StorageSummary } from '../../store/maintenance'
-import { Button, KeyCap, Panel, ProgressBar, Select, Slider, Stat, Toggle } from '../components'
+import { BackButton, Button, KeyCap, Panel, ProgressBar, Select, Slider, Stat, Toggle } from '../components'
 import { formatBytes, formatPercent } from '../format'
 
 export interface SettingsScreenProps {
@@ -44,16 +44,10 @@ const NOTE_SKIN_LABEL: Record<NoteShape, string> = {
 }
 
 function NoteShapeIcon({ shape }: { shape: NoteShape }): React.JSX.Element {
-  if (shape === 'arrow') {
-    return (
-      <span className="note-skin-glyph" aria-hidden="true">
-        →
-      </span>
-    )
-  }
   const common = { fill: 'currentColor', stroke: 'none' } as const
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      {shape === 'arrow' && <polygon {...common} points="2,9 12,9 12,3 22,12 12,21 12,15 2,15" />}
       {shape === 'chevron' && <polygon {...common} points="3,5 21,12 3,19 9,12" />}
       {shape === 'diamond' && <polygon {...common} points="12,3 21,12 12,21 3,12" />}
       {shape === 'orb' && <circle {...common} cx="12" cy="12" r="9" />}
@@ -124,10 +118,10 @@ export function SettingsScreen({
 
   return (
     <div className="page narrow">
-      <div className="row-between wrap gap-12">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          ← Back
-        </Button>
+      <div className="title-row">
+        <BackButton onClick={onBack} />
+        <h1>Settings</h1>
+        <div className="grow" />
         <Button
           variant="ghost"
           onClick={() => {
@@ -137,7 +131,6 @@ export function SettingsScreen({
           Restore defaults
         </Button>
       </div>
-      <h1>Settings</h1>
 
       <Panel title="Audio">
         <div className="settings-grid">

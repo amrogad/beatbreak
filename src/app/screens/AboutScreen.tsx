@@ -1,6 +1,6 @@
 /** About: what the game is, where the music goes, and how to report a problem. */
 import React from 'react'
-import { Button, Panel } from '../components'
+import { BackButton, Button, Panel } from '../components'
 
 export interface AboutScreenProps {
   onBack: () => void
@@ -11,12 +11,10 @@ const BUG_MAILTO = 'mailto:amro9gad@gmail.com'
 export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
   return (
     <div className="page narrow">
-      <div className="row-between wrap gap-12">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          ← Back
-        </Button>
+      <div className="title-row">
+        <BackButton onClick={onBack} />
+        <h1>About</h1>
       </div>
-      <h1>About</h1>
 
       <Panel title="Your music. Your moves.">
         <p className="muted">

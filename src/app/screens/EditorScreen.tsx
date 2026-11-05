@@ -22,7 +22,7 @@ import { saveChart } from '../../store/repository'
 import { loadSongBundle } from '../../store/library'
 import { planForMeta, toPlaybackPlan } from '../../core/edit'
 import type { SongBundle } from '../../store/library'
-import { Button, Chip, Panel, Select, Spinner, Stat, Toggle } from '../components'
+import { Icon, BackButton, Button, Chip, Panel, Select, Spinner, Stat, Toggle } from '../components'
 import { hexToRgba } from '../../render/renderer'
 import { formatClock, formatDuration } from '../format'
 
@@ -534,18 +534,16 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     <div className="page">
       <div className="row-between wrap gap-12">
         <div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (dirty && !window.confirm('Leave the editor without saving your changes?')) return
-              stopPlayback()
-              onBack()
-            }}
-          >
-            ← Back
-          </Button>
-          <h1 className="mt-8">{bundle.meta.title}</h1>
+          <div className="title-row">
+            <BackButton
+              onClick={() => {
+                if (dirty && !window.confirm('Leave the editor without saving your changes?')) return
+                stopPlayback()
+                onBack()
+              }}
+            />
+            <h1>{bundle.meta.title}</h1>
+          </div>
           <p className="muted small">
             Chart editor · {chart.notes.length} notes · {formatDuration(duration)} ·{' '}
             {dirty ? <span className="warn">unsaved changes</span> : <span className="good">saved</span>}
@@ -607,10 +605,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
           </div>
           <div className="grow" />
           <Button size="sm" onClick={() => void togglePlayback()}>
-            {playing ? '■ Stop' : '▶ Play'}
+            <Icon name={playing ? 'stop' : 'play'} />
+            {playing ? 'Stop' : 'Play'}
           </Button>
           <Button size="sm" variant="ghost" onClick={undo} disabled={undoRef.current.length === 0}>
-            ↶ Undo
+            <Icon name="undo" />
+            Undo
           </Button>
           <Button
             size="sm"
@@ -723,10 +723,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
 
         <div className="row gap-12 wrap mt-12">
           <Button size="sm" variant="ghost" onClick={() => setCamera((c) => ({ ...c, start: Math.max(0, c.start - c.span * 0.5) }))}>
-            ⇤ −half screen
+            <Icon name="earlier" />
+            Scroll back
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setCamera((c) => ({ ...c, start: c.start + c.span * 0.5 }))}>
-            +half screen ⇥
+            Scroll forward
+            <Icon name="later" />
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setCamera({ start: 0, span: 12 })}>
             Reset view
@@ -808,15 +810,13 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               }}
             />
           </label>
-          <div className="col gap-8">
-            <Button
-              size="sm"
-              onClick={() => regrid(timing, chart.stepsPerBeat)}
-            >
+          <div className="field">
+            <span className="field-label">Grid</span>
+            <Button size="sm" onClick={() => regrid(timing, chart.stepsPerBeat)}>
               Re-snap all notes to grid
             </Button>
-            <span className="muted tiny">
-              Grid: {chart.stepsPerBeat} steps/beat · {(timing.secondsPerBeat(0) * 1000).toFixed(1)} ms per beat
+            <span className="field-hint">
+              {chart.stepsPerBeat} steps per beat, {(timing.secondsPerBeat(0) * 1000).toFixed(1)} ms per beat
             </span>
           </div>
         </div>

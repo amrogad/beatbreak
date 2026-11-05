@@ -346,3 +346,45 @@ export function KeyCap({
   )
 }
 
+export type IconName = 'back' | 'play' | 'stop' | 'undo' | 'replay' | 'fullscreen' | 'pause' | 'earlier' | 'later'
+
+const ICON_PATHS: Record<IconName, React.ReactNode> = {
+  back: <path d="M16 10H4M9 4.5 3.5 10 9 15.5" />,
+  play: <path d="M6 4.5v11l9-5.5z" fill="currentColor" />,
+  stop: <rect x="5" y="5" width="10" height="10" rx="1.5" fill="currentColor" />,
+  undo: <path d="M7.5 5 4 8.5 7.5 12M4.5 8.5h7a4.5 4.5 0 0 1 0 9H9" />,
+  replay: <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M15.5 4v3.5H12" />,
+  fullscreen: <path d="M4 8V4h4M12 4h4v4M16 12v4h-4M8 16H4v-4" />,
+  pause: <path d="M7 4.5v11M13 4.5v11" />,
+  earlier: <path d="M11 4.5 5.5 10l5.5 5.5M16 4.5 10.5 10l5.5 5.5" />,
+  later: <path d="M9 4.5l5.5 5.5L9 15.5M4 4.5 9.5 10 4 15.5" />,
+}
+
+/** Small drawn icons, so they sit centred in buttons whatever the font. */
+export function Icon({ name }: { name: IconName }): React.JSX.Element {
+  return (
+    <svg
+      className="btn-icon"
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {ICON_PATHS[name]}
+    </svg>
+  )
+}
+
+/** Back to the previous screen. */
+export function BackButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+  return (
+    <Button variant="ghost" size="sm" onClick={onClick} aria-label="Back">
+      <Icon name="back" />
+      Back
+    </Button>
+  )
+}

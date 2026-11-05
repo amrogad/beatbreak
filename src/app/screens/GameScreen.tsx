@@ -21,7 +21,7 @@ import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
 import { PlayfieldRenderer } from '../../render/renderer'
 import type { Settings } from '../../store/settings'
-import { Button, Slider } from '../components'
+import { Icon, Button, Slider } from '../components'
 import { formatPercent } from '../format'
 
 export interface GameScreenProps {
@@ -496,7 +496,7 @@ export function GameScreen({
           onClick={() => void toggleFullscreen()}
           title={`Fullscreen (${describeKey(settings.controls.fullscreen[0])})`}
         >
-          ⛶
+          <Icon name="fullscreen" />
         </Button>
         <Button
           variant="ghost"
@@ -504,7 +504,7 @@ export function GameScreen({
           onClick={togglePause}
           title={`Pause (${describeKey(settings.controls.pause[0])})`}
         >
-          ❚❚
+          <Icon name="pause" />
         </Button>
       </div>
 

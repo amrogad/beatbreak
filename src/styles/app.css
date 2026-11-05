@@ -900,3 +900,10 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
   background: transparent;
   cursor: pointer;
 }
+
+.title-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.title-row h1 { margin: 0; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.btn-icon { width: 16px; height: 16px; flex: none; }
+/* A switch with only a label sits centred on it; with a hint underneath, it lines up with the label. */
+.toggle:not(:has(em)) { align-items: center; }

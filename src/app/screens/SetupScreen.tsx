@@ -27,7 +27,7 @@ import { autoTrimWindow } from '../../audio/trim'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
-import { Button, Panel, ProgressBar, Spinner } from '../components'
+import { BackButton, Button, Panel, ProgressBar, Spinner } from '../components'
 import { formatDuration, formatPercent } from '../format'
 import type { BestScores } from './bestScores'
 
@@ -429,11 +429,11 @@ export function SetupScreen({
     <div className="page narrow">
       <div className="row-between wrap gap-12">
         <div>
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            ← Back
-          </Button>
-          <div className="eyebrow mt-8">Choose a difficulty</div>
-          <h1 className="mt-4">{meta.title}</h1>
+          <div className="eyebrow">Choose a difficulty</div>
+          <div className="title-row mt-4">
+            <BackButton onClick={onBack} />
+            <h1>{meta.title}</h1>
+          </div>
           <p className="muted small">
             {meta.artist ? `${meta.artist} · ` : ''}
             {formatDuration(meta.duration)} · {charts.length} charts
