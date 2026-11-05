@@ -23,7 +23,7 @@ const STEPS = [
   },
   {
     title: 'Hold the long arrows',
-    body: 'Press when the arrow reaches the target, keep holding, and let go when the end arrow reaches the target. Letting go early, or holding too long, misses it.',
+    body: 'Press when the arrow reaches the target, keep holding, and let go when the end arrow reaches the target. Letting go early misses it. Prefer to just hold until the end? Change Long arrows in Settings.',
   },
 ] as const
 

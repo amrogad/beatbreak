@@ -439,6 +439,22 @@ describe('hold notes', () => {
     expect(restarted.scoreState.tally.miss).toBe(0)
   })
 
+  it('hold mode completes a hold kept down to the end, and still misses an early release', () => {
+    const kept = new GameSession({ chart: holdChart(1), windows: DEFAULT_WINDOWS, holdMode: 'hold' })
+    kept.handleTap(0, 1000)
+    kept.update(2000)
+    expect(kept.scoreState.tally.marvelous).toBe(2)
+    const late = new GameSession({ chart: holdChart(1), windows: DEFAULT_WINDOWS, holdMode: 'hold' })
+    late.handleTap(0, 1000)
+    late.update(2500) // kept holding long after the end: still fine in hold mode
+    late.releaseLane(0, 2600)
+    expect(late.scoreState.tally.miss).toBe(0)
+    const early = new GameSession({ chart: holdChart(1), windows: DEFAULT_WINDOWS, holdMode: 'hold' })
+    early.handleTap(0, 1000)
+    early.releaseLane(0, 1500)
+    expect(early.scoreState.tally.miss).toBe(1)
+  })
+
   it('auto-play holds and releases on time', () => {
     const chart = holdChart(1)
     const s = new GameSession({ chart, windows: DEFAULT_WINDOWS, autoPlay: true })

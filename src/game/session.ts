@@ -28,6 +28,11 @@ export interface GameSessionOptions {
   onJudgment?: (event: HitEvent) => void
   /** A hold was released on time at its tail. */
   onHoldComplete?: (lane: Lane) => void
+  /**
+   * 'release' (default): let go on the end arrow, judged like a hit. 'hold': StepMania style, keep
+   * holding until the end and the hold completes on its own; only letting go early misses it.
+   */
+  holdMode?: 'release' | 'hold'
   /** Fired once when the run ends (all notes judged or the tail of the song reached). */
   onComplete?: (state: ScoreState) => void
   /** Extra milliseconds after the last note before the run is forced to end. */
@@ -220,6 +225,9 @@ export class GameSession {
     const delta = songTimeMs - hold.tailMs
     if (delta < -this.releaseWindows.good) {
       this.judgeRelease(lane, hold, 'miss', delta, songTimeMs, true)
+    } else if (this.options.holdMode === 'hold') {
+      // Hold mode only asks for the key to stay down until the end; any release from here is fine.
+      this.judgeRelease(lane, hold, 'marvelous', 0, songTimeMs)
     } else {
       this.judgeRelease(lane, hold, judge(delta, this.releaseWindows), delta, songTimeMs)
     }
@@ -231,7 +239,7 @@ export class GameSession {
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const hold = this.activeHolds[lane]
       if (!hold) continue
-      if (this.autoPlay && songTimeMs >= hold.tailMs) {
+      if ((this.autoPlay || this.options.holdMode === 'hold') && songTimeMs >= hold.tailMs) {
         this.judgeRelease(lane as Lane, hold, 'marvelous', songTimeMs - hold.tailMs, songTimeMs)
       } else if (songTimeMs > hold.tailMs + this.releaseWindows.good) {
         this.judgeRelease(lane as Lane, hold, 'miss', songTimeMs - hold.tailMs, songTimeMs)

@@ -52,6 +52,8 @@ export interface Settings {
   showStats: boolean
   /** Loop a preview of a song behind the menus. */
   menuMusic: boolean
+  /** Long arrows: let go on the end arrow ('release') or just hold to the end ('hold'). */
+  holdMode: 'release' | 'hold'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPlay: false,
   showStats: false,
   menuMusic: true,
+  holdMode: 'release',
 }
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -204,6 +207,7 @@ export function sanitizeSettings(input: unknown): Settings {
     autoPlay: typeof raw.autoPlay === 'boolean' ? raw.autoPlay : DEFAULT_SETTINGS.autoPlay,
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
+    holdMode: raw.holdMode === 'hold' ? 'hold' : 'release',
   }
 }
 

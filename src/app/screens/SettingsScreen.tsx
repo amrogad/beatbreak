@@ -192,6 +192,16 @@ export function SettingsScreen({
             hint="Tap notes, hold tails and target outlines scale together."
           />
           <Select
+            label="Long arrows"
+            value={settings.holdMode}
+            options={[
+              { value: 'release', label: 'Let go on the end arrow' },
+              { value: 'hold', label: 'Just hold to the end' },
+            ]}
+            onChange={(value) => onUpdate({ holdMode: value })}
+            hint="Either way, letting go early misses the hold."
+          />
+          <Select
             label="Theme"
             value={settings.theme === 'mono' ? 'mono' : 'disco'}
             options={[

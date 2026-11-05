@@ -40,6 +40,8 @@ export interface RenderSettings {
   scrollDirection: ScrollDirection
   theme: ThemeName
   arrowColors: ArrowColors
+  /** Draw an end arrow on holds (let go there) or a plain rounded end (just hold to the end). */
+  holdEndArrow?: boolean
   /** The four column colours the player picked (used when arrow colours are per column). */
   columnColors: string[]
   reducedMotion: boolean
@@ -740,6 +742,7 @@ export class PlayfieldRenderer {
   /** The release arrow at a hold's tail: let go when it reaches the target. */
   private drawHoldEnd(x: number, tailY: number, noteH: number, color: string, lane: Lane, alpha = 0.85): void {
     if (tailY < -noteH || tailY > this.height + noteH) return
+    if (this.settings.holdEndArrow === false) return
     const ctx = this.ctx
     ctx.save()
     ctx.globalAlpha = alpha
@@ -1017,11 +1020,13 @@ export class PlayfieldRenderer {
       ctx.fillText(this.accuracyTextCache.text, leftX, top + 88)
 
       ctx.textAlign = 'left'
-      const columnW = Math.min(220, this.width - rightX - 24)
+      // The title may use the whole column out to the screen edge; only the bar keeps a set width.
+      const titleW = this.width - rightX - 24
+      const columnW = Math.min(220, titleW)
       if (hud.title) {
         ctx.font = `700 19px ${FONT}`
         ctx.fillStyle = palette.hudText
-        ctx.fillText(this.fitTitle(hud.title, columnW), rightX, top)
+        ctx.fillText(this.fitTitle(hud.title, titleW), rightX, top)
       }
       if (hud.subtitle) {
         ctx.font = `13px ${DISPLAY}`

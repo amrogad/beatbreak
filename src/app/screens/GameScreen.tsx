@@ -262,6 +262,7 @@ export function GameScreen({
       scrollDirection: settingsRef.current.scrollDirection,
       theme: settingsRef.current.theme,
       arrowColors: settingsRef.current.arrowColors,
+      holdEndArrow: settingsRef.current.holdMode !== 'hold',
       columnColors: settingsRef.current.columnColors,
       reducedMotion: settingsRef.current.reducedMotion,
     })
@@ -275,6 +276,7 @@ export function GameScreen({
       chart,
       windows,
       autoPlay: autoPlayRef.current,
+      holdMode: settingsRef.current.holdMode,
       tailMs: 900,
       onJudgment: (event) => {
         // StepMania plays no hit sounds: the song is the feedback. The renderer's hit particles
@@ -456,6 +458,7 @@ export function GameScreen({
       scrollDirection: settings.scrollDirection,
       theme: settings.theme,
       arrowColors: settings.arrowColors,
+      holdEndArrow: settings.holdMode !== 'hold',
       columnColors: settings.columnColors,
       reducedMotion: settings.reducedMotion,
     })
