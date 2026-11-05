@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { renderTestRhythm } from './audio/synth'
 import { analyzeSamples } from './audio/analyze'
 import { TimingMap } from './chart/timing'
+import { BAR_BEATS, groupBars, tempoFromRepeats } from './chart/structure'
 import {
   DIFFICULTY_PROFILES,
   applyHolds,
@@ -264,6 +265,51 @@ describe('chart generation', () => {
       settings: { targetNps: 6, keepRatio: 0.95 },
     })
     expect(dense.stats.noteCount).toBeGreaterThan(sparse.stats.noteCount * 1.5)
+  })
+})
+
+describe('repeated music', () => {
+  it('groups the bars of a loop together', () => {
+    const { analysis, duration } = analyseDemo()
+    const groups = groupBars(analysis.onsets, TimingMap.single(analysis.bpm, analysis.offset), duration, analysis.texture)
+    const bars = groups.groupOfBar.filter((group) => group >= 0).length
+    expect(Math.max(...groups.members.map((members) => members.length))).toBeGreaterThanOrEqual(bars / 4)
+  })
+
+  it('gives the bars of a group the same rhythm and arrows, flipped or not', () => {
+    const { analysis, duration } = analyseDemo()
+    const timing = TimingMap.single(analysis.bpm, analysis.offset)
+    const groups = groupBars(analysis.onsets, timing, duration, analysis.texture)
+    for (const difficulty of ['normal', 'hard'] as const) {
+      const chart = generateChart({ analysis, timing, duration, songId: 'demo', difficulty })
+      const stepsPerBar = BAR_BEATS * chart.stepsPerBeat
+      const barText = (bar: number, flip: boolean): string =>
+        chart.notes
+          .filter((note) => Math.floor(note.step / stepsPerBar) === bar)
+          .map((note) => `${note.step - bar * stepsPerBar}:${flip ? 3 - note.lane : note.lane}`)
+          .join(' ')
+      let compared = 0
+      let same = 0
+      for (const members of groups.members) {
+        for (const bar of members.slice(1)) {
+          compared++
+          const first = barText(members[0], groups.mirrored[members[0]])
+          if (first === barText(bar, groups.mirrored[bar])) same++
+        }
+      }
+      expect(compared).toBeGreaterThan(4)
+      expect(same / compared).toBeGreaterThan(0.6)
+    }
+  })
+
+  it('finds the tempo that makes the bars repeat when the detected one does not', () => {
+    const truth = renderTestRhythm({ bpm: 84, bars: 24, leadInSeconds: 0.2, seed: 77 })
+    const analysis = analyzeSamples(truth.samples, truth.sampleRate)
+    const { onsets, texture } = analysis
+    expect(tempoFromRepeats(onsets, texture!, truth.duration, analysis.bpm, analysis.offset)).toBeNull()
+    const found = tempoFromRepeats(onsets, texture!, truth.duration, 110.5, 0)
+    expect(found).not.toBeNull()
+    expect([84, 168].some((bpm) => Math.abs(found! - bpm) < 1)).toBe(true)
   })
 })
 

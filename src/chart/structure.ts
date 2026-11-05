@@ -8,7 +8,8 @@
  * group, from what the whole group agrees on.
  */
 import type { OnsetEvent, SongTexture } from '../core/types'
-import type { TimingMap } from './timing'
+import { gridLift } from '../audio/tempo'
+import { TimingMap } from './timing'
 
 const BANDS = 4
 const SLOW_BPM = 110
@@ -190,4 +191,53 @@ export function groupBars(
     })
   }
   return { groupOfBar: final, members, mirrored }
+}
+
+/** Above this share of repeating bars the detected tempo is left alone. */
+const CLEAR_REPEATS = 0.6
+/** A new tempo has to make this much more of the song repeat. */
+const REPEATS_GAIN = 0.2
+/** Tempos this close to the best are the same family (double, half, three-to-two). */
+const REPEATS_TIE = 0.1
+/** Between tied tempos a grid fit has to be this much better to beat the slower one. */
+const LIFT_TIE = 1.05
+
+function repeatShare(onsets: readonly OnsetEvent[], texture: SongTexture, seconds: number, bpm: number, offset: number): number {
+  const { members, groupOfBar } = groupBars(onsets, TimingMap.single(bpm, offset), seconds, texture)
+  const bars = groupOfBar.filter((group) => group >= 0).length
+  if (bars === 0) return 0
+  return members.reduce((acc, group) => acc + (group.length > 1 ? group.length : 0), 0) / bars
+}
+
+/**
+ * Music repeats at the bar, so the right tempo is the one that makes the bars repeat. Onset fits
+ * alone landed on made-up tempos near 120 on five of 25 songs, with almost no bar matching any
+ * other and the whole grid wrong; a scan of the bars found round tempos instead (What You Know
+ * Bout Love went from 110.5 to 84). Returns a better tempo, or null when the current one is fine.
+ */
+export function tempoFromRepeats(
+  onsets: readonly OnsetEvent[],
+  texture: SongTexture,
+  duration: number,
+  currentBpm: number,
+  currentOffset: number,
+): number | null {
+  if (onsets.length < 24) return null
+  const current = repeatShare(onsets, texture, duration, currentBpm, currentOffset)
+  if (current >= CLEAR_REPEATS) return null
+
+  const rows: { bpm: number; share: number }[] = []
+  for (let bpm = 70; bpm <= 200; bpm += 0.5) {
+    rows.push({ bpm, share: repeatShare(onsets, texture, duration, bpm, 0) })
+  }
+  const best = rows.reduce((a, b) => (b.share > a.share ? b : a))
+  if (best.share < current + REPEATS_GAIN) return null
+
+  const strong = onsets.filter((onset) => onset.strength >= 0.3)
+  let pick = { bpm: 0, lift: 0 }
+  for (const row of rows.filter((entry) => entry.share >= best.share - REPEATS_TIE)) {
+    const lift = gridLift(row.bpm, strong)
+    if (lift > pick.lift * LIFT_TIE) pick = { bpm: row.bpm, lift }
+  }
+  return pick.bpm
 }

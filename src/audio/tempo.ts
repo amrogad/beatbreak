@@ -44,6 +44,8 @@ export interface TempoEstimate {
 }
 
 export interface TempoOptions {
+  /** Skip tempo picking and fit the grid to this tempo. */
+  fixedBpm?: number
   minBpm?: number
   maxBpm?: number
   /** Tempo prior centre in BPM. */
@@ -559,6 +561,26 @@ export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, ph
 /** Tempo range the scan reports in: below it a family is doubled, above it halved. */
 const FAMILY_RANGE = { min: 88, max: 185 }
 
+/** How far above chance the onsets line up with the best-placed eighth-note grid of a tempo. */
+export function gridLift(bpm: number, set: OnsetEvent[]): number {
+  const sigma = 0.02
+  const totalStrength = set.reduce((acc, onset) => acc + onset.strength, 0)
+  const step = 60 / bpm / 2
+  let best = 0
+  for (let k = 0; k < 40; k++) {
+    const phase = (k / 40) * step
+    let score = 0
+    for (const onset of set) {
+      const relative = onset.time - phase
+      const distance = relative - Math.round(relative / step) * step
+      score += onset.strength * Math.exp(-0.5 * (distance / sigma) * (distance / sigma))
+    }
+    if (score > best) best = score
+  }
+  const chance = (sigma * Math.sqrt(2 * Math.PI)) / step
+  return best / totalStrength / chance
+}
+
 /**
  * Brute-force tempo scan over 60–200 BPM: for each tempo, the best phase of an eighth-note grid
  * and how far above chance the strong onsets line up with it. Returns the winning tempo moved into
@@ -567,24 +589,7 @@ const FAMILY_RANGE = { min: 88, max: 185 }
 export function scanTempoFamily(onsets: OnsetEvent[], currentBpm?: number): number | null {
   const strong = onsets.filter((onset) => onset.strength >= 0.3)
   if (strong.length < 24) return null
-  const sigma = 0.02
-  const lift = (bpm: number, set: OnsetEvent[]): number => {
-    const totalStrength = set.reduce((acc, onset) => acc + onset.strength, 0)
-    const step = 60 / bpm / 2
-    let best = 0
-    for (let k = 0; k < 40; k++) {
-      const phase = (k / 40) * step
-      let score = 0
-      for (const onset of set) {
-        const relative = onset.time - phase
-        const distance = relative - Math.round(relative / step) * step
-        score += onset.strength * Math.exp(-0.5 * (distance / sigma) * (distance / sigma))
-      }
-      if (score > best) best = score
-    }
-    const chance = (sigma * Math.sqrt(2 * Math.PI)) / step
-    return best / totalStrength / chance
-  }
+  const lift = gridLift
   // Coarse pass on a 40 s slice from the middle, where a slightly-off tempo cannot drift far;
   // then a fine pass on every strong onset.
   const middle = strong[strong.length >> 1].time
@@ -721,10 +726,10 @@ export function estimateTempo(
   // and triplets pulled XO Tour Llif3 to 102 BPM instead of 155). A direct scan of how well the
   // detected hits line up with an eighth-note grid finds the family reliably; when it disagrees
   // with the autocorrelation pick, it wins.
-  const scanned = scanTempoFamily(onsets, pick.bpm)
+  const scanned = options.fixedBpm === undefined ? scanTempoFamily(onsets, pick.bpm) : null
   const related = (a: number, b: number): boolean =>
     [0.5, 1, 2].some((ratio) => Math.abs(a / b / ratio - 1) < 0.012)
-  const bpm = scanned !== null && !related(scanned, pick.bpm) ? scanned : pick.bpm
+  const bpm = options.fixedBpm ?? (scanned !== null && !related(scanned, pick.bpm) ? scanned : pick.bpm)
   const periodSeconds = 60 / bpm
 
   const phaseResult = estimatePhaseFromOnsets(onsets, periodSeconds)

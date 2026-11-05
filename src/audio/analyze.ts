@@ -11,8 +11,9 @@ import type { AnalysisResult, OnsetEvent, Section, SongTexture } from '../core/t
 import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
 import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
 import { detectTempoStability, estimateBeatsPerBar, estimateTempo } from './tempo'
+import { tempoFromRepeats } from '../chart/structure'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.9'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.1'
 
 /**
  * Players place a beat a little before the energy peak our detector locks onto. Compared with
@@ -228,7 +229,10 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
   }
 
   progress('Estimating tempo', 0.7)
-  const tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, {})
+  const texture = computeTexture(stft, sampleRate, frameSize)
+  let tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, {})
+  const repeatingBpm = tempoFromRepeats(onsets, texture, duration, tempoResult.bpm, tempoResult.phase)
+  if (repeatingBpm !== null) tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, { fixedBpm: repeatingBpm })
   const periodSeconds = 60 / tempoResult.bpm
   const { beatsPerBar } = estimateBeatsPerBar(onsets, periodSeconds, tempoResult.phase)
 
@@ -281,7 +285,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
     envelopeRate: envelopeBuckets / Math.max(0.001, duration),
     bandEnvelopes: envelopes.bandFlux.map((b) => downsample(b, envelopeBuckets)),
     onsets,
-    texture: computeTexture(stft, sampleRate, frameSize),
+    texture,
     beatTimes,
   }
   progress('Done', 1)
