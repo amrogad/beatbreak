@@ -192,6 +192,19 @@ export function SettingsScreen({
             hint="Tap notes, hold tails and target outlines scale together."
           />
           <Select
+            label="Default difficulty"
+            value={settings.defaultDifficulty}
+            options={[
+              { value: 'auto', label: 'Recommended for each song' },
+              { value: 'easy', label: 'Easy' },
+              { value: 'normal', label: 'Normal' },
+              { value: 'hard', label: 'Hard' },
+              { value: 'expert', label: 'Expert' },
+            ]}
+            onChange={(value) => onUpdate({ defaultDifficulty: value })}
+            hint="Used until you pick a difficulty for a song; that song then remembers your pick."
+          />
+          <Select
             label="Long arrows"
             value={settings.holdMode}
             options={[

@@ -197,8 +197,10 @@ export function SetupScreen({
     if (!bundleMeta) return
     if (chosenForRef.current === bundleMeta.id) return
     chosenForRef.current = bundleMeta.id
-    setDifficulty(bundleMeta.preferredDifficulty ?? recommended ?? 'normal')
-  }, [bundleMeta, recommended])
+    // The song's own last pick wins; otherwise the default from Settings, or the recommendation.
+    const fallback = settings.defaultDifficulty === 'auto' ? recommended : settings.defaultDifficulty
+    setDifficulty(bundleMeta.preferredDifficulty ?? fallback ?? 'normal')
+  }, [bundleMeta, recommended, settings.defaultDifficulty])
 
   const chooseDifficulty = useCallback(
     (next: Difficulty) => {

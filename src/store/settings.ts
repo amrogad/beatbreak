@@ -5,7 +5,7 @@
  * defensive parsing: a settings blob from an older build — or a hand-edited one — must never be
  * able to put the app in a broken state, so every field is clamped or rejected.
  */
-import type { FailRule } from '../core/types'
+import type { Difficulty, FailRule } from '../core/types'
 import { FAIL_RULES } from '../core/types'
 import type { ControlMap, KeyMap } from '../game/input'
 import { CONTROL_DEFAULTS, DEFAULT_KEYMAP } from '../game/input'
@@ -54,6 +54,8 @@ export interface Settings {
   menuMusic: boolean
   /** Long arrows: let go on the end arrow ('release') or just hold to the end ('hold'). */
   holdMode: 'release' | 'hold'
+  /** Difficulty a song opens on before you pick one for it; 'auto' uses the recommended one. */
+  defaultDifficulty: Difficulty | 'auto'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -81,6 +83,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showStats: false,
   menuMusic: true,
   holdMode: 'release',
+  defaultDifficulty: 'auto',
 }
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -208,6 +211,10 @@ export function sanitizeSettings(input: unknown): Settings {
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
     holdMode: raw.holdMode === 'hold' ? 'hold' : 'release',
+    defaultDifficulty:
+      raw.defaultDifficulty === 'easy' || raw.defaultDifficulty === 'normal' || raw.defaultDifficulty === 'hard' || raw.defaultDifficulty === 'expert'
+        ? raw.defaultDifficulty
+        : 'auto',
   }
 }
 
