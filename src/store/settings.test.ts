@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, loadSettings, sanitizeSettings, saveSettings } from './settings'
+import { DEFAULT_SETTINGS, arrowOffsetMs, loadSettings, sanitizeSettings, saveSettings } from './settings'
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
 
@@ -122,7 +122,13 @@ describe('settings migration and storage', () => {
     expect(settings.keyMap.up).toEqual(['KeyW', 'ArrowUp'])
     expect(settings.keyMap.right).toEqual(['KeyD', 'ArrowRight'])
     const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as { schema?: number }
-    expect(raw.schema).toBe(16)
+    expect(raw.schema).toBe(17)
+  })
+
+  it('moves the old -20 ms default to a plain 0 and keeps what it meant', () => {
+    vi.stubGlobal('localStorage', fakeStorage({ [STORAGE_KEY]: JSON.stringify({ schema: 16, audioOffsetMs: -20 }) }))
+    expect(loadSettings().audioOffsetMs).toBe(0)
+    expect(arrowOffsetMs(0)).toBe(-20)
   })
 
   it('stamps the current schema on save and round-trips through load', () => {
@@ -130,7 +136,7 @@ describe('settings migration and storage', () => {
     vi.stubGlobal('localStorage', storage)
     saveSettings({ ...DEFAULT_SETTINGS, volume: 0.25, windowPreset: 'stepmania' })
     const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as { schema?: number }
-    expect(raw.schema).toBe(16)
+    expect(raw.schema).toBe(17)
     const reloaded = loadSettings()
     expect(reloaded.volume).toBe(0.25)
     expect(reloaded.windowPreset).toBe('stepmania')

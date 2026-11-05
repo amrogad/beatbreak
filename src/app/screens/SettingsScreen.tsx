@@ -313,6 +313,12 @@ export function SettingsScreen({
             hint="Hear the beat before the arrows reach the targets? Move it earlier. The results screen suggests a value after each song."
           />
           <Toggle
+            label="Muffle on miss"
+            checked={settings.missMuffle}
+            onChange={(value) => onUpdate({ missMuffle: value })}
+            hint="The song goes dull for a moment when you miss."
+          />
+          <Toggle
             label="Menu music"
             checked={settings.menuMusic}
             onChange={(value) => onUpdate({ menuMusic: value })}

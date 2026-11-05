@@ -52,6 +52,8 @@ export interface Settings {
   showStats: boolean
   /** Loop a preview of a song behind the menus. */
   menuMusic: boolean
+  /** The song goes dull for a moment on a miss. */
+  missMuffle: boolean
   /** Long arrows: let go on the end arrow ('release') or just hold to the end ('hold'). */
   holdMode: 'release' | 'hold'
   /** Long arrows in the chart; off plays each one as a tap. Phones start with them off. */
@@ -61,8 +63,9 @@ export interface Settings {
   /** Difficulty a song opens on before you pick one for it; 'auto' uses the recommended one. */
   defaultDifficulty: Difficulty | 'auto'
   /**
-   * Arrow timing correction in ms: negative moves arrows (and judging) earlier, for setups where
-   * the music reaches you before the arrows do. The results screen suggests a value.
+   * The player's arrow timing correction in ms: negative moves arrows (and judging) earlier, for
+   * setups where the music reaches you before the arrows do. The results screen suggests a value.
+   * Zero is the normal setting; {@link arrowOffsetMs} adds the built-in display allowance.
    */
   audioOffsetMs: number
   /** Where song progress shows in a run. */
@@ -93,13 +96,14 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPlay: false,
   showStats: false,
   menuMusic: true,
+  missMuffle: true,
   holdMode: 'hold',
   longArrows: true,
   timing: 'pc',
   defaultDifficulty: 'auto',
   // A screen shows a frame a frame or two after it is drawn, so arrows reach the target a little
   // after the beat is heard. 20 ms earlier makes up for a typical monitor; players fine-tune it.
-  audioOffsetMs: -20,
+  audioOffsetMs: 0,
   progressStyle: 'top',
 }
 
@@ -121,7 +125,12 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 16
+const SETTINGS_SCHEMA = 17
+
+/** Screens show a frame or so after the audio clock, so arrows always run this much early. */
+const DISPLAY_LEAD_MS = -20
+
+export const arrowOffsetMs = (playerOffsetMs: number): number => playerOffsetMs + DISPLAY_LEAD_MS
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -229,6 +238,7 @@ export function sanitizeSettings(input: unknown): Settings {
     autoPlay: typeof raw.autoPlay === 'boolean' ? raw.autoPlay : DEFAULT_SETTINGS.autoPlay,
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
+    missMuffle: typeof raw.missMuffle === 'boolean' ? raw.missMuffle : DEFAULT_SETTINGS.missMuffle,
     holdMode: raw.holdMode === 'release' ? 'release' : 'hold',
     longArrows: typeof raw.longArrows === 'boolean' ? raw.longArrows : DEFAULT_SETTINGS.longArrows,
     timing: raw.timing === 'phone' ? 'phone' : 'pc',
@@ -277,6 +287,8 @@ export function loadSettings(): Settings {
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
       // v16: phones start without long arrows (Amro, 2026-11-06).
+      // The old default of -20 ms was the display allowance; it now lives in arrowOffsetMs.
+      if ((parsed.schema ?? 1) < 17 && typeof parsed.audioOffsetMs === 'number') parsed.audioOffsetMs -= DISPLAY_LEAD_MS
       if ((parsed.schema ?? 1) < 16 && touchDefaults().longArrows === false) parsed.longArrows = false
       // v15: phones start with effects off, for a smoother game (Amro, 2026-11-06).
       if ((parsed.schema ?? 1) < 15 && touchDefaults().reducedMotion) parsed.reducedMotion = true

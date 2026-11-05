@@ -20,7 +20,7 @@ import { compensateInputLatency, windowsForDifficulty } from '../../game/judgmen
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
 import { PlayfieldRenderer } from '../../render/renderer'
-import type { Settings } from '../../store/settings'
+import { arrowOffsetMs, type Settings } from '../../store/settings'
 import { Icon, Button, Slider } from '../components'
 import { formatPercent } from '../format'
 
@@ -302,6 +302,7 @@ export function GameScreen({
         // StepMania plays no hit sounds: the song is the feedback. The renderer's hit particles
         // and judgment text carry the timing instead.
         renderer.notify(event, session.scoreState.combo)
+        if (event.judgment === 'miss' && settingsRef.current.missMuffle) engineRef.current?.muffle()
       },
       onHoldComplete: (lane) => renderer.holdComplete(lane),
       onComplete: () => {
@@ -322,10 +323,10 @@ export function GameScreen({
     // Wake the audio device now, during the countdown. Starting it on GO cost a visible hitch
     // (creating and resuming an AudioContext can block for a few hundred milliseconds on Windows),
     // and its latency estimate is needed to line the countdown up with the song.
-    let preRollShiftMs = settingsRef.current.audioOffsetMs
+    let preRollShiftMs = arrowOffsetMs(settingsRef.current.audioOffsetMs)
     void resumeAudioContext()
       .then(() => {
-        preRollShiftMs = estimateOutputLatency(getAudioContext()) * 1000 + settingsRef.current.audioOffsetMs
+        preRollShiftMs = estimateOutputLatency(getAudioContext()) * 1000 + arrowOffsetMs(settingsRef.current.audioOffsetMs)
       })
       .catch(() => undefined)
 
@@ -334,7 +335,7 @@ export function GameScreen({
       if (disposed) return
       const engine = new AudioEngine(getAudioContext(), buffer, {
         volume: settingsRef.current.volume,
-        offsetMs: settingsRef.current.audioOffsetMs,
+        offsetMs: arrowOffsetMs(settingsRef.current.audioOffsetMs),
         // The run ends at the window end, not the file end: a trimmed tail must not score misses.
         // The song is over at this point, so any arrow that was never reached is a miss — the
         // failure path is different: it stops where the rule was met and leaves the rest unplayed.
@@ -495,7 +496,7 @@ export function GameScreen({
 
   useEffect(() => {
     engineRef.current?.setVolume(settings.volume)
-    engineRef.current?.setOutputOffsetMs(settings.audioOffsetMs)
+    engineRef.current?.setOutputOffsetMs(arrowOffsetMs(settings.audioOffsetMs))
     rendererRef.current?.setSettings({
       scrollSpeed: settings.scrollSpeed,
       noteScale: settings.noteScale,
