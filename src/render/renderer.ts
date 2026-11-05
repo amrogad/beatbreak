@@ -558,10 +558,14 @@ export class PlayfieldRenderer {
       const fade = held ? 1 : Math.max(0, 1 - (this.nowMs - this.releaseAt[lane]) / 180)
       if (fade <= 0) continue
       const length = (direction === 1 ? this.height - receptorY : receptorY) * 0.42
-      const start = receptorY - direction * noteH * 0.2
+      // The beam fades in from behind the target as well as out along the lane, so it never
+      // starts on a hard horizontal edge.
+      const start = receptorY - direction * noteH * 0.6
       const end = receptorY + direction * length
       const beam = ctx.createLinearGradient(0, start, 0, end)
-      beam.addColorStop(0, hexToRgba(this.columnColor(lane), 0.14 * fade))
+      const peak = (noteH * 0.6) / Math.max(1, Math.abs(end - start))
+      beam.addColorStop(0, hexToRgba(this.columnColor(lane), 0))
+      beam.addColorStop(peak, hexToRgba(this.columnColor(lane), 0.14 * fade))
       beam.addColorStop(1, hexToRgba(this.columnColor(lane), 0))
       ctx.fillStyle = beam
       ctx.fillRect(laneX[lane] + 2, Math.min(start, end), laneW - 4, Math.abs(end - start))
@@ -743,7 +747,8 @@ export class PlayfieldRenderer {
     const cached = this.spriteCache.get(key)
     if (cached) return cached
     const scale = this.dpr
-    const pad = Math.ceil(size * 0.32)
+    // Room for the glow: a halo cut off by the sprite's edge shows as a hard straight line.
+    const pad = Math.ceil(size * 0.6)
     const box = Math.ceil(size + pad * 2)
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(box * scale)
