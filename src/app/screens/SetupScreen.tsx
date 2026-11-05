@@ -430,15 +430,11 @@ export function SetupScreen({
     <div className="page narrow">
       <div className="row-between wrap gap-12">
         <div>
-          <div className="eyebrow">Choose a difficulty</div>
-          <div className="title-row mt-12">
+          <div className="title-row">
             <BackButton onClick={onBack} />
             <h1>{meta.title}</h1>
           </div>
-          <p className="muted small">
-            {meta.artist ? `${meta.artist} - ` : ''}
-            {formatDuration(meta.duration)} - {charts.length} charts
-          </p>
+          {meta.artist && <p className="muted small">{meta.artist}</p>}
         </div>
       </div>
 
@@ -462,7 +458,7 @@ export function SetupScreen({
         </Panel>
       )}
 
-      <Panel>
+      <Panel title="Choose a difficulty">
         <div className="difficulty-grid" role="radiogroup" aria-label="Difficulty">
           {DIFFICULTY_ORDER.map((item) => {
             const chart = charts.find((candidate) => candidate.difficulty === item)
