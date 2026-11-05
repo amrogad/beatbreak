@@ -198,6 +198,10 @@ export class PlayfieldRenderer {
   private releaseAt = [-1e9, -1e9, -1e9, -1e9]
   private explosion: ({ color: string; at: number } | null)[] = [null, null, null, null]
   private flash: JudgmentFlash | null = null
+  /** Hold notes by id, so a missed or dropped hold can keep scrolling away whole. */
+  private holdNotes = new Map<string, ChartNote>()
+  /** Missed and dropped holds still on screen: the note and the song time where the head now sits. */
+  private deadHolds: { note: ChartNote; headTime: number }[] = []
   private lastCombo = 0
   private comboBumpAt = -1e9
 
@@ -258,12 +262,17 @@ export class PlayfieldRenderer {
     this.laneHeld = [false, false, false, false]
     this.explosion = [null, null, null, null]
     this.lastCombo = 0
+    this.deadHolds = []
+    this.holdNotes.clear()
     this.columnColors =
       this.settings.arrowColors === 'random' ? shuffledColors() : validColors(this.settings.columnColors)
     const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5)
     this.railColors = [this.columnColors[order[0]], this.columnColors[order[1]]]
     if (!chart) return
     this.timing = new TimingMap(chart.timing)
+    for (const note of chart.notes) {
+      if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) this.holdNotes.set(note.id, note)
+    }
   }
 
   /** The colour every arrow, target and glow in a column uses. */
@@ -291,7 +300,16 @@ export class PlayfieldRenderer {
     void combo
     const { lane, judgment } = event
     this.flash = { judgment, lane, deltaMs: event.deltaMs, ageMs: 0, ...(event.holdDrop ? { holdDrop: true } : {}) }
-    if (judgment === 'miss') return
+    if (judgment === 'miss') {
+      // A missed head, or a hold let go early, does not vanish: it keeps scrolling past the target,
+      // dimmed, head arrow included, the way StepMania shows a failed hold.
+      const hold = this.holdNotes.get(event.noteId.replace(/#tail$/, ''))
+      if (hold) {
+        const headTime = event.noteId.endsWith('#tail') ? Math.max(hold.time, event.time) : hold.time
+        if (headTime < hold.time + (hold.duration ?? 0)) this.deadHolds.push({ note: hold, headTime })
+      }
+      return
+    }
     const color = this.columnColor(lane)
     this.explosion[lane] = { color, at: performance.now() }
     if (this.settings.reducedMotion) return
@@ -637,6 +655,22 @@ export class PlayfieldRenderer {
       if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY, noteH, color)
     })
 
+    this.deadHolds = this.deadHolds.filter(({ note, headTime }) => {
+      const tailDelta = (note.time + (note.duration ?? 0)) * 1000 - songTimeMs
+      const tailY = receptorY + direction * (tailDelta / 1000) * pxPerSec
+      if (direction === 1 ? tailY < -noteH : tailY > this.height + noteH) return false
+      const x = laneX[note.lane] + laneW / 2
+      const headY = receptorY + direction * ((headTime * 1000 - songTimeMs) / 1000) * pxPerSec
+      const color = this.columnColor(note.lane)
+      ctx.save()
+      ctx.globalAlpha = 0.4
+      this.drawHoldBody(x, headY, tailY, noteH, color, 'dropping', 0.3)
+      this.drawHoldEnd(x, tailY, noteH, color, note.lane, 0.4)
+      drawCentered(ctx, this.noteSprite('note', color, note.lane, noteH), x, headY, noteH)
+      ctx.restore()
+      return true
+    })
+
     session.forEachPending(untilMs, (note: ChartNote) => {
       const delta = note.time * 1000 - songTimeMs
       const y = receptorY + direction * (delta / 1000) * pxPerSec
@@ -704,11 +738,11 @@ export class PlayfieldRenderer {
   }
 
   /** The release arrow at a hold's tail: let go when it reaches the target. */
-  private drawHoldEnd(x: number, tailY: number, noteH: number, color: string, lane: Lane): void {
+  private drawHoldEnd(x: number, tailY: number, noteH: number, color: string, lane: Lane, alpha = 0.85): void {
     if (tailY < -noteH || tailY > this.height + noteH) return
     const ctx = this.ctx
     ctx.save()
-    ctx.globalAlpha = 0.85
+    ctx.globalAlpha = alpha
     drawCentered(ctx, this.noteSprite('note', color, lane, noteH), x, tailY, noteH * 0.82)
     ctx.restore()
   }
