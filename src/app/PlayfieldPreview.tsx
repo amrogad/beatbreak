@@ -53,7 +53,17 @@ export function PlayfieldPreview(): React.JSX.Element {
     let frame = 0
     let next = 0
     const releaseAt: (number | null)[] = [null, null, null, null]
-    const tick = (): void => {
+    // Phones draw the demo at 60 frames a second at most, like the game.
+    const frameStep = window.matchMedia('(pointer: coarse)').matches ? 1000 / 60 : 0
+    let nextFrameAt = 0
+    const tick = (now: number = performance.now()): void => {
+      if (frameStep > 0) {
+        if (now < nextFrameAt - 1) {
+          frame = requestAnimationFrame(tick)
+          return
+        }
+        nextFrameAt = Math.max(nextFrameAt + frameStep, now)
+      }
       const elapsed = performance.now() - started
       const loop = Math.floor(elapsed / loopMs)
       if (loop !== lastLoop) {

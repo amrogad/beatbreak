@@ -126,6 +126,9 @@ const MONO_WHITE = '#f4f4f4'
 /** A missed arrow turns this red and fades out where it was missed, over this long. */
 const MISS_COLOR = '#ff4d5e'
 const MISS_FADE_MS = 320
+/** The soft background layer: repainted this often, at this fraction of the screen's size. */
+const BG_REFRESH_MS = 100
+const BG_SCALE = 0.5
 /** An early or late hit fades out where it was tapped, over this long. */
 const HIT_FADE_MS = 160
 /** An unhit note starts turning red this late (past Perfect) and is fully red this much later. */
@@ -214,6 +217,9 @@ export class PlayfieldRenderer {
   private flash: JudgmentFlash | null = null
   /** Notes by id, so a missed one can be drawn fading where it was missed. */
   private notesById = new Map<string, ChartNote>()
+  private bgLayer: HTMLCanvasElement | null = null
+  private bgKey = ''
+  private bgAt = 0
   /** A rectangle's height in half-note units: always twice its own width. */
   private tileHy = 2 * TILE_BASE_HX
   /** Half the tile's width in the same units; the short home preview shrinks notes but not columns. */
@@ -233,8 +239,6 @@ export class PlayfieldRenderer {
   private layoutCache: PlayfieldLayout | null = null
   private layoutKey = ''
   private spriteCache = new Map<string, HTMLCanvasElement>()
-  private skyCache: { key: string; gradient: CanvasGradient } | null = null
-  private vignetteCache: { key: string; gradient: CanvasGradient } | null = null
   /** Mirror-ball light flecks: position on the ball, height on the wall, size and tint. */
   private flecks = Array.from({ length: 70 }, () => ({
     angle: Math.random() * Math.PI * 2,
@@ -312,10 +316,9 @@ export class PlayfieldRenderer {
       const color = this.columnColor(lane)
       this.noteSprite('note', color, lane as Lane, noteH)
       this.noteSprite('note', this.missColor(), lane as Lane, noteH)
-      const bar = this.settings.noteShape === 'tile' ? TILE_BAR_HY : undefined
-      this.noteSprite('receptor', color, lane as Lane, noteH, bar)
-      this.noteSprite('flash', color, lane as Lane, noteH, bar)
-      this.noteSprite('flash', '#ffffff', lane as Lane, noteH, bar)
+      this.noteSprite('receptor', color, lane as Lane, noteH)
+      this.noteSprite('flash', color, lane as Lane, noteH)
+      this.noteSprite('flash', '#ffffff', lane as Lane, noteH)
       this.glowSprite(color, Math.round(noteH))
     }
     this.glowSprite('#ffffff', Math.round(noteH))
@@ -330,6 +333,17 @@ export class PlayfieldRenderer {
     if (x < laneAreaX - slack || x > laneAreaX + laneAreaW + slack) return null
     const lane = Math.floor(((x - laneAreaX) / laneAreaW) * 4)
     return Math.max(0, Math.min(3, lane)) as Lane
+  }
+
+  /**
+   * How long a rectangle overlaps its target, in ms either side of on time. A tap anywhere in that
+   * span counts, graded by how far off it was: a long rectangle invites tapping as soon as it
+   * touches its target, and phones are meant to be forgiving.
+   */
+  tileCatchMs(): number {
+    if (this.settings.noteShape !== 'tile') return 0
+    const { noteH, pxPerSec } = this.layout()
+    return Math.round(((this.tileHy * noteH) / Math.max(1, pxPerSec)) * 1000)
   }
 
   /** The colour every arrow, target and glow in a column uses. */
@@ -394,7 +408,9 @@ export class PlayfieldRenderer {
 
   resize(): { width: number; height: number } {
     const rect = this.canvas.getBoundingClientRect()
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5))
+    // Phones render at most 2x: their 2.75-3.5x screens cost twice the pixels for no visible gain.
+    const touch = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, touch ? 2 : 2.5))
     const width = Math.max(1, Math.round(rect.width))
     const height = Math.max(1, Math.round(rect.height))
     const changed =
@@ -418,8 +434,7 @@ export class PlayfieldRenderer {
     this.spriteCache.clear()
     this.textCache.clear()
     this.spritesWarm = false
-    this.skyCache = null
-    this.vignetteCache = null
+    this.bgKey = ''
   }
 
   private layout(): PlayfieldLayout {
@@ -519,17 +534,38 @@ export class PlayfieldRenderer {
 
   /* ------------------------------------------------------------- background */
 
+  /**
+   * The background is soft light that drifts slowly, so it is painted into a half-resolution layer
+   * ten times a second and stretched over the screen in one copy. Painting its full-screen
+   * gradients every frame at phone resolution was the main cost of a frame there.
+   */
   private drawBackground(songSeconds: number): void {
-    const ctx = this.ctx
-    const palette = PALETTES[this.settings.theme]
-    const skyKey = `${this.width}x${this.height}:${this.settings.theme}`
-    if (!this.skyCache || this.skyCache.key !== skyKey) {
-      const gradient = ctx.createLinearGradient(0, 0, 0, this.height)
-      gradient.addColorStop(0, palette.skyTop)
-      gradient.addColorStop(1, palette.skyBottom)
-      this.skyCache = { key: skyKey, gradient }
+    const key = `${this.width}x${this.height}:${this.settings.theme}:${this.settings.laneStyle}:${this.settings.reducedMotion}:${this.quality}`
+    if (!this.bgLayer) this.bgLayer = document.createElement('canvas')
+    const layer = this.bgLayer
+    if (this.bgKey !== key || this.nowMs - this.bgAt >= BG_REFRESH_MS) {
+      const scale = BG_SCALE
+      const w = Math.max(1, Math.round(this.width * scale))
+      const h = Math.max(1, Math.round(this.height * scale))
+      if (layer.width !== w || layer.height !== h) {
+        layer.width = w
+        layer.height = h
+      }
+      const layerCtx = layer.getContext('2d')!
+      layerCtx.setTransform(scale, 0, 0, scale, 0, 0)
+      this.paintBackground(layerCtx, songSeconds)
+      this.bgKey = key
+      this.bgAt = this.nowMs
     }
-    ctx.fillStyle = this.skyCache.gradient
+    this.ctx.drawImage(layer, 0, 0, this.width, this.height)
+  }
+
+  private paintBackground(ctx: CanvasRenderingContext2D, songSeconds: number): void {
+    const palette = PALETTES[this.settings.theme]
+    const sky = ctx.createLinearGradient(0, 0, 0, this.height)
+    sky.addColorStop(0, palette.skyTop)
+    sky.addColorStop(1, palette.skyBottom)
+    ctx.fillStyle = sky
     ctx.fillRect(0, 0, this.width, this.height)
 
     const style = this.settings.laneStyle
@@ -594,14 +630,10 @@ export class PlayfieldRenderer {
     ctx.restore()
 
     // Darken the edges so the light fades toward the corners.
-    const vignetteKey = `${w}x${h}:${palette.skyBottom}`
-    if (!this.vignetteCache || this.vignetteCache.key !== vignetteKey) {
-      const vignette = ctx.createRadialGradient(w / 2, h * 0.55, Math.min(w, h) * 0.2, w / 2, h * 0.55, Math.max(w, h) * 0.75)
-      vignette.addColorStop(0, hexToRgba(palette.skyBottom, 0))
-      vignette.addColorStop(1, hexToRgba(palette.skyBottom, 0.92))
-      this.vignetteCache = { key: vignetteKey, gradient: vignette }
-    }
-    ctx.fillStyle = this.vignetteCache.gradient
+    const vignette = ctx.createRadialGradient(w / 2, h * 0.55, Math.min(w, h) * 0.2, w / 2, h * 0.55, Math.max(w, h) * 0.75)
+    vignette.addColorStop(0, hexToRgba(palette.skyBottom, 0))
+    vignette.addColorStop(1, hexToRgba(palette.skyBottom, 0.92))
+    ctx.fillStyle = vignette
     ctx.fillRect(0, 0, w, h)
   }
 
@@ -654,9 +686,9 @@ export class PlayfieldRenderer {
       const squash = sincePress < 110 ? 0.85 + 0.15 * (sincePress / 110) : 1
       const size = noteH * squash
       const tiles = this.settings.noteShape === 'tile'
-      const sprite = this.noteSprite('receptor', this.columnColor(lane), lane as Lane, noteH, tiles ? TILE_BAR_HY : undefined)
-      // A tile's target is a bar its front edge lands on, sitting just past the hit line.
-      const targetY = tiles ? receptorY - this.tileShift(TILE_BAR_HY) : receptorY
+      const sprite = this.noteSprite('receptor', this.columnColor(lane), lane as Lane, noteH)
+      // A rectangle's target is the same long shape, filled exactly when the rectangle is on time.
+      const targetY = tiles ? receptorY + this.tileShift(this.tileHy) : receptorY
       ctx.globalAlpha = 0.9
       drawCentered(ctx, sprite, x, targetY, size)
       ctx.globalAlpha = 1
@@ -675,7 +707,7 @@ export class PlayfieldRenderer {
         }
       }
       if (overlay > 0) {
-        const flash = this.noteSprite('flash', this.columnColor(lane), lane as Lane, noteH, tiles ? TILE_BAR_HY : undefined)
+        const flash = this.noteSprite('flash', this.columnColor(lane), lane as Lane, noteH)
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
         ctx.globalAlpha = overlay
@@ -1310,8 +1342,6 @@ function shuffledColors(): string[] {
 
 const TILE_BASE_HY = 0.95
 const TILE_BASE_HX = 0.92
-/** The flat bar a tile lands on. */
-const TILE_BAR_HY = 0.4
 /** Shapes drawn the same way up in every column. */
 const UNROTATED = new Set<NoteShape>(['tile', 'square'])
 

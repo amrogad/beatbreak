@@ -8,6 +8,8 @@ export interface TutorialProps {
   onClose: () => void
 }
 
+const TOUCH = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
 const STEPS = [
   {
     title: 'Add a song you own',
@@ -18,12 +20,16 @@ const STEPS = [
     body: 'Easy keeps a steady beat. Normal adds a single-arrow stream. Hard brings faster runs and occasional jumps. Expert follows every hit, with rare three- and four-arrow accents. The app picks a starting difficulty from the song.',
   },
   {
-    title: 'Hit the arrows',
-    body: 'Use W A S D or the arrow keys. On a phone, tap the lane under each arrow. Hit when the arrow reaches the target at the top (or bottom, if you changed the direction).',
+    title: TOUCH ? 'Tap the rectangles' : 'Hit the arrows',
+    body: TOUCH
+      ? 'Tap the column when its rectangle fills the target at the bottom.'
+      : 'Use W A S D or the arrow keys. Hit when the arrow reaches the target at the top (or bottom, if you changed the direction).',
   },
   {
-    title: 'Hold the long arrows',
-    body: 'Press when the arrow reaches the target, keep holding, and let go when the end arrow reaches the target. Letting go early misses it. Prefer to just hold until the end? Change Long arrows in Settings.',
+    title: TOUCH ? 'Hold the long ones' : 'Hold the long arrows',
+    body: TOUCH
+      ? 'Press when it reaches the target and keep your finger down until its end passes. Letting go early misses it.'
+      : 'Press when the arrow reaches the target and keep holding until its end passes. Letting go early misses it. Want to let go on an end arrow instead? Change Long arrows in Settings.',
   },
 ] as const
 
@@ -32,13 +38,13 @@ function LaneArt(): React.JSX.Element {
   return (
     <div className="tutorial-art" aria-hidden="true">
       <PlayfieldPreview />
-      <div className="tutorial-keys">
+      {!TOUCH && <div className="tutorial-keys">
         {['A  ←', 'S  ↓', 'W  ↑', 'D  →'].map((label) => (
           <span className="keycap" key={label}>
             {label}
           </span>
         ))}
-      </div>
+      </div>}
     </div>
   )
 }

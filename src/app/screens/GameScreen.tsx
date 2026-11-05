@@ -273,9 +273,12 @@ export function GameScreen({
     const observer = new ResizeObserver(() => renderer.resize())
     observer.observe(canvas)
 
+    // Rectangles: a tap counts for as long as the rectangle overlaps its target.
+    const catchMs = renderer.tileCatchMs()
+    const runWindows = catchMs > windows.good ? { ...windows, good: catchMs, missAfter: Math.max(windows.missAfter, catchMs) } : windows
     const session = new GameSession({
       chart,
-      windows,
+      windows: runWindows,
       autoPlay: autoPlayRef.current,
       holdMode: settingsRef.current.holdMode,
       tailMs: 900,
@@ -333,8 +336,18 @@ export function GameScreen({
       judgingRef.current = true
     }
 
-    const loop = (): void => {
+    // Phones run at 60 frames a second at most: a 120 Hz screen would double the work for nothing.
+    const frameStep = window.matchMedia('(pointer: coarse)').matches ? 1000 / 60 : 0
+    let nextFrameAt = 0
+    const loop = (now: number = performance.now()): void => {
       if (disposed) return
+      if (frameStep > 0) {
+        if (now < nextFrameAt - 1) {
+          rafRef.current = requestAnimationFrame(loop)
+          return
+        }
+        nextFrameAt = Math.max(nextFrameAt + frameStep, now)
+      }
       const activeSession = sessionRef.current
       const engine = engineRef.current
       if (!activeSession || !engine) {

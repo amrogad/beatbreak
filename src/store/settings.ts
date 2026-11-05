@@ -118,7 +118,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 14
+const SETTINGS_SCHEMA = 15
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -243,7 +243,7 @@ export function sanitizeSettings(input: unknown): Settings {
  */
 function touchDefaults(): Partial<Settings> {
   const touch = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
-  return touch ? { scrollDirection: 'down', noteShape: 'tile', timing: 'phone' } : {}
+  return touch ? { scrollDirection: 'down', noteShape: 'tile', timing: 'phone', reducedMotion: true } : {}
 }
 
 export function loadSettings(): Settings {
@@ -272,6 +272,8 @@ export function loadSettings(): Settings {
       if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
+      // v15: phones start with effects off, for a smoother game (Amro, 2026-11-06).
+      if ((parsed.schema ?? 1) < 15 && touchDefaults().reducedMotion) parsed.reducedMotion = true
       // v14: phones and tablets start on the wider phone timing.
       if ((parsed.schema ?? 1) < 14 && touchDefaults().timing) parsed.timing = 'phone'
       // v13: holds only ask you to keep holding by default, no timed release.
