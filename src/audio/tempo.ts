@@ -519,6 +519,66 @@ export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, ph
   return phase + beat * sixteenth
 }
 
+/** Tempo range the scan reports in: below it a family is doubled, above it halved. */
+const FAMILY_RANGE = { min: 88, max: 185 }
+
+/**
+ * Brute-force tempo scan over 60–200 BPM: for each tempo, the best phase of an eighth-note grid
+ * and how far above chance the strong onsets line up with it. Returns the winning tempo moved into
+ * {@link FAMILY_RANGE}, or null when there are too few onsets or no tempo clearly beats chance.
+ */
+export function scanTempoFamily(onsets: OnsetEvent[]): number | null {
+  const strong = onsets.filter((onset) => onset.strength >= 0.3)
+  if (strong.length < 24) return null
+  const sigma = 0.02
+  const lift = (bpm: number, set: OnsetEvent[]): number => {
+    const totalStrength = set.reduce((acc, onset) => acc + onset.strength, 0)
+    const step = 60 / bpm / 2
+    let best = 0
+    for (let k = 0; k < 40; k++) {
+      const phase = (k / 40) * step
+      let score = 0
+      for (const onset of set) {
+        const relative = onset.time - phase
+        const distance = relative - Math.round(relative / step) * step
+        score += onset.strength * Math.exp(-0.5 * (distance / sigma) * (distance / sigma))
+      }
+      if (score > best) best = score
+    }
+    const chance = (sigma * Math.sqrt(2 * Math.PI)) / step
+    return best / totalStrength / chance
+  }
+  // Coarse pass on a 40 s slice from the middle, where a slightly-off tempo cannot drift far;
+  // then a fine pass on every strong onset.
+  const middle = strong[strong.length >> 1].time
+  const slice = strong.filter((onset) => Math.abs(onset.time - middle) <= 20)
+  const coarseSet = slice.length >= 24 ? slice : strong
+  let bestBpm = 0
+  let bestLift = 0
+  for (let bpm = 60; bpm <= 200; bpm += 0.1) {
+    const value = lift(bpm, coarseSet)
+    if (value > bestLift) {
+      bestLift = value
+      bestBpm = bpm
+    }
+  }
+  if (bestLift < 1.6) return null
+  let fineBpm = bestBpm
+  let fineLift = 0
+  for (let bpm = bestBpm - 0.15; bpm <= bestBpm + 0.15; bpm += 0.01) {
+    const value = lift(bpm, strong)
+    if (value > fineLift) {
+      fineLift = value
+      fineBpm = bpm
+    }
+  }
+  bestBpm = fineBpm
+  let bpm = bestBpm
+  while (bpm < FAMILY_RANGE.min) bpm *= 2
+  while (bpm > FAMILY_RANGE.max) bpm /= 2
+  return bpm
+}
+
 /** Detect a likely bar length by scoring 3 vs 4 beat groups of onset energy. */
 export function estimateBeatsPerBar(
   onsets: OnsetEvent[],
@@ -607,7 +667,14 @@ export function estimateTempo(
     limitations.push(pick.adjustmentNote)
   }
 
-  const bpm = pick.bpm
+  // The envelope autocorrelation can lock onto the wrong tempo family entirely (trap hi-hat rolls
+  // and triplets pulled XO Tour Llif3 to 102 BPM instead of 155). A direct scan of how well the
+  // detected hits line up with an eighth-note grid finds the family reliably; when it disagrees
+  // with the autocorrelation pick, it wins.
+  const scanned = scanTempoFamily(onsets)
+  const related = (a: number, b: number): boolean =>
+    [0.5, 1, 2].some((ratio) => Math.abs(a / b / ratio - 1) < 0.012)
+  const bpm = scanned !== null && !related(scanned, pick.bpm) ? scanned : pick.bpm
   const periodSeconds = 60 / bpm
 
   const phaseResult = estimatePhaseFromOnsets(onsets, periodSeconds)

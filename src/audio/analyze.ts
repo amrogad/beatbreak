@@ -12,7 +12,7 @@ import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
 import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
 import { detectTempoStability, estimateBeatsPerBar, estimateTempo } from './tempo'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.6'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.7'
 
 /**
  * Players place a beat a little before the energy peak our detector locks onto. Compared with
