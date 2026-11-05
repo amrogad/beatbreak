@@ -128,6 +128,9 @@ const MISS_COLOR = '#ff4d5e'
 const MISS_FADE_MS = 320
 /** An early or late hit fades out where it was tapped, over this long. */
 const HIT_FADE_MS = 160
+/** An unhit note starts turning red this late (past Perfect) and is fully red this much later. */
+const LATE_RED_FROM_MS = 30
+const LATE_RED_MS = 50
 
 interface JudgeStyle {
   fill: string
@@ -311,6 +314,7 @@ export class PlayfieldRenderer {
     for (let lane = 0; lane < 4; lane++) {
       const color = this.columnColor(lane)
       this.noteSprite('note', color, lane as Lane, noteH)
+      this.noteSprite('note', this.missColor(), lane as Lane, noteH)
       this.noteSprite('receptor', color, lane as Lane, noteH)
       this.noteSprite('flash', color, lane as Lane, noteH)
       this.noteSprite('flash', '#ffffff', lane as Lane, noteH)
@@ -716,7 +720,7 @@ export class PlayfieldRenderer {
       const x = laneX[note.lane] + laneW / 2
       const headY = receptorY + direction * ((fx.headTime * 1000 - fx.frozenMs) / 1000) * pxPerSec
       const size = noteH * (1 - 0.12 * (1 - fade))
-      const missColor = fx.hit ? this.columnColor(note.lane) : this.settings.theme === 'mono' ? '#6a6a6a' : MISS_COLOR
+      const missColor = fx.hit ? this.columnColor(note.lane) : this.missColor()
       if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) {
         const tailY = receptorY + direction * (((note.time + (note.duration ?? 0)) * 1000 - fx.frozenMs) / 1000) * pxPerSec
         this.drawHoldBody(x, headY, tailY, noteH, missColor, 'dropping', 1, note.lane, 0.6 * fade)
@@ -740,8 +744,23 @@ export class PlayfieldRenderer {
       }
       if (direction === 1 ? y > this.height + noteH || y < -noteH : y < -noteH || y > this.height + noteH) return
       const sprite = this.noteSprite('note', color, note.lane, noteH)
+      // Past its target and still not hit: it turns red right there, then fades out once missed.
+      const late = Math.max(0, Math.min(1, (-delta - LATE_RED_FROM_MS) / LATE_RED_MS))
+      if (late <= 0) {
+        drawCentered(ctx, sprite, x, y, noteH)
+        return
+      }
+      ctx.save()
+      ctx.globalAlpha = 1 - late
       drawCentered(ctx, sprite, x, y, noteH)
+      ctx.globalAlpha = late
+      drawCentered(ctx, this.noteSprite('note', this.missColor(), note.lane, noteH), x, y, noteH)
+      ctx.restore()
     })
+  }
+
+  private missColor(): string {
+    return this.settings.theme === 'mono' ? '#6a6a6a' : MISS_COLOR
   }
 
   /**
