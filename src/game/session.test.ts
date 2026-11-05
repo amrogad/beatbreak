@@ -364,136 +364,87 @@ describe('hold notes', () => {
   const holdSession = (duration: number, extras: [Lane, number][] = []): GameSession =>
     new GameSession({ chart: holdChart(duration, extras), windows: DEFAULT_WINDOWS })
 
-  it('arms the hold on the head and completes it when the key stays down to the tail', () => {
-    const s = holdSession(1) // tail at 2000 ms
-    expect(s.handleTap(0, 1000)!.judgment).toBe('marvelous')
-    expect(s.scoreState.combo).toBe(1)
-    // The head alone does not complete the run: the tail is still live at 1500.
-    s.update(1500)
-    expect(s.isFinished).toBe(false)
-    s.update(2001) // tail arrives while the key is still down
-    expect(s.isFinished).toBe(true)
-    expect(s.scoreState.droppedHolds).toBe(0)
-    expect(s.scoreState.combo).toBe(1)
-  })
-
-  it('lets go briefly and catches the hold again inside StepMania’s 250 ms hold window', () => {
-    const s = holdSession(1)
-    s.handleTap(0, 1000)
-    expect(s.releaseLane(0, 1500)).toBe(true)
-    s.update(1600) // 100 ms of drain: the hold is still alive
-    expect(s.scoreState.droppedHolds).toBe(0)
-    expect(s.handleTap(0, 1700)).toBeNull() // re-grab refills the hold life
-    s.update(1800)
-    expect(s.scoreState.droppedHolds).toBe(0)
-    s.update(2001)
-    expect(s.scoreState.droppedHolds).toBe(0)
-    expect(s.scoreState.combo).toBe(1)
-  })
-
-  it('cannot be passed by tapping the head and letting go', () => {
-    const s = holdSession(1)
-    s.handleTap(0, 1000)
-    s.releaseLane(0, 1020)
-    s.update(1271) // 251 ms after the release: hold life ran out
-    expect(s.scoreState.droppedHolds).toBe(1)
-    expect(s.scoreState.combo).toBe(0)
-  })
-
-  it('drops the hold when released for longer than the hold window: combo break, penalty, fail rules see it', () => {
-    const s = holdSession(1)
-    s.handleTap(0, 1000)
-    s.releaseLane(0, 1500)
-    s.update(1749) // 249 ms after release: still alive
-    expect(s.scoreState.droppedHolds).toBe(0)
-    s.update(1751) // 251 ms: LetGo
-    expect(s.scoreState.droppedHolds).toBe(1)
-    expect(s.scoreState.combo).toBe(0)
-    // One marvelous attempt against two attempts (note + drop).
-    expect(s.scoreState.accuracy).toBeCloseTo(0.5, 9)
-    expect(checkFail('miss1', s.scoreState)).toBe(true)
-    expect(checkFail('never', s.scoreState)).toBe(false)
-  })
-
-  it('drops a hold let go early even when the tail arrives inside the hold window', () => {
-    const s = holdSession(1) // tail at 2000 ms
-    s.handleTap(0, 1000)
-    s.releaseLane(0, 1850) // 150 ms early and never pressed again
-    s.update(2001)
-    expect(s.scoreState.droppedHolds).toBe(1)
-    expect(s.scoreState.combo).toBe(0)
-  })
-
-  it('counts a release in the last moment before the tail as held to the end', () => {
+  it('judges a hold twice: the press at the head and the release at the tail', () => {
+    const events: HitEvent[] = []
     const completed: number[] = []
-    const chart = holdChart(1)
-    const s = new GameSession({ chart, windows: DEFAULT_WINDOWS, onHoldComplete: (lane) => completed.push(lane) })
+    const s = new GameSession({
+      chart: holdChart(1), // tail at 2000 ms
+      windows: DEFAULT_WINDOWS,
+      onJudgment: (e) => events.push(e),
+      onHoldComplete: (lane) => completed.push(lane),
+    })
+    expect(s.scoreState.totalNotes).toBe(2)
     s.handleTap(0, 1000)
-    expect(s.releaseLane(0, 1950)).toBe(false) // 50 ms before the tail
-    s.update(2001)
-    expect(s.scoreState.droppedHolds).toBe(0)
-    expect(s.scoreState.combo).toBe(1)
+    s.update(1900)
+    expect(s.releaseLane(0, 2005)).toBe(true) // 5 ms late on the release
+    expect(events.map((e) => e.judgment)).toEqual(['marvelous', 'marvelous'])
+    expect(events[1].noteId).toBe('hold0#tail')
+    expect(s.scoreState.combo).toBe(2)
     expect(completed).toEqual([0])
   })
 
-  it('emits a LET GO event for the drop so the playfield can react', () => {
+  it('judges the release on windows half again as wide as the press', () => {
+    const s = holdSession(1)
+    s.handleTap(0, 1000)
+    const late = DEFAULT_WINDOWS.good * 1.4 // outside the press window, inside the release window
+    s.releaseLane(0, 2000 + late)
+    expect(s.scoreState.tally.good).toBe(1)
+    expect(s.scoreState.tally.miss).toBe(0)
+  })
+
+  it('a release before the release window is a LET GO miss, with no grabbing it again', () => {
     const events: HitEvent[] = []
-    const chart = holdChart(1)
-    const s = new GameSession({ chart, windows: DEFAULT_WINDOWS, onJudgment: (e) => events.push(e) })
+    const s = new GameSession({ chart: holdChart(1), windows: DEFAULT_WINDOWS, onJudgment: (e) => events.push(e) })
     s.handleTap(0, 1000)
     s.releaseLane(0, 1500)
-    s.update(1751)
     expect(events.map((e) => e.judgment)).toEqual(['marvelous', 'miss'])
-    expect(events[1].noteId).toBe('hold0')
     expect(events[1].holdDrop).toBe(true)
-    expect(events[1].comboAfter).toBe(0)
+    expect(s.scoreState.combo).toBe(0)
+    expect(s.handleTap(0, 1550)).toBeNull() // pressing again does nothing: the hold is gone
+    s.update(2500)
+    expect(s.scoreState.tally.miss).toBe(1)
   })
 
-  it('does not punish a release once the tail has passed', () => {
+  it('holding past the release window is a miss', () => {
     const s = holdSession(1)
     s.handleTap(0, 1000)
-    s.update(2001) // tail arrives while the key is still down
-    expect(s.releaseLane(0, 2100)).toBe(false)
-    expect(s.scoreState.droppedHolds).toBe(0)
-    expect(s.scoreState.combo).toBe(1)
+    s.update(2000 + DEFAULT_WINDOWS.good * 1.5 + 1)
+    expect(s.scoreState.tally.miss).toBe(1)
+    expect(s.scoreState.combo).toBe(0)
+    expect(s.releaseLane(0, 2300)).toBe(false) // already judged
   })
 
-  it('never arms a hold whose head was missed', () => {
+  it('a missed head costs the release as well', () => {
     const s = holdSession(1)
     s.update(1000 + DEFAULT_WINDOWS.missAfter + 1)
-    expect(s.scoreState.tally.miss).toBe(1)
-    expect(s.releaseLane(0, 1500)).toBe(false)
-    expect(s.scoreState.droppedHolds).toBe(0)
+    expect(s.scoreState.tally.miss).toBe(2)
+    expect(s.releaseLane(0, 2000)).toBe(false)
   })
 
   it('ignores releases in lanes with no live hold', () => {
     const s = holdSession(1)
-    expect(s.releaseLane(0, 1500)).toBe(false)
-    expect(s.scoreState.droppedHolds).toBe(0)
+    expect(s.releaseLane(2, 1500)).toBe(false)
+    expect(s.scoreState.tally.miss).toBe(0)
   })
 
-  it('clears live holds on forfeit and reset without counting drops', () => {
+  it('clears live holds on forfeit and reset', () => {
     const forfeited = holdSession(1, [[1, 4]])
     forfeited.handleTap(0, 1000)
-    forfeited.releaseLane(0, 1200) // draining when the run ends
-    forfeited.forfeit(1300)
-    expect(forfeited.scoreState.droppedHolds).toBe(0)
-
+    forfeited.forfeit(1500)
+    expect(forfeited.releaseLane(0, 2000)).toBe(false)
     const restarted = holdSession(1, [[1, 4]])
     restarted.handleTap(0, 1000)
-    restarted.releaseLane(0, 1200)
     restarted.reset()
-    expect(restarted.releaseLane(0, 1500)).toBe(false)
-    restarted.update(1500)
-    expect(restarted.scoreState.droppedHolds).toBe(0)
+    expect(restarted.releaseLane(0, 2000)).toBe(false)
+    expect(restarted.scoreState.tally.miss).toBe(0)
   })
 
-  it('keeps auto-play hold notes clean (no drops are possible)', () => {
+  it('auto-play holds and releases on time', () => {
     const chart = holdChart(1)
     const s = new GameSession({ chart, windows: DEFAULT_WINDOWS, autoPlay: true })
     s.update(1000)
-    s.update(2001)
-    expect(s.scoreState.tally.marvelous).toBe(1)
-    expect(s.scoreState.droppedHolds).toBe(0)
+    s.update(2000)
+    expect(s.scoreState.tally.marvelous).toBe(2)
+    expect(s.scoreState.combo).toBe(2)
   })
 })

@@ -23,7 +23,7 @@ const STEPS = [
   },
   {
     title: 'Hold the long arrows',
-    body: 'Press and keep holding until the tail passes the target, then let go. The game fades the music out at the end of a run instead of cutting it off.',
+    body: 'Press when the arrow reaches the target, keep holding, and let go when the end arrow reaches the target. Letting go early, or holding too long, misses it.',
   },
 ] as const
 

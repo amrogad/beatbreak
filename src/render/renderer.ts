@@ -629,6 +629,7 @@ export class PlayfieldRenderer {
       const color = this.columnColor(note.lane)
       const held = life >= 1
       this.drawHoldBody(x, receptorY, tailY, noteH, color, held ? 'active' : 'dropping', life)
+      this.drawHoldEnd(x, tailY, noteH, color, note.lane)
       const sprite = this.noteSprite('note', color, note.lane, noteH)
       ctx.globalAlpha = held ? 1 : 0.45 + 0.55 * life
       drawCentered(ctx, sprite, x, receptorY, noteH)
@@ -644,6 +645,7 @@ export class PlayfieldRenderer {
       if (note.kind === 'hold' && note.duration && note.duration > 0.05) {
         const tailY = receptorY + direction * ((delta + note.duration * 1000) / 1000) * pxPerSec
         this.drawHoldBody(x, y, tailY, noteH, color, 'waiting', 1)
+        this.drawHoldEnd(x, tailY, noteH, color, note.lane)
       }
       if (direction === 1 ? y > this.height + noteH || y < -noteH : y < -noteH || y > this.height + noteH) return
       const sprite = this.noteSprite('note', color, note.lane, noteH)
@@ -698,6 +700,16 @@ export class PlayfieldRenderer {
         ctx.fillRect(left, top + along, bodyW, 7)
       }
     }
+    ctx.restore()
+  }
+
+  /** The release arrow at a hold's tail: let go when it reaches the target. */
+  private drawHoldEnd(x: number, tailY: number, noteH: number, color: string, lane: Lane): void {
+    if (tailY < -noteH || tailY > this.height + noteH) return
+    const ctx = this.ctx
+    ctx.save()
+    ctx.globalAlpha = 0.85
+    drawCentered(ctx, this.noteSprite('note', color, lane, noteH), x, tailY, noteH * 0.82)
     ctx.restore()
   }
 

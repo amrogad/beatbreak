@@ -13,7 +13,7 @@
 import type { Chart, ChartNote, FailRule, HitEvent, Judgment, JudgmentWindows, Lane, ScoreState } from '../core/types'
 import { LANE_COUNT } from '../core/types'
 import { isMissed, isWithinHitWindow, judge } from './judgment'
-import { applyJudgment, createScoreState, registerHoldDrop } from './score'
+import { applyJudgment, createScoreState } from './score'
 
 export interface GameSessionOptions {
   chart: Chart
@@ -26,7 +26,7 @@ export interface GameSessionOptions {
   autoPlay?: boolean
   /** Fired for every judgement, in judgement order. */
   onJudgment?: (event: HitEvent) => void
-  /** A hold was kept down all the way to its tail (StepMania's OK). */
+  /** A hold was released on time at its tail. */
   onHoldComplete?: (lane: Lane) => void
   /** Fired once when the run ends (all notes judged or the tail of the song reached). */
   onComplete?: (state: ScoreState) => void
@@ -43,20 +43,17 @@ export interface TapResult {
 }
 
 /**
- * StepMania's default hold window (`TW_Hold` = 0.250 s): how long a released hold keeps its life.
- * The source calls it "allow enough time to take foot off and put back on" — pressing the lane
- * again refills the life, so only a release longer than this fails the hold. When the life runs
- * out, StepMania (dance, `ImmediateHoldLetGo`) scores a LetGo: a miss. We do the same.
+ * Holds are two judgements: the press at the head and the release at the tail, like osu!mania.
+ * The release is judged on windows 1.5x the press windows (osu!mania's ScoreV2 rule): letting go
+ * on the tail arrow is the skill, and a hand needs a little more room to lift than to strike.
+ * Letting go before the release window is a LetGo (a miss) on the spot — there is no grabbing a
+ * hold again (Amro, 2026-11-05: "if u let go, u missed it"). Holding past the window is a miss too.
  */
-export const HOLD_RELEASE_WINDOW_MS = 250
-/** Letting go this close to the tail still counts as holding it to the end. */
-export const HOLD_TAIL_GRACE_MS = 80
+export const HOLD_RELEASE_SCALE = 1.5
 
 interface ActiveHold {
   index: number
   tailMs: number
-  /** Song time the lane key was released, or null while it is held (full life). */
-  releasedAt: number | null
 }
 
 export class GameSession {
@@ -68,6 +65,10 @@ export class GameSession {
   readonly lastNoteMs: number
   /** When the chart stops asking for input: the last note's end, so long hold tails count. */
   readonly lastNoteEndMs: number
+  /** Hold notes in the chart; each one is judged twice (press and release). */
+  readonly holdCount: number
+  /** Windows for judging a hold's release. */
+  readonly releaseWindows: JudgmentWindows
 
   private notes: ChartNote[]
   private noteTimesMs: number[]
@@ -108,7 +109,15 @@ export class GameSession {
     this.laneCursor = new Array<number>(LANE_COUNT).fill(0)
     this.activeHolds = new Array(LANE_COUNT).fill(null)
     this.judged = new Uint8Array(this.totalNotes)
-    this.state = createScoreState(this.totalNotes)
+    this.holdCount = this.notes.filter((note) => note.kind === 'hold' && (note.duration ?? 0) > 0).length
+    this.releaseWindows = {
+      marvelous: this.windows.marvelous * HOLD_RELEASE_SCALE,
+      perfect: this.windows.perfect * HOLD_RELEASE_SCALE,
+      great: this.windows.great * HOLD_RELEASE_SCALE,
+      good: this.windows.good * HOLD_RELEASE_SCALE,
+      missAfter: this.windows.missAfter * HOLD_RELEASE_SCALE,
+    }
+    this.state = createScoreState(this.totalNotes + this.holdCount)
   }
 
   setAutoPlay(autoPlay: boolean): void {
@@ -180,14 +189,10 @@ export class GameSession {
    * released — the player can still catch the hold by pressing again.
    */
   forEachActiveHold(songTimeMs: number, visit: (note: ChartNote, life: number) => void): void {
+    void songTimeMs
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const hold = this.activeHolds[lane]
-      if (!hold) continue
-      const life =
-        hold.releasedAt === null
-          ? 1
-          : Math.max(0, 1 - (songTimeMs - hold.releasedAt) / HOLD_RELEASE_WINDOW_MS)
-      visit(this.notes[hold.index], life)
+      if (hold) visit(this.notes[hold.index], 1)
     }
   }
 
@@ -198,64 +203,53 @@ export class GameSession {
   update(songTimeMs: number): void {
     if (this.finished) return
     if (this.autoPlay) this.runAutoPlay(songTimeMs)
-    this.drainHolds(songTimeMs)
     this.expireHolds(songTimeMs)
     this.resolveMisses(songTimeMs)
     this.checkCompletion(songTimeMs)
   }
 
   /**
-   * A lane key was released. The hold does not drop instantly: StepMania drains a hold's life over
-   * `TW_Hold` (250 ms), so a brief release — taking a foot off and putting it back on — can be
-   * recovered by pressing again. If the life runs out before the tail, `update` scores it as a
-   * LetGo. Returns true when a live hold was released.
+   * A lane key was released. With a live hold in the lane this is the hold's release: judged
+   * against the tail on the release windows, or a LetGo when it comes before them. Returns true
+   * when it ended a hold.
    */
   releaseLane(lane: Lane, songTimeMs: number): boolean {
     if (this.finished) return false
     const hold = this.activeHolds[lane]
     if (!hold) return false
-    if (songTimeMs >= hold.tailMs - HOLD_TAIL_GRACE_MS) {
-      // At (or just before) the tail: the hold was completed.
-      this.activeHolds[lane] = null
-      this.options.onHoldComplete?.(lane)
-      return false
+    const delta = songTimeMs - hold.tailMs
+    if (delta < -this.releaseWindows.good) {
+      this.judgeRelease(lane, hold, 'miss', delta, songTimeMs, true)
+    } else {
+      this.judgeRelease(lane, hold, judge(delta, this.releaseWindows), delta, songTimeMs)
     }
-    if (hold.releasedAt === null) hold.releasedAt = songTimeMs
     return true
   }
 
-  /**
-   * A released hold is a LetGo (a miss) unless it is pressed again within the hold window. The
-   * tail arriving while it is still released does not save it: only holding to the end counts.
-   */
-  private drainHolds(songTimeMs: number): void {
-    for (let lane = 0; lane < LANE_COUNT; lane++) {
-      const hold = this.activeHolds[lane]
-      if (!hold || hold.releasedAt === null) continue
-      const expiryMs = Math.min(hold.releasedAt + HOLD_RELEASE_WINDOW_MS, hold.tailMs)
-      if (songTimeMs < expiryMs) continue
-      this.dropHold(lane as Lane, hold)
-    }
-  }
-
-  private dropHold(lane: Lane, hold: ActiveHold): void {
-    this.activeHolds[lane] = null
-    const note = this.notes[hold.index]
-    const atMs = hold.releasedAt === null ? hold.tailMs : Math.min(hold.tailMs, hold.releasedAt + HOLD_RELEASE_WINDOW_MS)
-    this.state = registerHoldDrop(this.state)
-    // The combo break and accuracy penalty live in the score state; the event only drives feedback.
-    this.emitJudgment('miss', lane, atMs - hold.tailMs, note.id, atMs, true)
-  }
-
-  /** Holds whose tail time has arrived while the key was still down are simply completed. */
+  /** Holds still down after their release window closed: held too long, a miss. Auto-play lets go on time. */
   private expireHolds(songTimeMs: number): void {
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const hold = this.activeHolds[lane]
-      if (hold && songTimeMs >= hold.tailMs) {
-        this.activeHolds[lane] = null
-        this.options.onHoldComplete?.(lane as Lane)
+      if (!hold) continue
+      if (this.autoPlay && songTimeMs >= hold.tailMs) {
+        this.judgeRelease(lane as Lane, hold, 'marvelous', songTimeMs - hold.tailMs, songTimeMs)
+      } else if (songTimeMs > hold.tailMs + this.releaseWindows.good) {
+        this.judgeRelease(lane as Lane, hold, 'miss', songTimeMs - hold.tailMs, songTimeMs)
       }
     }
+  }
+
+  private judgeRelease(lane: Lane, hold: ActiveHold, judgment: Judgment, deltaMs: number, songTimeMs: number, letGo = false): void {
+    this.activeHolds[lane] = null
+    this.state = applyJudgment(this.state, judgment)
+    this.marvelousStreak = judgment === 'marvelous' ? this.marvelousStreak + 1 : 0
+    if (this.marvelousStreak > this.bestMarvelousStreak) this.bestMarvelousStreak = this.marvelousStreak
+    if (judgment !== 'miss') {
+      this.deltaSum += deltaMs
+      this.deltaCount++
+    }
+    this.emitJudgment(judgment, lane, deltaMs, `${this.notes[hold.index].id}#tail`, songTimeMs, letGo)
+    if (judgment !== 'miss') this.options.onHoldComplete?.(lane)
   }
 
   /**
@@ -269,13 +263,8 @@ export class GameSession {
     if (this.finished || this.autoPlay) return null
     this.resolveMisses(songTimeMs)
 
-    // Pressing a live hold's lane again refills its hold life (StepMania's re-grab): the press
-    // only saves the hold, it cannot also judge the lane's next note.
-    const liveHold = this.activeHolds[lane]
-    if (liveHold) {
-      liveHold.releasedAt = null
-      return null
-    }
+    // A live hold means the key is already down (a stray repeat); it cannot judge another note.
+    if (this.activeHolds[lane]) return null
 
     const window = this.windows.good
     let bestIndex = -1
@@ -299,11 +288,7 @@ export class GameSession {
     // A hit hold arms the lane: the key must stay down until the tail arrives.
     const note = this.notes[bestIndex]
     if (judgment !== 'miss' && note.kind === 'hold' && (note.duration ?? 0) > 0) {
-      this.activeHolds[lane] = {
-        index: bestIndex,
-        tailMs: (note.time + (note.duration ?? 0)) * 1000,
-        releasedAt: null,
-      }
+      this.activeHolds[lane] = { index: bestIndex, tailMs: (note.time + (note.duration ?? 0)) * 1000 }
     }
     return { judgment, deltaMs: bestDelta, noteId: note.id, lane }
   }
@@ -321,7 +306,7 @@ export class GameSession {
     this.deltaSum = 0
     this.deltaCount = 0
     this.finished = false
-    this.state = createScoreState(this.totalNotes)
+    this.state = createScoreState(this.totalNotes + this.holdCount)
   }
 
   /**
@@ -347,7 +332,7 @@ export class GameSession {
       // Auto-play holds its holds too, so the watch mode shows them being held to the end.
       const note = this.notes[index]
       if (note.kind === 'hold' && (note.duration ?? 0) > 0) {
-        this.activeHolds[note.lane] = { index, tailMs: (note.time + (note.duration ?? 0)) * 1000, releasedAt: null }
+        this.activeHolds[note.lane] = { index, tailMs: (note.time + (note.duration ?? 0)) * 1000 }
       }
     }
   }
@@ -375,6 +360,11 @@ export class GameSession {
     this.judged[index] = 1
     this.judgedCount++
     this.state = applyJudgment(this.state, judgment)
+    // A missed hold head loses its release too: the hold is never played.
+    const missedNote = this.notes[index]
+    if (judgment === 'miss' && missedNote.kind === 'hold' && (missedNote.duration ?? 0) > 0) {
+      this.state = applyJudgment(this.state, 'miss')
+    }
     this.marvelousStreak = judgment === 'marvelous' ? this.marvelousStreak + 1 : 0
     if (this.marvelousStreak > this.bestMarvelousStreak) this.bestMarvelousStreak = this.marvelousStreak
     if (judgment !== 'miss') {
