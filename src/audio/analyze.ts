@@ -12,36 +12,48 @@ import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
 import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
 import { detectTempoStability, estimateBeatsPerBar, estimateTempo } from './tempo'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.4'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.5'
 
 /** Longest sustain the analyser reports; anything longer is treated as a 3 s ring. */
 const SUSTAIN_MAX_SECONDS = 3
-/** The sound is over once the energy envelope falls to this share of the attack's level. */
-const SUSTAIN_DROP_RATIO = 0.5
+/** The sound is over once its band's energy falls to this share of its settled level. */
+const SUSTAIN_DROP_RATIO = 0.2
+/** A sound whose energy settles below this share of its attack peak is a hit, not a held note. */
+const SUSTAIN_BODY_RATIO = 0.12
 
 /**
- * How long the sound behind one onset keeps ringing, in seconds. Walks the normalized RMS
- * envelope forward from the attack until it drops below half of the attack's level, or until a
- * clearly stronger new hit arrives (that is a new attack, not the same sound ringing). This is
- * what turns sustained music into hold notes and drum hits into taps. One linear scan per onset —
- * negligible next to the STFT.
+ * How long the sound behind one onset keeps ringing, in seconds, measured in the onset's own
+ * frequency band. Walks that band's energy forward from the attack until it drops well below
+ * its settled level (20%), or until the same band is struck again (a new note, not the same one
+ * ringing), or a much stronger hit lands anywhere. Measuring per band is what separates a held
+ * vocal or pad from a busy mix: the whole-mix loudness of a dense track never drops, so it made
+ * almost every note look sustained.
  */
 function estimateHeldSeconds(
   attackFrame: number,
   attackStrength: number,
-  rms: Float32Array,
+  bandEnergy: Float32Array,
+  bandFlux: Float32Array,
   frameRate: number,
   peaks: { position: number; strength: number }[],
   attackPeakIndex: number,
 ): number {
   const clampSeconds = (value: number): number => Math.max(0.05, Math.min(SUSTAIN_MAX_SECONDS, value))
-  const sample = (frame: number): number => (frame >= 0 && frame < rms.length ? rms[frame] : 0)
-  let reference = 0
+  const sample = (frame: number): number => (frame >= 0 && frame < bandEnergy.length ? bandEnergy[frame] : 0)
+  let peakEnergy = 0
   for (let frame = attackFrame - 2; frame <= attackFrame + 3; frame++) {
-    reference = Math.max(reference, sample(frame))
+    peakEnergy = Math.max(peakEnergy, sample(frame))
   }
-  if (reference <= 1e-5) return 0.05
-  const threshold = reference * SUSTAIN_DROP_RATIO
+  if (peakEnergy <= 1e-9) return 0.05
+  // Judge the note by its body, not its transient: the level 150 ms in, once a drum hit on the
+  // same beat has mostly died away.
+  const settled = sample(attackFrame + Math.round(0.15 * frameRate))
+  if (settled < peakEnergy * SUSTAIN_BODY_RATIO) return clampSeconds(0.1)
+  const threshold = settled * SUSTAIN_DROP_RATIO
+  // The band's flux at the attack's own flux peak (the refined attack time sits a little later).
+  const attackPosition = peaks[attackPeakIndex]?.position ?? attackFrame
+  let attackFlux = 0
+  for (let offset = -2; offset <= 2; offset++) attackFlux = Math.max(attackFlux, sampleAt(bandFlux, attackPosition + offset))
   const maxFrames = Math.ceil(SUSTAIN_MAX_SECONDS * frameRate)
   // Start just past the attack itself so the transient cannot count as sustain.
   const firstFrame = attackFrame + Math.max(1, Math.round(0.03 * frameRate))
@@ -51,14 +63,37 @@ function estimateHeldSeconds(
     const frame = firstFrame + step
     if (sample(frame) < threshold) break
     while (nextPeak < peaks.length && peaks[nextPeak].position <= frame) {
-      if (peaks[nextPeak].strength >= attackStrength * 1.6) {
-        return clampSeconds((peaks[nextPeak].position - attackFrame) / frameRate)
+      const peak = peaks[nextPeak]
+      const restrike = sampleAt(bandFlux, peak.position) >= attackFlux * 0.6
+      if (restrike || peak.strength >= attackStrength * 1.6) {
+        return clampSeconds((peak.position - attackFrame) / frameRate)
       }
       nextPeak++
     }
     end = frame
   }
   return clampSeconds((end + 1 - attackFrame) / frameRate)
+}
+
+/** Energy per band per frame, lightly smoothed, from the magnitude spectrogram. */
+function computeBandEnergy(stft: ReturnType<typeof computeStft>): Float32Array[] {
+  const { magnitude, frames, bins, bandOfBin, bandCount } = stft
+  const energy = Array.from({ length: bandCount }, () => new Float32Array(frames))
+  for (let f = 0; f < frames; f++) {
+    const base = f * bins
+    for (let k = 0; k < bins; k++) {
+      const m = magnitude[base + k]
+      energy[bandOfBin[k]][f] += m * m
+    }
+  }
+  for (const band of energy) {
+    let previous = band[0]
+    for (let f = 1; f < frames; f++) {
+      previous = previous * 0.5 + band[f] * 0.5
+      band[f] = previous
+    }
+  }
+  return energy
 }
 
 export interface AnalyzeOptions {
@@ -108,6 +143,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
   // Fine energy envelope used to snap every onset onto its real attack (removes the analysis
   // window's group delay, which would otherwise bias notes late by tens of milliseconds).
   const fine = computeEnergyEnvelope(mono, sampleRate, { blockMs: 1, smoothMs: 10 })
+  const bandEnergy = computeBandEnergy(stft)
 
   const strengths = peaks.map((p) => p.strength)
   const strengthMean = mean(strengths)
@@ -136,7 +172,8 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
       heldSeconds: estimateHeldSeconds(
         Math.round(time * frameRate),
         peak.strength,
-        envelopes.rms,
+        bandEnergy[dominant],
+        envelopes.bandFlux[dominant],
         frameRate,
         peaks,
         peakIndex,

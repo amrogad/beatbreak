@@ -293,8 +293,8 @@ describe('hold notes', () => {
     for (const hold of out.filter((n) => n.kind === 'hold')) {
       const tail = hold.time + hold.duration!
       expect(hold.duration!).toBeGreaterThanOrEqual(0.24 - 1e-9)
-      // Never longer than the sound itself, and never longer than the difficulty's short cap.
-      expect(hold.duration!).toBeLessThanOrEqual(0.42 + 1e-9)
+      // Never longer than the sound itself (1.4 s here).
+      expect(hold.duration!).toBeLessThanOrEqual(1.4 + 1e-9)
       // The tail sits on the subdivision grid (the `.sm` export depends on it)...
       const step = timing.timeToStep(tail, settings.stepsPerBeat)
       expect(Math.abs(step - Math.round(step))).toBeLessThan(1e-6)
@@ -321,16 +321,16 @@ describe('hold notes', () => {
     const analysis = analyzeSamples(truth.samples, truth.sampleRate)
     const atPad = analysis.onsets.filter((o) => Math.abs(o.time - padStart) < 0.12)
     expect(atPad.length, 'pad onset detected').toBeGreaterThan(0)
-    expect(Math.max(...atPad.map((o) => o.heldSeconds ?? 0)), 'sustain measured').toBeGreaterThan(1.2)
+    // The pad rings until the next kick restrikes its band, one second later.
+    expect(Math.max(...atPad.map((o) => o.heldSeconds ?? 0)), 'sustain measured').toBeGreaterThan(0.8)
 
     const timing = TimingMap.single(analysis.bpm, analysis.offset)
     const chart = generateChart({ analysis, timing, duration: truth.duration, songId: 'pad', difficulty: 'expert' })
     const hold = chart.notes.find((n) => n.kind === 'hold' && Math.abs(n.time - padStart) < 0.15)
     expect(hold, 'the pad becomes a hold').toBeDefined()
-    // Holds are deliberately capped at half a second: enough to read as sustained, never a pole
-    // down the lane. The analyser measured 1.6 s of pad, so the chart should use most of the cap.
+    // The hold covers the pad until the next real hit, never past the sound itself.
     expect(hold!.duration!).toBeGreaterThan(0.3)
-    expect(hold!.duration!).toBeLessThanOrEqual(0.5 + 1e-9)
+    expect(hold!.duration!).toBeLessThanOrEqual(1.6 + 1e-9)
   })
 
   it('expert follows the music 1:1: nearly every selected candidate becomes an arrow', () => {

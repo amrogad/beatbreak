@@ -31,7 +31,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.2'
+export const GENERATOR_VERSION = 'pulsegrid-gen-3.3'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -756,10 +756,10 @@ export interface HoldApplicationResult {
 /** Share of notes that may become holds, per difficulty. Used only for pre-sustain analyses. */
 const HOLD_CHANCE: Record<Difficulty, number> = { easy: 0.1, normal: 0.13, hard: 0.16, expert: 0.18 }
 /**
- * Longest hold each difficulty will place, in seconds. A hold is a sustained sound, not a pole:
- * half a second is already a full beat at 120 BPM. The old 0.7–1.0 s caps dominated the lane.
+ * Longest hold each difficulty will place, in seconds. The sound decides the length; these caps
+ * only stop a pad that rings for bars from becoming a pole down the lane.
  */
-const HOLD_MAX_SECONDS: Record<Difficulty, number> = { easy: 0.5, normal: 0.42, hard: 0.44, expert: 0.5 }
+const HOLD_MAX_SECONDS: Record<Difficulty, number> = { easy: 2, normal: 2.2, hard: 2.5, expert: 3 }
 /**
  * Shortest sustained sound that may become a hold, per difficulty, in seconds. The music decides:
  * a pad or held vocal rings well past this and becomes a short hold; a drum hit decays fast and
@@ -1068,6 +1068,8 @@ export function generateChart(input: GenerateChartInput): Chart {
   const assignment = assignLanes(shaped, timing, settings, difficulty, seed)
   // Sustain per quantized step: a note whose sound keeps ringing becomes a hold. Keyed by rounded
   // milliseconds because lane assignment only ever reuses the candidate's time.
+  // Sustain per quantized step: a note whose sound keeps ringing in its own band becomes a hold.
+  // Keyed by rounded milliseconds because lane assignment only ever reuses the candidate's time.
   const sustains = new Map<number, number>()
   for (const candidate of shaped) {
     if (candidate.heldSeconds === undefined) continue

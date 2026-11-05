@@ -9,13 +9,13 @@ import type { AnalysisResult, Chart, Difficulty, SongMeta } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
 import { planForMeta, type EditPlan } from '../core/edit'
 import { decodeAudioFile } from '../audio/engine'
-import { downmixMono } from '../audio/analyze'
+import { ANALYSIS_VERSION, downmixMono } from '../audio/analyze'
 import { autoTrimWindow } from '../audio/trim'
 import { toPeakBytes, downsample, normalize } from '../core/math'
 import { createId, hashString } from '../core/rng'
 import { GENERATOR_VERSION, generateAllDifficulties } from '../chart/generate'
 import { TimingMap } from '../chart/timing'
-import type { AnalysisClient } from '../workers/analysisClient'
+import { AnalysisClient } from '../workers/analysisClient'
 import {
   listCharts,
   listSongs,
@@ -77,6 +77,30 @@ export function buildSongMeta(input: {
     lastPlayedAt: Date.now(),
     audioCached,
   }
+}
+
+const reanalyses = new Map<string, Promise<AnalysisResult>>()
+
+/** Analyse a saved song's audio again and store the result. Concurrent callers share one run. */
+function reanalyze(songId: string, buffer: AudioBuffer): Promise<AnalysisResult> {
+  const running = reanalyses.get(songId)
+  if (running) return running
+  const job = (async () => {
+    const client = new AnalysisClient()
+    try {
+      const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel))
+      const result = await client.analyze(downmixMono(channels, buffer.length), buffer.sampleRate, {
+        owned: buffer.numberOfChannels > 1,
+      })
+      await saveAnalysis(songId, result)
+      return result
+    } finally {
+      client.dispose()
+    }
+  })()
+  reanalyses.set(songId, job)
+  void job.finally(() => reanalyses.delete(songId)).catch(() => undefined)
+  return job
 }
 
 /** Everything the app persists about the analysis (the full result stays in memory only). */
@@ -317,6 +341,25 @@ export async function loadSongBundle(songId: string, options: { requireAudio?: b
   let meta = songs.find((song) => song.id === songId)
   if (!meta) return null
   let [charts, analysis] = await Promise.all([listCharts(songId), loadAnalysis(songId)])
+  let buffer: AudioBuffer | null = null
+  if (meta.audioCached) {
+    const file = await loadAudio(songId)
+    if (file) {
+      try {
+        buffer = await decodeAudioFile(file)
+      } catch {
+        buffer = null
+      }
+    }
+  }
+  // An analyser update re-reads the saved audio once, so old songs get the new measurements
+  // (hold lengths, for one). The regeneration below then rebuilds their unedited charts.
+  if (analysis && buffer && analysis.version !== ANALYSIS_VERSION) {
+    analysis = await reanalyze(songId, buffer)
+    const nextMeta: SongMeta = { ...meta, analysis: summarizeAnalysis(analysis) }
+    await saveSong(nextMeta)
+    meta = nextMeta
+  }
   if (analysis) {
     let trimChanged = false
     // One-time migration for libraries made before waveform-verified trim: the old energy-based
@@ -359,17 +402,6 @@ export async function loadSongBundle(songId: string, options: { requireAudio?: b
       await saveCharts(regenerated)
       const byDifficulty = new Map(regenerated.map((chart) => [chart.difficulty, chart]))
       charts = charts.map((chart) => byDifficulty.get(chart.difficulty) ?? chart)
-    }
-  }
-  let buffer: AudioBuffer | null = null
-  if (meta.audioCached) {
-    const file = await loadAudio(songId)
-    if (file) {
-      try {
-        buffer = await decodeAudioFile(file)
-      } catch {
-        buffer = null
-      }
     }
   }
   if (options.requireAudio && !buffer) {
