@@ -24,7 +24,7 @@
  */
 import { normalize, sampleAt } from '../core/math'
 import { fft, nextPow2 } from './dsp'
-import type { OnsetEvent, TempoCandidate } from '../core/types'
+import type { OnsetEvent, TempoCandidate, SongTexture } from '../core/types'
 
 export interface TempoEstimate {
   bpm: number
@@ -556,6 +556,51 @@ export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, ph
   }
   const beat = beatScores[0] >= beatScores[1] ? eighth : eighth + 2
   return phase + beat * sixteenth
+}
+
+/** How much more the sub-bass must rise on the offbeat line before it takes over (0-255 scale, about 1 dB). */
+const LOW_RISE_GAP = 5
+/** A snare-band lead this large keeps the current line unless the low end is overwhelming. */
+const SNARE_LEAD = 3
+const LOW_RISE_OVERWHELMING = 15
+
+/**
+ * Last check on which eighth line is the beat, from the sound rather than the onsets: bass notes
+ * and kicks start on the beat, so the lowest band jumps there, while offbeat stabs and hats can be the
+ * loudest onsets in the song. On Mecha-Tribe Assault those stabs put every Easy arrow between the
+ * beats. Snares sit on beats too, so a clear snare lead on the current line vetoes a small swing.
+ */
+export function settleBeatLine(texture: SongTexture, onsets: OnsetEvent[], bpm: number, phase: number, duration: number): number {
+  const { rate, bands, data } = texture
+  const frames = Math.floor(data.length / bands)
+  const period = 60 / bpm
+  const low = (time: number): number => {
+    const frame = Math.max(0, Math.min(frames - 1, Math.round(time * rate)))
+    return data[frame * bands]
+  }
+  const rise = (time: number): number => low(time + 0.03) - low(time - 0.03)
+  let onBeat = 0
+  let offBeat = 0
+  let count = 0
+  for (let time = phase + period; time < duration - period; time += period) {
+    onBeat += rise(time)
+    offBeat += rise(time + period / 2)
+    count++
+  }
+  if (count === 0) return phase
+  const gap = (offBeat - onBeat) / count
+  if (gap < LOW_RISE_GAP) return phase
+
+  let snaresOn = 0
+  let snaresOff = 0
+  for (const onset of onsets) {
+    if (onset.band !== 2) continue
+    const position = (((onset.time - phase) / period) % 1 + 1) % 1
+    if (Math.min(position, 1 - position) * period < 0.04) snaresOn++
+    else if (Math.abs(position - 0.5) * period < 0.04) snaresOff++
+  }
+  if (snaresOn >= SNARE_LEAD * Math.max(1, snaresOff) && gap < LOW_RISE_OVERWHELMING) return phase
+  return phase >= period / 2 ? phase - period / 2 : phase + period / 2
 }
 
 /** Tempo range the scan reports in: below it a family is doubled, above it halved. */

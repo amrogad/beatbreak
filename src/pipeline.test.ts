@@ -3,6 +3,7 @@ import { renderTestRhythm } from './audio/synth'
 import { analyzeSamples } from './audio/analyze'
 import { TimingMap } from './chart/timing'
 import { BAR_BEATS, groupBars, tempoFromRepeats } from './chart/structure'
+import { settleBeatLine } from './audio/tempo'
 import {
   DIFFICULTY_PROFILES,
   applyHolds,
@@ -15,7 +16,7 @@ import {
   validatePlayability,
 } from './chart/generate'
 import { buildEditPlan, isCut } from './core/edit'
-import type { AnalysisResult, ChartNote } from './core/types'
+import type { AnalysisResult, ChartNote, SongTexture } from './core/types'
 
 /**
  * End-to-end pipeline tests: synthetic drum pattern → analysis → timing → charts.
@@ -265,6 +266,30 @@ describe('chart generation', () => {
       settings: { targetNps: 6, keepRatio: 0.95 },
     })
     expect(dense.stats.noteCount).toBeGreaterThan(sparse.stats.noteCount * 1.5)
+  })
+})
+
+describe('beat line', () => {
+  const textureWithBass = (bpm: number, startSeconds: number, seconds: number): SongTexture => {
+    const rate = 43
+    const bands = 12
+    const data = new Uint8Array(Math.round(seconds * rate) * bands)
+    const period = 60 / bpm
+    for (let frame = 0; frame < data.length / bands; frame++) {
+      const sinceHit = ((((frame / rate - startSeconds) % period) + period) % period)
+      data[frame * bands] = sinceHit < period / 4 ? 200 : 80
+    }
+    return { rate, bands, data }
+  }
+
+  it('moves the beat onto the bass when the onsets picked the offbeat', () => {
+    const period = 0.5
+    const texture = textureWithBass(120, 0.25, 40)
+    expect(settleBeatLine(texture, [], 120, 0, 40)).toBeCloseTo(period / 2, 5)
+  })
+
+  it('leaves the beat alone when the bass already agrees', () => {
+    expect(settleBeatLine(textureWithBass(120, 0, 40), [], 120, 0, 40)).toBe(0)
   })
 })
 

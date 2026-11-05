@@ -10,10 +10,10 @@
 import type { AnalysisResult, OnsetEvent, Section, SongTexture } from '../core/types'
 import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
 import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
-import { detectTempoStability, estimateBeatsPerBar, estimateTempo } from './tempo'
+import { detectTempoStability, estimateBeatsPerBar, estimateTempo, settleBeatLine } from './tempo'
 import { tempoFromRepeats } from '../chart/structure'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.1'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.3'
 
 /**
  * Players place a beat a little before the energy peak our detector locks onto. Compared with
@@ -233,6 +233,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
   let tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, {})
   const repeatingBpm = tempoFromRepeats(onsets, texture, duration, tempoResult.bpm, tempoResult.phase)
   if (repeatingBpm !== null) tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, { fixedBpm: repeatingBpm })
+  tempoResult = { ...tempoResult, phase: settleBeatLine(texture, onsets, tempoResult.bpm, tempoResult.phase, duration) }
   const periodSeconds = 60 / tempoResult.bpm
   const { beatsPerBar } = estimateBeatsPerBar(onsets, periodSeconds, tempoResult.phase)
 
