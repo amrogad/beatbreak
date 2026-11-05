@@ -38,6 +38,7 @@ export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
           After the first visit the game is cached for offline play. Once it has loaded, you can
           keep playing without a connection.
         </p>
+        <p className="muted mt-12">Menu music: Synthwave House Loop by Fupi, CC0, from OpenGameArt.</p>
       </Panel>
 
       <Panel title="Found a bug?">

@@ -395,7 +395,7 @@ export class PlayfieldRenderer {
     if (density <= 0) return
     const strength = judgment === 'marvelous' ? 1.4 : judgment === 'perfect' ? 1.25 : judgment === 'great' ? 1 : 0.8
     const count = judgment === 'marvelous' || judgment === 'perfect' ? 12 : judgment === 'great' ? 8 : 5
-    this.particles.burst(x, geometry.receptorY, color, { count: Math.round(count * density), strength })
+    this.particles.burst(x, geometry.receptorY + this.tileShift(this.tileHy), color, { count: Math.round(count * density), strength })
   }
 
   /** A hold reached its tail with the key still down: StepMania's OK. */
@@ -403,7 +403,7 @@ export class PlayfieldRenderer {
     this.explosion[lane] = { color: '#ffffff', at: performance.now() }
     if (this.settings.reducedMotion || this.quality === 0) return
     const geometry = this.layout()
-    this.particles.burst(geometry.laneX[lane] + geometry.laneW / 2, geometry.receptorY, '#ffffff', { count: 10, strength: 1.1 })
+    this.particles.burst(geometry.laneX[lane] + geometry.laneW / 2, geometry.receptorY + this.tileShift(this.tileHy), '#ffffff', { count: 10, strength: 1.1 })
   }
 
   resize(): { width: number; height: number } {
@@ -456,7 +456,14 @@ export class PlayfieldRenderer {
     const noteH = this.preview ? Math.min(fullNote, this.height * 0.2) : fullNote
     // The receptor inset mirrors between layouts: at the top for rising arrows, at the bottom
     // for falling ones, so touch-thumb room and HUD clearance are the same either way.
-    const inset = this.preview ? noteH * (this.settings.noteShape === 'tile' ? 0.5 : 0.8) : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
+    const tiles = this.settings.noteShape === 'tile'
+    // Rectangles land right at the screen's edge, like piano keys; their long target reaches up
+    // from there. Other styles keep room around the target for the hit effects.
+    const inset = this.preview
+      ? noteH * (tiles ? 0.25 : 0.8)
+      : tiles
+        ? Math.max(20, this.height * 0.025)
+        : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
     const receptorY = direction === 1 ? inset : this.height - inset
     const travelDistance = direction === 1 ? this.height - receptorY : receptorY
     const pxPerSec = scrollPixelsPerSecond(this.settings.scrollSpeed, travelDistance)
@@ -741,7 +748,7 @@ export class PlayfieldRenderer {
       ctx.globalAlpha = held ? 1 : 0.45 + 0.55 * life
       drawCentered(ctx, sprite, x, headY, noteH)
       ctx.globalAlpha = 1
-      if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY, noteH, color)
+      if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY + shift, noteH, color)
     })
 
     this.missFx = this.missFx.filter((fx) => {
@@ -934,7 +941,7 @@ export class PlayfieldRenderer {
       const grow = this.settings.reducedMotion ? 1 : 1 + 0.2 * easeOut(Math.min(1, age / 300))
       const x = laneX[lane] + laneW / 2
       ctx.globalAlpha = fade * 0.35
-      drawCentered(ctx, this.glowSprite(blast.color, Math.round(noteH)), x, receptorY, noteH * 1.45 * grow)
+      drawCentered(ctx, this.glowSprite(blast.color, Math.round(noteH)), x, receptorY + this.tileShift(this.tileHy), noteH * 1.45 * grow)
     }
     ctx.restore()
   }
@@ -950,18 +957,23 @@ export class PlayfieldRenderer {
     const cached = this.spriteCache.get(key)
     if (cached) return cached
     const scale = this.dpr
-    // Room for the glow: a halo cut off by the sprite's edge shows as a hard straight line.
-    const pad = Math.ceil(size * (0.6 + Math.max(tileHy - TILE_BASE_HY, tileHx - TILE_BASE_HX) / 2))
-    const box = Math.ceil(size + pad * 2)
+    // Room for the glow: a halo cut off by the sprite's edge shows as a hard straight line. The
+    // sprite is only as big as the shape plus that room, so a tall rectangle is not drawn as a
+    // mostly empty square (every empty pixel still costs a phone's GPU).
+    const pad = Math.ceil(size * 0.6)
+    const boxW = Math.ceil(size * Math.max(1, tileHx) + pad * 2)
+    const boxH = Math.ceil(size * Math.max(1, tileHy) + pad * 2)
+    const box = boxW
     const canvas = document.createElement('canvas')
-    canvas.width = Math.ceil(box * scale)
-    canvas.height = Math.ceil(box * scale)
+    canvas.width = Math.ceil(boxW * scale)
+    canvas.height = Math.ceil(boxH * scale)
     const ctx = canvas.getContext('2d')!
     ctx.scale(scale, scale)
-    const c = box / 2
+    const cx = boxW / 2
+    const c = boxH / 2
     // Piano tiles are the same block in every column; everything else points its lane's way.
     const angle = UNROTATED.has(shape) ? 0 : LANE_ANGLE[lane]
-    const path = tracePath(shape, size, angle, c, tileHy, tileHx)
+    const path = tracePath(shape, size, angle, cx, tileHy, tileHx, c)
     // Gradients span the shape's real height: a tall tile squeezed into a note-high gradient banded.
     const hh = shape === 'tile' ? (size * tileHy) / 2 : size / 2
     ctx.lineJoin = 'round'
@@ -1021,7 +1033,8 @@ export class PlayfieldRenderer {
       ctx.fill(path)
     }
     canvas.dataset.tile = String(size)
-    canvas.dataset.box = String(box)
+    canvas.dataset.boxW = String(boxW)
+    canvas.dataset.boxH = String(boxH)
     this.spriteCache.set(key, canvas)
     return canvas
   }
@@ -1411,19 +1424,19 @@ function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY, tileHx = TILE_BASE
   return points
 }
 
-function tracePath(shape: NoteShape, size: number, angle: number, center: number, tileHy = TILE_BASE_HY, tileHx = TILE_BASE_HX): Path2D {
+function tracePath(shape: NoteShape, size: number, angle: number, center: number, tileHy = TILE_BASE_HY, tileHx = TILE_BASE_HX, centerY = center): Path2D {
   const points = shapePoints(shape, tileHy, tileHx)
   const s = size / 2
   const path = new Path2D()
   if (shape === 'orb') {
-    path.arc(center, center, s * 0.9, 0, Math.PI * 2)
+    path.arc(center, centerY, s * 0.9, 0, Math.PI * 2)
     return path
   }
   const cos = Math.cos(angle)
   const sin = Math.sin(angle)
   points.forEach(([px, py], index) => {
     const x = center + (px * cos - py * sin) * s
-    const y = center + (px * sin + py * cos) * s
+    const y = centerY + (px * sin + py * cos) * s
     if (index === 0) path.moveTo(x, y)
     else path.lineTo(x, y)
   })
@@ -1434,8 +1447,9 @@ function tracePath(shape: NoteShape, size: number, angle: number, center: number
 function drawCentered(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, x: number, y: number, size: number): void {
   // Arrow sprites carry padding around their tile, recorded on the canvas; glows have none.
   const tile = Number(sprite.dataset.tile ?? 0)
-  const w = tile > 0 ? (Number(sprite.dataset.box) * size) / tile : size
-  ctx.drawImage(sprite, x - w / 2, y - w / 2, w, w)
+  const w = tile > 0 ? (Number(sprite.dataset.boxW) * size) / tile : size
+  const h = tile > 0 ? (Number(sprite.dataset.boxH) * size) / tile : size
+  ctx.drawImage(sprite, x - w / 2, y - h / 2, w, h)
 }
 
 /** Big arcade text: chrome lettering with a glow in its own colour. */

@@ -8,7 +8,7 @@
  */
 import React, { useCallback, useEffect, lazy, useMemo, useRef, useState, Suspense, useSyncExternalStore } from 'react'
 import type { Chart, Difficulty, RunResults, SongMeta } from '../core/types'
-import { createTestSongFile, renderTestRhythm } from '../audio/synth'
+import { createTestSongFile } from '../audio/synth'
 import { getAudioContext, resumeAudioContext } from '../audio/engine'
 import { configureMenuMusic, playMenuMusic, previewStart, stopMenuMusic } from '../audio/menuMusic'
 import { loadSongBundle } from '../store/library'
@@ -146,15 +146,17 @@ function AppShell(): React.JSX.Element {
     if (route.name === 'setup' && !route.songId) return
     const latest = [...songs].sort((a, b) => (b.lastPlayedAt || b.createdAt) - (a.lastPlayedAt || a.createdAt))[0]
     const songId = route.name === 'setup' ? route.songId : latest?.id ?? null
-    if (!songId) {
-      try {
-        playMenuMusic('demo', demoBuffer(), 0)
-      } catch {
-        // No Web Audio: the menus simply stay silent.
-      }
-      return
-    }
     let cancelled = false
+    if (!songId) {
+      void loadMenuTheme()
+        .then((buffer) => {
+          if (buffer && !cancelled) playMenuMusic('theme', buffer, 0, true)
+        })
+        .catch(() => undefined)
+      return () => {
+        cancelled = true
+      }
+    }
     const start = (buffer: AudioBuffer, duration: number, sections: { start: number; energy: number }[]): void => {
       if (!cancelled) playMenuMusic(songId, buffer, previewStart(duration, sections))
     }
@@ -512,14 +514,24 @@ function AppShell(): React.JSX.Element {
   )
 }
 
-let demoCache: AudioBuffer | null = null
+let themeLoad: Promise<AudioBuffer | null> | null = null
 
-/** The demo track as menu music when there are no songs yet, rendered once. */
-function demoBuffer(): AudioBuffer {
-  if (demoCache) return demoCache
-  const rhythm = renderTestRhythm({ bpm: 128, bars: 16, sampleRate: 32000, melody: true })
-  const buffer = getAudioContext().createBuffer(1, rhythm.samples.length, rhythm.sampleRate)
-  buffer.copyToChannel(rhythm.samples, 0)
-  demoCache = buffer
-  return buffer
+/**
+ * The menu theme while there are no songs yet: Synthwave House Loop by Fupi (CC0, OpenGameArt).
+ * The OGG loops seamlessly; browsers that cannot decode it get the MP3.
+ */
+function loadMenuTheme(): Promise<AudioBuffer | null> {
+  themeLoad ??= (async () => {
+    for (const url of ['/music/menu-theme.ogg', '/music/menu-theme.mp3']) {
+      try {
+        const response = await fetch(url)
+        if (!response.ok) continue
+        return await getAudioContext().decodeAudioData(await response.arrayBuffer())
+      } catch {
+        // Try the next format.
+      }
+    }
+    return null
+  })()
+  return themeLoad
 }

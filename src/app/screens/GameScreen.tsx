@@ -44,7 +44,7 @@ const leadInRef = { current: 900 }
 
 export function GameScreen({
   song,
-  chart,
+  chart: sourceChart,
   buffer,
   settings,
   autoPlay,
@@ -75,6 +75,22 @@ export function GameScreen({
 
   const [paused, setPaused] = useState(false)
   const [hud, setHud] = useState({ score: 0, combo: 0, accuracy: 1, judged: 0 })
+  // Long arrows off: every hold plays as a plain tap at its start.
+  const chart = useMemo(
+    () =>
+      settings.longArrows
+        ? sourceChart
+        : {
+            ...sourceChart,
+            notes: sourceChart.notes.map((note) => {
+              if (note.kind !== 'hold') return note
+              const tap = { ...note, kind: 'tap' as const }
+              delete tap.duration
+              return tap
+            }),
+          },
+    [sourceChart, settings.longArrows],
+  )
   // Touch devices have no keyboard: the hint should teach the gesture that actually works.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 

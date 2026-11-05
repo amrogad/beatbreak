@@ -54,6 +54,8 @@ export interface Settings {
   menuMusic: boolean
   /** Long arrows: let go on the end arrow ('release') or just hold to the end ('hold'). */
   holdMode: 'release' | 'hold'
+  /** Long arrows in the chart; off plays each one as a tap. Phones start with them off. */
+  longArrows: boolean
   /** How wide the timing windows are: 'phone' is 1.5x wider, since tapping glass is harder. */
   timing: 'pc' | 'phone'
   /** Difficulty a song opens on before you pick one for it; 'auto' uses the recommended one. */
@@ -92,6 +94,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showStats: false,
   menuMusic: true,
   holdMode: 'hold',
+  longArrows: true,
   timing: 'pc',
   defaultDifficulty: 'auto',
   // A screen shows a frame a frame or two after it is drawn, so arrows reach the target a little
@@ -118,7 +121,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 15
+const SETTINGS_SCHEMA = 16
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -227,6 +230,7 @@ export function sanitizeSettings(input: unknown): Settings {
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
     holdMode: raw.holdMode === 'release' ? 'release' : 'hold',
+    longArrows: typeof raw.longArrows === 'boolean' ? raw.longArrows : DEFAULT_SETTINGS.longArrows,
     timing: raw.timing === 'phone' ? 'phone' : 'pc',
     defaultDifficulty:
       raw.defaultDifficulty === 'easy' || raw.defaultDifficulty === 'normal' || raw.defaultDifficulty === 'hard' || raw.defaultDifficulty === 'expert'
@@ -243,7 +247,7 @@ export function sanitizeSettings(input: unknown): Settings {
  */
 function touchDefaults(): Partial<Settings> {
   const touch = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
-  return touch ? { scrollDirection: 'down', noteShape: 'tile', timing: 'phone', reducedMotion: true } : {}
+  return touch ? { scrollDirection: 'down', noteShape: 'tile', timing: 'phone', reducedMotion: true, longArrows: false } : {}
 }
 
 export function loadSettings(): Settings {
@@ -272,6 +276,8 @@ export function loadSettings(): Settings {
       if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
+      // v16: phones start without long arrows (Amro, 2026-11-06).
+      if ((parsed.schema ?? 1) < 16 && touchDefaults().longArrows === false) parsed.longArrows = false
       // v15: phones start with effects off, for a smoother game (Amro, 2026-11-06).
       if ((parsed.schema ?? 1) < 15 && touchDefaults().reducedMotion) parsed.reducedMotion = true
       // v14: phones and tablets start on the wider phone timing.

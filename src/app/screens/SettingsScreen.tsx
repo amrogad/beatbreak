@@ -156,6 +156,17 @@ export function SettingsScreen({
           />
           <Choice
             label="Long arrows"
+            value={settings.longArrows ? 'on' : 'off'}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            onChange={(value) => onUpdate({ longArrows: value === 'on' })}
+            hint="Off turns every long arrow into a single tap. Phones start with them off."
+          />
+          {settings.longArrows && (
+          <Choice
+            label="Ending a long arrow"
             value={settings.holdMode}
             options={[
               { value: 'hold', label: 'Hold' },
@@ -164,6 +175,7 @@ export function SettingsScreen({
             onChange={(value) => onUpdate({ holdMode: value })}
             hint="Hold: keep holding to the end. Let go: release on the end arrow. Letting go early always misses."
           />
+          )}
           <Choice
             label="Direction"
             value={settings.scrollDirection}
