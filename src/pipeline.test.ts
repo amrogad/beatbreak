@@ -328,9 +328,10 @@ describe('hold notes', () => {
     const chart = generateChart({ analysis, timing, duration: truth.duration, songId: 'pad', difficulty: 'expert' })
     const hold = chart.notes.find((n) => n.kind === 'hold' && Math.abs(n.time - padStart) < 0.15)
     expect(hold, 'the pad becomes a hold').toBeDefined()
-    // The hold covers the pad until the next real hit, never past the sound itself.
+    // The hold covers the pad until the next real hit, never past the sound by more than the
+    // half a 16th its tail can move when it snaps to the grid.
     expect(hold!.duration!).toBeGreaterThan(0.3)
-    expect(hold!.duration!).toBeLessThanOrEqual(1.6 + 1e-9)
+    expect(hold!.duration!).toBeLessThanOrEqual(1.6 + beatSeconds / 8 + 1e-9)
   })
 
   it('expert follows the music 1:1: nearly every selected candidate becomes an arrow', () => {

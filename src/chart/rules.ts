@@ -15,6 +15,9 @@
  *  5. Easy: at most five arrows in a row at half-beat spacing before a rest.
  *  6. Normal and Hard: no chords in the middle of a fast run.
  *  7. Normal and Hard: no anchors, the same column hammered in a run (3 on Normal, 5 on Hard).
+ *  8. No stray arrow at the very start or end: an arrow two bars or more away from the rest of the
+ *     chart (a quiet intro sound, a last ring after the song) is dropped, so the chart starts
+ *     when the music does.
  *
  * Rules 2-7 follow the osu!mania ranking criteria for the matching difficulty; rule 1 is
  * PULSEGRID's own. Every rule only removes arrows, shortens holds, moves a release onto another
@@ -61,7 +64,26 @@ export function applyChartRules(
   if (difficulty === 'normal' || difficulty === 'hard') notes = noChordsInRuns(notes, beatAt)
   const anchor = ANCHOR_LIMIT[difficulty]
   if (anchor) notes = breakAnchors(notes, beatAt, anchor, settings)
+  notes = dropStrays(notes, beatAt)
   return notes.sort((a, b) => a.time - b.time || a.lane - b.lane)
+}
+
+/** Two bars, in beats: an arrow at least this far from every other one is a stray. */
+const STRAY_GAP_BEATS = 8
+
+function dropStrays(notes: ChartNote[], beatAt: (t: number) => number): ChartNote[] {
+  const moments = groups(notes)
+  let first = 0
+  let last = moments.length - 1
+  // At the start the next arrow is measured from this one's start: a long hold over a quiet intro
+  // is still a stray. At the end the gap runs from the previous arrow's end.
+  while (first < last && moments[first + 1][0].time - moments[first][0].time >= STRAY_GAP_BEATS * beatAt(moments[first][0].time)) first++
+  while (last > first) {
+    const previousEnd = Math.max(...moments[last - 1].map(end))
+    if (moments[last][0].time - previousEnd < STRAY_GAP_BEATS * beatAt(previousEnd)) break
+    last--
+  }
+  return moments.slice(first, last + 1).flat()
 }
 
 /** Groups of arrows that share a moment, in time order. */

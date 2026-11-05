@@ -46,6 +46,23 @@ describe('chart rules', () => {
     expect(new Set(ends).size).toBe(1)
   })
 
+  it('drops a lone arrow two bars or more before the chart starts', () => {
+    const notes = [hold(0.5, 2, 1.5), ...[5, 5.5, 6, 6.5].map((t, i) => tap(t, (i % 4) as Lane))]
+    const out = applyChartRules(notes, timing, settings, 'hard')
+    expect(out.map((n) => n.time)).toEqual([5, 5.5, 6, 6.5])
+  })
+
+  it('drops a lone arrow two bars or more after the chart ends', () => {
+    const notes = [...[1, 1.5, 2, 2.5].map((t, i) => tap(t, (i % 4) as Lane)), tap(7, 1)]
+    const out = applyChartRules(notes, timing, settings, 'hard')
+    expect(out.map((n) => n.time)).toEqual([1, 1.5, 2, 2.5])
+  })
+
+  it('keeps an opening arrow that leads into the chart', () => {
+    const notes = [tap(1, 0), ...[3, 3.5, 4].map((t, i) => tap(t, (i + 1) as Lane))]
+    expect(applyChartRules(notes, timing, settings, 'hard')).toHaveLength(4)
+  })
+
   it('turns holds shorter than the minimum into taps', () => {
     const out = applyChartRules([hold(1, 0, 0.3)], timing, { stepsPerBeat: 1, maxChord: 1, minJackGap: 0.4 }, 'easy')
     expect(out[0].kind).toBe('tap')
