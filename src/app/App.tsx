@@ -517,7 +517,7 @@ function AppShell(): React.JSX.Element {
 let themeLoad: Promise<AudioBuffer | null> | null = null
 
 /**
- * The menu theme while there are no songs yet: Synthwave House Loop by Fupi (CC0, OpenGameArt).
+ * The menu theme while there are no songs yet: Virtual Rush by vitalezzz (CC0, OpenGameArt).
  * The OGG loops seamlessly; browsers that cannot decode it get the MP3.
  */
 function loadMenuTheme(): Promise<AudioBuffer | null> {
