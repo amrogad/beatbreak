@@ -38,7 +38,21 @@ export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
           After the first visit the game is cached for offline play. Once it has loaded, you can
           keep playing without a connection.
         </p>
-        <p className="muted mt-12">Menu music: Virtual Rush by vitalezzz, CC0, from OpenGameArt.</p>
+        <p className="muted mt-12">
+          Menu music:{' '}
+          <a href="https://opengameart.org/content/space-sprinkles" target="_blank" rel="noreferrer">
+            Space Sprinkles
+          </a>{' '}
+          by Matthew Pablo,{' '}
+          <a href="https://www.matthewpablo.com" target="_blank" rel="noreferrer">
+            www.matthewpablo.com
+          </a>
+          , licensed under{' '}
+          <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">
+            CC BY 3.0
+          </a>
+          . Silent edges trimmed, converted for the web.
+        </p>
       </Panel>
 
       <Panel title="Found a bug?">

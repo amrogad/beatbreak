@@ -517,8 +517,8 @@ function AppShell(): React.JSX.Element {
 let themeLoad: Promise<AudioBuffer | null> | null = null
 
 /**
- * The menu theme while there are no songs yet: Virtual Rush by vitalezzz (CC0, OpenGameArt).
- * The OGG loops seamlessly; browsers that cannot decode it get the MP3.
+ * The menu theme while there are no songs yet: Space Sprinkles by Matthew Pablo (CC BY 3.0,
+ * credited on About). Browsers that cannot decode the OGG get the MP3.
  */
 function loadMenuTheme(): Promise<AudioBuffer | null> {
   themeLoad ??= (async () => {
