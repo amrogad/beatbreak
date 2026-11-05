@@ -13,7 +13,7 @@ import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pi
 import { detectTempoStability, estimateBeatsPerBar, estimateTempo, settleBeatLine } from './tempo'
 import { tempoFromRepeats } from '../chart/structure'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.3'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.4'
 
 /**
  * Players place a beat a little before the energy peak our detector locks onto. Compared with

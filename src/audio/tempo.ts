@@ -578,7 +578,8 @@ export function settleBeatLine(texture: SongTexture, onsets: OnsetEvent[], bpm: 
     const frame = Math.max(0, Math.min(frames - 1, Math.round(time * rate)))
     return data[frame * bands]
   }
-  const rise = (time: number): number => low(time + 0.03) - low(time - 0.03)
+  // Frames are stamped at their start, so 'before' has to reach back past a whole frame.
+  const rise = (time: number): number => low(time + 0.04) - low(time - 0.07)
   let onBeat = 0
   let offBeat = 0
   let count = 0
