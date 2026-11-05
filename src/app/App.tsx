@@ -8,8 +8,8 @@
  */
 import React, { useCallback, useEffect, lazy, useMemo, useRef, useState, Suspense, useSyncExternalStore } from 'react'
 import type { Chart, Difficulty, RunResults, SongMeta } from '../core/types'
-import { createTestSongFile } from '../audio/synth'
-import { resumeAudioContext } from '../audio/engine'
+import { createTestSongFile, renderTestRhythm } from '../audio/synth'
+import { getAudioContext, resumeAudioContext } from '../audio/engine'
 import { configureMenuMusic, playMenuMusic, previewStart, stopMenuMusic } from '../audio/menuMusic'
 import { loadSongBundle } from '../store/library'
 import { attachUiSounds, configureSfx } from '../audio/sfx'
@@ -30,7 +30,7 @@ const EditorScreen = lazy(() =>
 )
 import { loadBestScores } from './screens/bestScores'
 import type { BestScores } from './screens/bestScores'
-import { Button, Spinner } from './components'
+import { Button, Icon, Spinner } from './components'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Tutorial } from './Tutorial'
 import { listSongs } from '../store/repository'
@@ -134,18 +134,26 @@ function AppShell(): React.JSX.Element {
     }
   }, [])
 
-  // Menu music: the song being set up or the song just played.
+  // Menu music: the song being set up, or on the other menus the latest song (the demo track with
+  // an empty library). The topbar's music button mutes it. The results stay quiet: the song
+  // starting again right after it ended sounded like a replay.
   useEffect(() => {
     if (!settings.menuMusic) return
-    // Music plays only on a song's setup screen. The home page, Settings and About stay quiet
-    // (Amro, 2026-11-06), and the results stay quiet too: the song starting again right after it
-    // ended sounded like a replay.
-    if (route.name !== 'setup') {
+    if (route.name === 'game' || route.name === 'editor' || route.name === 'results') {
       stopMenuMusic(0.3)
       return
     }
-    const songId = route.songId
-    if (!songId) return
+    if (route.name === 'setup' && !route.songId) return
+    const latest = [...songs].sort((a, b) => (b.lastPlayedAt || b.createdAt) - (a.lastPlayedAt || a.createdAt))[0]
+    const songId = route.name === 'setup' ? route.songId : latest?.id ?? null
+    if (!songId) {
+      try {
+        playMenuMusic('demo', demoBuffer(), 0)
+      } catch {
+        // No Web Audio: the menus simply stay silent.
+      }
+      return
+    }
     let cancelled = false
     const start = (buffer: AudioBuffer, duration: number, sections: { start: number; energy: number }[]): void => {
       if (!cancelled) playMenuMusic(songId, buffer, previewStart(duration, sections))
@@ -165,7 +173,7 @@ function AppShell(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [route, settings.menuMusic])
+  }, [route, songs, settings.menuMusic])
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     settingsStore.update(patch)
@@ -468,6 +476,15 @@ function AppShell(): React.JSX.Element {
             </span>
           </button>
           <div className="row gap-8">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updateSettings({ menuMusic: !settings.menuMusic })}
+              aria-label={settings.menuMusic ? 'Mute menu music' : 'Play menu music'}
+              title={settings.menuMusic ? 'Mute menu music' : 'Play menu music'}
+            >
+              <Icon name={settings.menuMusic ? 'sound' : 'muted'} />
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setRoute({ name: 'settings' })}>
               Settings
             </Button>
@@ -493,4 +510,16 @@ function AppShell(): React.JSX.Element {
       <Tutorial open={tutorialOpen} onClose={closeTutorial} />
     </div>
   )
+}
+
+let demoCache: AudioBuffer | null = null
+
+/** The demo track as menu music when there are no songs yet, rendered once. */
+function demoBuffer(): AudioBuffer {
+  if (demoCache) return demoCache
+  const rhythm = renderTestRhythm({ bpm: 128, bars: 16, sampleRate: 32000, melody: true })
+  const buffer = getAudioContext().createBuffer(1, rhythm.samples.length, rhythm.sampleRate)
+  buffer.copyToChannel(rhythm.samples, 0)
+  demoCache = buffer
+  return buffer
 }

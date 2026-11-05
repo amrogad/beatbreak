@@ -383,7 +383,7 @@ export function KeyCap({
   )
 }
 
-export type IconName = 'back' | 'play' | 'stop' | 'undo' | 'replay' | 'fullscreen' | 'pause' | 'earlier' | 'later'
+export type IconName = 'back' | 'play' | 'stop' | 'undo' | 'replay' | 'fullscreen' | 'pause' | 'earlier' | 'later' | 'sound' | 'muted'
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   back: <path d="M16 10H4M9 4.5 3.5 10 9 15.5" />,
@@ -395,6 +395,8 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
   pause: <path d="M7 4.5v11M13 4.5v11" />,
   earlier: <path d="M11 4.5 5.5 10l5.5 5.5M16 4.5 10.5 10l5.5 5.5" />,
   later: <path d="M9 4.5l5.5 5.5L9 15.5M4 4.5 9.5 10 4 15.5" />,
+  sound: <path d="M3.5 8v4h3l4 3.5v-11l-4 3.5zM13.5 7.5a3.5 3.5 0 0 1 0 5M15.5 5a7 7 0 0 1 0 10" />,
+  muted: <path d="M3.5 8v4h3l4 3.5v-11l-4 3.5zM13.5 7.5l4 5M17.5 7.5l-4 5" />,
 }
 
 /** Small drawn icons, so they sit centred in buttons whatever the font. */
