@@ -126,6 +126,8 @@ const MONO_WHITE = '#f4f4f4'
 /** A missed arrow turns this red and fades out where it was missed, over this long. */
 const MISS_COLOR = '#ff4d5e'
 const MISS_FADE_MS = 320
+/** An early or late hit fades out where it was tapped, over this long. */
+const HIT_FADE_MS = 160
 
 interface JudgeStyle {
   fill: string
@@ -213,11 +215,13 @@ export class PlayfieldRenderer {
   private minLaneGap = Infinity
   /** Half the piano tile's height in units of half a note; grows up to ~2x when the chart has room. */
   private tileHy = TILE_BASE_HY
+  /** Half the tile's width in the same units; the short home preview shrinks notes but not columns. */
+  private tileHx = TILE_BASE_HX
   /**
    * Missed arrows fading out on the spot: the note, the song time it froze at, where its head
    * sat (a hold let go late keeps its played part out of view) and the wall-clock start.
    */
-  private missFx: { note: ChartNote; frozenMs: number; headTime: number; at: number }[] = []
+  private missFx: { note: ChartNote; frozenMs: number; headTime: number; at: number; hit?: boolean }[] = []
   private lastCombo = 0
   private comboBumpAt = -1e9
   private comboMilestoneAt = -1e9
@@ -362,6 +366,11 @@ export class PlayfieldRenderer {
     }
     const color = this.columnColor(lane)
     this.explosion[lane] = { color, at: performance.now() }
+    // An early or late tap shows the note vanishing where it really was, short of or past the target.
+    const hitNote = Math.abs(event.deltaMs) > 20 && !event.noteId.endsWith('#tail') ? this.notesById.get(event.noteId) : undefined
+    if (hitNote && hitNote.kind === 'tap') {
+      this.missFx.push({ note: hitNote, frozenMs: event.time * 1000, headTime: hitNote.time, at: performance.now(), hit: true })
+    }
     if (this.settings.reducedMotion) return
     const geometry = this.layout()
     const x = geometry.laneX[lane] + geometry.laneW / 2
@@ -413,7 +422,7 @@ export class PlayfieldRenderer {
 
   private layout(): PlayfieldLayout {
     // Leave room for touch thumbs and for wide monitors: the playfield is a centred column.
-    const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}`
+    const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}:${this.settings.noteShape}`
     const cached = this.layoutCache
     if (cached && this.layoutKey === key) return cached
     // Phones use nearly the full width: thumbs need big targets more than they need margins.
@@ -430,7 +439,7 @@ export class PlayfieldRenderer {
     const noteH = this.preview ? Math.min(fullNote, this.height * 0.2) : fullNote
     // The receptor inset mirrors between layouts: at the top for rising arrows, at the bottom
     // for falling ones, so touch-thumb room and HUD clearance are the same either way.
-    const inset = this.preview ? noteH * 0.8 : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
+    const inset = this.preview ? noteH * (this.settings.noteShape === 'tile' ? (TILE_MAX_HY + 0.2) / 2 : 0.8) : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
     const receptorY = direction === 1 ? inset : this.height - inset
     const travelDistance = direction === 1 ? this.height - receptorY : receptorY
     const pxPerSec = scrollPixelsPerSecond(this.settings.scrollSpeed, travelDistance)
@@ -447,6 +456,7 @@ export class PlayfieldRenderer {
     }
     // Piano tiles stretch toward double height, but never so far that two in one column overlap.
     const roomHy = (0.85 * this.minLaneGap * pxPerSec) / Math.max(1, noteH)
+    this.tileHx = Math.round(((TILE_BASE_HX * fullNote) / Math.max(1, noteH)) * 20) / 20
     this.tileHy = Math.round(Math.max(TILE_BASE_HY, Math.min(TILE_MAX_HY, roomHy)) * 20) / 20
     this.layoutCache = layout
     this.layoutKey = key
@@ -699,13 +709,14 @@ export class PlayfieldRenderer {
 
     this.missFx = this.missFx.filter((fx) => {
       const age = this.nowMs - fx.at
-      if (age > MISS_FADE_MS) return false
-      const fade = 1 - age / MISS_FADE_MS
+      const life = fx.hit ? HIT_FADE_MS : MISS_FADE_MS
+      if (age > life) return false
+      const fade = 1 - age / life
       const { note } = fx
       const x = laneX[note.lane] + laneW / 2
       const headY = receptorY + direction * ((fx.headTime * 1000 - fx.frozenMs) / 1000) * pxPerSec
       const size = noteH * (1 - 0.12 * (1 - fade))
-      const missColor = this.settings.theme === 'mono' ? '#6a6a6a' : MISS_COLOR
+      const missColor = fx.hit ? this.columnColor(note.lane) : this.settings.theme === 'mono' ? '#6a6a6a' : MISS_COLOR
       if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) {
         const tailY = receptorY + direction * (((note.time + (note.duration ?? 0)) * 1000 - fx.frozenMs) / 1000) * pxPerSec
         this.drawHoldBody(x, headY, tailY, noteH, missColor, 'dropping', 1, note.lane, 0.6 * fade)
@@ -756,8 +767,11 @@ export class PlayfieldRenderer {
     const turn = this.settings.noteShape === 'tile' ? 0 : LANE_ANGLE[lane]
     const cos = Math.cos(turn)
     const sin = Math.sin(turn)
-    const shape = shapePoints(this.settings.noteShape, this.tileHy).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
-    const tailSide = (y: number): boolean => (y - headY) * towardTail > 1e-6
+    const shape = shapePoints(this.settings.noteShape, this.tileHy, this.tileHx).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
+    // Cut where the shape is widest, so an up or down arrow stretches its whole head instead of a
+    // thin stem; sideways arrows and round shapes are widest through the middle and cut there.
+    const cutY = headY + widestCut(shape, headY, half)
+    const tailSide = (y: number): boolean => (y - cutY) * towardTail > 1e-6
     const shift = (x: number, y: number): [number, number] => [x, tailSide(y) ? y + towardTail * length : y]
     const path = new Path2D()
     const points: [number, number][] = []
@@ -767,16 +781,16 @@ export class PlayfieldRenderer {
       points.push(shift(x1, y1))
       // A corner sitting exactly on the cut (a sideways arrow's tip) gets a second copy at the far
       // end, so its side runs straight down the hold instead of slanting.
-      const onCut = (y: number): boolean => Math.abs(y - headY) <= 1e-6
-      if (onCut(y1) && tailSide(y2)) points.push([x1, headY + towardTail * length])
-      if (tailSide(y1) && onCut(y2)) points.push([x2, headY + towardTail * length])
+      const onCut = (y: number): boolean => Math.abs(y - cutY) <= 1e-6
+      if (onCut(y1) && tailSide(y2)) points.push([x1, cutY + towardTail * length])
+      if (tailSide(y1) && onCut(y2)) points.push([x2, cutY + towardTail * length])
       // Where an edge crosses the cut, add both ends of the new straight side.
       if (tailSide(y1) !== tailSide(y2) && Math.abs(y2 - y1) > 1e-6) {
-        const t = (headY - y1) / (y2 - y1)
+        const t = (cutY - y1) / (y2 - y1)
         if (t > 0 && t < 1) {
           const x = x1 + (x2 - x1) * t
-          const near: [number, number] = [x, headY]
-          const far: [number, number] = [x, headY + towardTail * length]
+          const near: [number, number] = [x, cutY]
+          const far: [number, number] = [x, cutY + towardTail * length]
           if (tailSide(y1)) points.push(far, near)
           else points.push(near, far)
         }
@@ -854,12 +868,13 @@ export class PlayfieldRenderer {
   private noteSprite(kind: 'note' | 'receptor' | 'flash', color: string, lane: Lane, size: number): HTMLCanvasElement {
     const shape = this.settings.noteShape
     const tileHy = shape === 'tile' ? this.tileHy : TILE_BASE_HY
-    const key = `${kind}|${color}|${kind === 'flash' && shape === 'orb' ? 0 : lane}|${shape}|${Math.round(size)}|${tileHy}`
+    const tileHx = shape === 'tile' ? this.tileHx : TILE_BASE_HX
+    const key = `${kind}|${color}|${kind === 'flash' && shape === 'orb' ? 0 : lane}|${shape}|${Math.round(size)}|${tileHy}|${tileHx}`
     const cached = this.spriteCache.get(key)
     if (cached) return cached
     const scale = this.dpr
     // Room for the glow: a halo cut off by the sprite's edge shows as a hard straight line.
-    const pad = Math.ceil(size * (0.6 + (tileHy - TILE_BASE_HY) / 2))
+    const pad = Math.ceil(size * (0.6 + Math.max(tileHy - TILE_BASE_HY, tileHx - TILE_BASE_HX) / 2))
     const box = Math.ceil(size + pad * 2)
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(box * scale)
@@ -869,7 +884,7 @@ export class PlayfieldRenderer {
     const c = box / 2
     // Piano tiles are the same block in every column; everything else points its lane's way.
     const angle = shape === 'tile' ? 0 : LANE_ANGLE[lane]
-    const path = tracePath(shape, size, angle, c, tileHy)
+    const path = tracePath(shape, size, angle, c, tileHy, tileHx)
     ctx.lineJoin = 'round'
     if (kind === 'note') {
       // Candy-gloss arrow: bright body, a hard white highlight on the top half, a light rim.
@@ -1247,7 +1262,35 @@ function shuffledColors(): string[] {
 }
 
 const TILE_BASE_HY = 0.95
+const TILE_BASE_HX = 0.92
 const TILE_MAX_HY = 1.8
+
+/** Offset from the centre, within half a note, of the shape's widest horizontal cross-section. */
+function widestCut(shape: number[][], centerY: number, half: number): number {
+  let best = 0
+  let bestWidth = -1
+  for (let step = 0; step <= 40; step++) {
+    const d = ((step - 20) / 20) * half * 0.9
+    const y = centerY + d
+    let min = Infinity
+    let max = -Infinity
+    for (let k = 0; k < shape.length; k++) {
+      const [x1, y1] = shape[k]
+      const [x2, y2] = shape[(k + 1) % shape.length]
+      if ((y1 - y) * (y2 - y) > 0 || Math.abs(y2 - y1) < 1e-9) continue
+      const x = x1 + ((x2 - x1) * (y - y1)) / (y2 - y1)
+      min = Math.min(min, x)
+      max = Math.max(max, x)
+    }
+    const width = max - min
+    // A clearly wider slice wins; near-equal ones go to the one closest to the middle.
+    if (width > bestWidth * 1.02 || (width >= bestWidth * 0.98 && Math.abs(d) < Math.abs(best))) {
+      if (width > bestWidth) bestWidth = width
+      best = d
+    }
+  }
+  return best
+}
 
 function minLaneGap(notes: readonly ChartNote[]): number {
   const lastEnd: (number | null)[] = [null, null, null, null]
@@ -1265,14 +1308,14 @@ const ARROW_POINTS: [number, number][] = [[-0.94, -0.3], [0.02, -0.3], [0.02, -0
 
 /** The arrow (or skin shape) traced around a centre point, rotated for its lane. */
 /** A skin's outline as unit points around 0, pointing right (the orb as a 24-sided circle). */
-function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY): [number, number][] {
+function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY, tileHx = TILE_BASE_HX): [number, number][] {
   const points: [number, number][] = []
   if (shape === 'arrow' || shape === 'bar') {
     // A chunky arcade arrow pointing right, filling the square tile.
     points.push(...ARROW_POINTS)
   } else if (shape === 'tile') {
     // A piano tile: a block nearly as wide as its column (glow included), as tall as the chart allows.
-    points.push([-0.92, -tileHy], [0.92, -tileHy], [0.92, tileHy], [-0.92, tileHy])
+    points.push([-tileHx, -tileHy], [tileHx, -tileHy], [tileHx, tileHy], [-tileHx, tileHy])
   } else if (shape === 'chevron') {
     points.push([-0.85, -0.92], [0.95, 0], [-0.85, 0.92], [-0.3, 0])
   } else if (shape === 'diamond') {
@@ -1297,8 +1340,8 @@ function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY): [number, number][
   return points
 }
 
-function tracePath(shape: NoteShape, size: number, angle: number, center: number, tileHy = TILE_BASE_HY): Path2D {
-  const points = shapePoints(shape, tileHy)
+function tracePath(shape: NoteShape, size: number, angle: number, center: number, tileHy = TILE_BASE_HY, tileHx = TILE_BASE_HX): Path2D {
+  const points = shapePoints(shape, tileHy, tileHx)
   const s = size / 2
   const path = new Path2D()
   if (shape === 'orb') {

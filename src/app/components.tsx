@@ -177,6 +177,43 @@ export function Select<T extends string>({
   )
 }
 
+/** A short list of options shown as big buttons, so every choice is visible without opening a menu. */
+export function Choice<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  hint,
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string; color?: string }[]
+  onChange: (value: T) => void
+  hint?: string
+}): React.JSX.Element {
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      <div className="choice" role="radiogroup" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={value === option.value}
+            className={`choice-btn${value === option.value ? ' is-selected' : ''}`}
+            style={option.color ? ({ '--choice': option.color } as React.CSSProperties) : undefined}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {hint && <span className="field-hint">{hint}</span>}
+    </div>
+  )
+}
+
 export function Chip({
   children,
   color,

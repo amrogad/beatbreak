@@ -7,6 +7,13 @@ import { settingsStore } from '../store/settings'
 
 const PREVIEW_BPM = 128
 const LOOP_BEATS = 16
+/**
+ * How far off the demo player hits each note, in ms (null = no tap, a miss), so the preview shows
+ * the whole range of judgements instead of a wall of Marvelous.
+ */
+const HIT_OFFSETS: (number | null)[] = [
+  0, 26, -55, 5, 0, -8, 72, null, 0, 30, -75, 0, 50, -12, 4, 0, -28, 58, 0, null, -60, 7, 0,
+]
 
 /**
  * The home page demo: the real playfield renderer playing a short looping chart on auto-play, so it
@@ -35,7 +42,7 @@ export function PlayfieldPreview(): React.JSX.Element {
     const session = new GameSession({
       chart,
       windows: windowsForDifficulty('standard', 'normal'),
-      autoPlay: true,
+      holdMode: 'hold',
       onJudgment: (event) => renderer.notify(event, session.scoreState.combo),
       onHoldComplete: (lane) => renderer.holdComplete(lane),
     })
@@ -44,14 +51,38 @@ export function PlayfieldPreview(): React.JSX.Element {
     const started = performance.now()
     let lastLoop = 0
     let frame = 0
+    let next = 0
+    const releaseAt: (number | null)[] = [null, null, null, null]
     const tick = (): void => {
       const elapsed = performance.now() - started
       const loop = Math.floor(elapsed / loopMs)
       if (loop !== lastLoop) {
         lastLoop = loop
+        next = 0
         session.reset()
       }
       const songMs = (elapsed % loopMs) - leadMs
+      // A scripted player: taps each note at its planned offset and lets go after the hold ends.
+      while (next < chart.notes.length) {
+        const note = chart.notes[next]
+        const offset = HIT_OFFSETS[next % HIT_OFFSETS.length]
+        const at = note.time * 1000 + (offset ?? 0)
+        if (at > songMs) break
+        next++
+        if (offset === null) continue
+        // Tapped where it really was: early and late hits leave the note short of or past the target.
+        session.handleTap(note.lane, at)
+        renderer.press(note.lane)
+        releaseAt[note.lane] = (note.time + (note.duration ?? 0)) * 1000 + 90
+      }
+      for (let lane = 0; lane < 4; lane++) {
+        const at = releaseAt[lane]
+        if (at !== null && songMs >= at) {
+          releaseAt[lane] = null
+          session.releaseLane(lane as Lane, at)
+          renderer.release(lane as Lane)
+        }
+      }
       session.update(songMs)
       const state = session.scoreState
       renderer.render(session, songMs, {
@@ -61,7 +92,7 @@ export function PlayfieldPreview(): React.JSX.Element {
         progress: 0,
         countdownMs: null,
         paused: false,
-        autoPlay: true,
+        autoPlay: false,
         showStats: false,
       })
       frame = requestAnimationFrame(tick)

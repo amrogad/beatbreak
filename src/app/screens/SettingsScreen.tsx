@@ -1,17 +1,18 @@
 /**
- * Settings, ordered by what a player touches: sound, how the playfield looks, then controls.
+ * Settings, ordered by what a player changes most: how the game plays, how it looks, sound, then
+ * keys. One control per row and short option lists as big buttons, so a kid can follow it.
  * Timing, failure and autoplay are fixed defaults now: there is one fair ruleset and no reason to
  * make a new player configure it. Storage lives behind a disclosure so the page stays calm.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { LANE_INFO, type Lane } from '../../core/types'
+import { DIFFICULTY_COLOR, LANE_INFO, type Lane } from '../../core/types'
 import { CONTROL_DEFAULTS, DEFAULT_KEYMAP, describeKey, rebindLaneKey } from '../../game/input'
 import type { KeyMap } from '../../game/input'
 import type { NoteShape } from '../../render/renderer'
 import type { Settings } from '../../store/settings'
 import { storageSummary, clearScores, idbAudioClearAndFlag, wipeEverything } from '../../store/maintenance'
 import type { StorageSummary } from '../../store/maintenance'
-import { BackButton, Button, KeyCap, Panel, ProgressBar, Select, Slider, Stat, Toggle } from '../components'
+import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle } from '../components'
 import { formatBytes, formatPercent } from '../format'
 
 export interface SettingsScreenProps {
@@ -33,17 +34,6 @@ const NOTE_SKINS: { value: NoteShape; label: string; color: string }[] = [
   { value: 'bar', label: 'Bar', color: '#f2f5f7' },
   { value: 'tile', label: 'Piano tile', color: '#ffc93d' },
 ]
-
-const NOTE_SKIN_LABEL: Record<NoteShape, string> = {
-  arrow: 'Arrow',
-  chevron: 'Chevron',
-  diamond: 'Diamond',
-  orb: 'Orb',
-  star: 'Star',
-  hex: 'Hex',
-  bar: 'Bar',
-  tile: 'Piano tile',
-}
 
 function NoteShapeIcon({ shape }: { shape: NoteShape }): React.JSX.Element {
   const common = { fill: 'currentColor', stroke: 'none' } as const
@@ -75,6 +65,8 @@ export function SettingsScreen({
   const [quota, setQuota] = useState<{ usage: number; quota: number } | null>(null)
   const [capturingLane, setCapturingLane] = useState<Lane | null>(null)
   const captureRef = useRef<Lane | null>(null)
+  // Phones and tablets have no keys to set, so the key panel only shows where there is a keyboard.
+  const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 
   const refreshStorage = useCallback(async () => {
     try {
@@ -135,39 +127,50 @@ export function SettingsScreen({
         </Button>
       </div>
 
-      <Panel title="Audio">
-        <div className="settings-grid">
-          <Slider
-            label="Volume"
-            value={settings.volume}
-            min={0}
-            max={1}
-            step={0.01}
-            onChange={(value) => onUpdate({ volume: value })}
-            format={(value) => `${Math.round(value * 100)}%`}
-            hint="Defaults to 100%. Your system volume still applies."
+      <Panel title="Gameplay">
+        <div className="settings-stack">
+          <Choice
+            label="Default difficulty"
+            value={settings.defaultDifficulty}
+            options={[
+              { value: 'auto', label: 'Recommended for each song' },
+              { value: 'easy', label: 'Easy', color: DIFFICULTY_COLOR.easy },
+              { value: 'normal', label: 'Normal', color: DIFFICULTY_COLOR.normal },
+              { value: 'hard', label: 'Hard', color: DIFFICULTY_COLOR.hard },
+              { value: 'expert', label: 'Expert', color: DIFFICULTY_COLOR.expert },
+            ]}
+            onChange={(value) => onUpdate({ defaultDifficulty: value })}
+            hint="Used until you pick a difficulty for a song; that song then remembers your pick."
           />
-          <Slider
-            label="Arrow timing"
-            value={settings.audioOffsetMs}
-            min={-150}
-            max={150}
-            step={5}
-            onChange={(value) => onUpdate({ audioOffsetMs: value })}
-            format={(value) => (value === 0 ? '0 ms' : `${Math.abs(value)} ms ${value < 0 ? 'earlier' : 'later'}`)}
-            hint="Hear the beat before the arrows reach the targets? Move it earlier. The results screen suggests a value after each song."
+          <Choice
+            label="Timing"
+            value={settings.timing}
+            options={[
+              { value: 'pc', label: 'PC, tight windows for keys' },
+              { value: 'phone', label: 'Phone, wider windows for tapping' },
+            ]}
+            onChange={(value) => onUpdate({ timing: value })}
+            hint="Phones start on phone timing."
           />
-          <Toggle
-            label="Menu music"
-            checked={settings.menuMusic}
-            onChange={(value) => onUpdate({ menuMusic: value })}
-            hint="Plays a loop of your latest song behind the menus."
+          <Choice
+            label="Long arrows"
+            value={settings.holdMode}
+            options={[
+              { value: 'hold', label: 'Just hold to the end' },
+              { value: 'release', label: 'Let go on the end arrow' },
+            ]}
+            onChange={(value) => onUpdate({ holdMode: value })}
+            hint="Either way, letting go early misses the hold."
           />
-        </div>
-      </Panel>
-
-      <Panel title="Playfield">
-        <div className="settings-grid">
+          <Choice
+            label="Direction"
+            value={settings.scrollDirection}
+            options={[
+              { value: 'up', label: 'Rise — targets at the top (arcade)' },
+              { value: 'down', label: 'Fall — targets at the bottom (classic)' },
+            ]}
+            onChange={(value) => onUpdate({ scrollDirection: value })}
+          />
           <Slider
             label="Scroll speed"
             value={settings.scrollSpeed}
@@ -178,15 +181,30 @@ export function SettingsScreen({
             format={(value) => `${value.toFixed(1)} / 10`}
             hint="Higher = arrows travel faster, so you read less of the chart ahead."
           />
-          <Select
-            label="Direction"
-            value={settings.scrollDirection}
-            options={[
-              { value: 'up', label: 'Rise — targets at the top (arcade)' },
-              { value: 'down', label: 'Fall — targets at the bottom (classic)' },
-            ]}
-            onChange={(value) => onUpdate({ scrollDirection: value })}
-          />
+        </div>
+      </Panel>
+
+      <Panel title="Style">
+        <div className="settings-stack">
+          <div className="field">
+            <span className="field-label">Arrow style</span>
+            <div className="note-skin-grid" role="radiogroup" aria-label="Arrow style">
+              {NOTE_SKINS.map((skin) => (
+                <button
+                  key={skin.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={settings.noteShape === skin.value}
+                  className={`note-skin${settings.noteShape === skin.value ? ' is-selected' : ''}`}
+                  style={{ '--skin': skin.color } as React.CSSProperties}
+                  onClick={() => onUpdate({ noteShape: skin.value })}
+                >
+                  <NoteShapeIcon shape={skin.value} />
+                  <span>{skin.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <Slider
             label="Arrow size"
             value={settings.noteScale}
@@ -197,50 +215,7 @@ export function SettingsScreen({
             format={(value) => `${Math.round(value * 100)}%`}
             hint="Tap notes, hold tails and target outlines scale together."
           />
-          <Select
-            label="Default difficulty"
-            value={settings.defaultDifficulty}
-            options={[
-              { value: 'auto', label: 'Recommended for each song' },
-              { value: 'easy', label: 'Easy' },
-              { value: 'normal', label: 'Normal' },
-              { value: 'hard', label: 'Hard' },
-              { value: 'expert', label: 'Expert' },
-            ]}
-            onChange={(value) => onUpdate({ defaultDifficulty: value })}
-            hint="Used until you pick a difficulty for a song; that song then remembers your pick."
-          />
-          <Select
-            label="Song progress"
-            value={settings.progressStyle}
-            options={[
-              { value: 'top', label: 'Line across the top' },
-              { value: 'column', label: 'Bar under the song title' },
-              { value: 'text', label: 'Percentage under accuracy' },
-            ]}
-            onChange={(value) => onUpdate({ progressStyle: value })}
-          />
-          <Select
-            label="Long arrows"
-            value={settings.holdMode}
-            options={[
-              { value: 'release', label: 'Let go on the end arrow' },
-              { value: 'hold', label: 'Just hold to the end' },
-            ]}
-            onChange={(value) => onUpdate({ holdMode: value })}
-            hint="Either way, letting go early misses the hold."
-          />
-          <Select
-            label="Timing"
-            value={settings.timing}
-            options={[
-              { value: 'pc', label: 'PC, tight windows for keys' },
-              { value: 'phone', label: 'Phone, wider windows for tapping' },
-            ]}
-            onChange={(value) => onUpdate({ timing: value })}
-            hint="Phones start on phone timing."
-          />
-          <Select
+          <Choice
             label="Theme"
             value={settings.theme === 'mono' ? 'mono' : 'disco'}
             options={[
@@ -249,7 +224,7 @@ export function SettingsScreen({
             ]}
             onChange={(value) => onUpdate({ theme: value })}
           />
-          <Select
+          <Choice
             label="Arrow colours"
             value={settings.arrowColors}
             options={[
@@ -280,6 +255,16 @@ export function SettingsScreen({
               </div>
             </div>
           )}
+          <Choice
+            label="Song progress"
+            value={settings.progressStyle}
+            options={[
+              { value: 'top', label: 'Line across the top' },
+              { value: 'column', label: 'Bar under the song title' },
+              { value: 'text', label: 'Percentage under accuracy' },
+            ]}
+            onChange={(value) => onUpdate({ progressStyle: value })}
+          />
           <Toggle
             label="Reduced motion"
             checked={settings.reducedMotion}
@@ -287,31 +272,40 @@ export function SettingsScreen({
             hint="Turns off particles and motion effects."
           />
         </div>
-
-        <details className="disclosure mt-24">
-          <summary>
-            <span>Arrow style</span>
-            <span className="disclosure-value">{NOTE_SKIN_LABEL[settings.noteShape]}</span>
-          </summary>
-          <div className="note-skin-grid mt-12" role="radiogroup" aria-label="Arrow style">
-            {NOTE_SKINS.map((skin) => (
-              <button
-                key={skin.value}
-                type="button"
-                role="radio"
-                aria-checked={settings.noteShape === skin.value}
-                className={`note-skin${settings.noteShape === skin.value ? ' is-selected' : ''}`}
-                style={{ '--skin': skin.color } as React.CSSProperties}
-                onClick={() => onUpdate({ noteShape: skin.value })}
-              >
-                <NoteShapeIcon shape={skin.value} />
-                <span>{skin.label}</span>
-              </button>
-            ))}
-          </div>
-        </details>
       </Panel>
 
+      <Panel title="Audio">
+        <div className="settings-stack">
+          <Slider
+            label="Volume"
+            value={settings.volume}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(value) => onUpdate({ volume: value })}
+            format={(value) => `${Math.round(value * 100)}%`}
+            hint="Defaults to 100%. Your system volume still applies."
+          />
+          <Slider
+            label="Arrow timing"
+            value={settings.audioOffsetMs}
+            min={-150}
+            max={150}
+            step={5}
+            onChange={(value) => onUpdate({ audioOffsetMs: value })}
+            format={(value) => (value === 0 ? '0 ms' : `${Math.abs(value)} ms ${value < 0 ? 'earlier' : 'later'}`)}
+            hint="Hear the beat before the arrows reach the targets? Move it earlier. The results screen suggests a value after each song."
+          />
+          <Toggle
+            label="Menu music"
+            checked={settings.menuMusic}
+            onChange={(value) => onUpdate({ menuMusic: value })}
+            hint="Plays a loop of your latest song behind the menus."
+          />
+        </div>
+      </Panel>
+
+      {!touchOnly && (
       <Panel title="Controls">
         <div className="settings-group">
           <div className="settings-group-head">
@@ -393,13 +387,14 @@ export function SettingsScreen({
           </div>
         </div>
       </Panel>
+      )}
 
       <details className="disclosure">
         <summary>
           <span>Advanced</span>
         </summary>
-        <div className="grid cols-2 mt-12">
-          <Select
+        <div className="settings-stack mt-12">
+          <Choice
             label="Display mode"
             value={settings.displayMode}
             options={[
