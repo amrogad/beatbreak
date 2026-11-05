@@ -185,9 +185,8 @@ function AppShell(): React.JSX.Element {
 
   const startDemo = useCallback(() => {
     try {
-      const { file } = createTestSongFile({ bpm: 128, bars: 20, sampleRate: 32000, melody: true })
+      const { file } = createTestSongFile({ bpm: 128, bars: 24, sampleRate: 32000, melody: true })
       startImport(file)
-      toast('Demo rhythm generated.', 'info')
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'error')
     }

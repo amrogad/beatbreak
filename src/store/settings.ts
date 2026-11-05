@@ -115,7 +115,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 11
+const SETTINGS_SCHEMA = 12
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -267,6 +267,8 @@ export function loadSettings(): Settings {
       if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
+      // v12: phones and tablets start on falling piano tiles, also when settings were saved before.
+      if ((parsed.schema ?? 1) < 12) Object.assign(parsed, touchDefaults())
       if ((parsed.schema ?? 1) < 8) {
         // v8: the mixer used to start at 90%. A full mixer is the closest a browser can get to
         // "follow the system volume" (the OS level is applied after this gain). The old note and

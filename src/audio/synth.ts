@@ -6,7 +6,7 @@
  * gameplay loop can be tested (and demoed) against a signal whose true BPM and beat positions are
  * known by construction.
  *
- * Structure: intro → main groove → build → peak → outro, with a short silent lead-in so the
+ * Structure: intro → main groove → breakdown → build → peak → outro, with a short silent lead-in so the
  * "first beat" position is a real, verifiable number.
  */
 import { createRng } from '../core/rng'
@@ -106,17 +106,37 @@ export function renderTestRhythm(options: SynthOptions = {}): SynthResult {
     Math.exp(-t * 9) *
     amp
 
+  // A held note with a soft attack and release, so the song has sustained sounds to hold.
+  const sustained = (freq: number, lengthSeconds: number, amp: number, bright = 0.3): ((t: number) => number) => (t) => {
+    const env = Math.min(1, t / 0.004) * (0.6 + 0.4 * Math.exp(-t * 14)) * Math.min(1, Math.max(0, (lengthSeconds - t) / 0.08))
+    const vibrato = 1 + 0.004 * Math.sin(2 * Math.PI * 5 * t)
+    const phase = 2 * Math.PI * freq * vibrato * t
+    return (Math.sin(phase) * (1 - bright) + Math.sin(2 * phase) * bright * 0.6 + Math.sin(3 * phase) * bright * 0.4) * env * amp
+  }
+
+  // A minor, F, C, G: one chord per bar under the drums.
+  const chords = [
+    [220, 261.63, 329.63],
+    [174.61, 220, 261.63],
+    [261.63, 329.63, 392],
+    [196, 246.94, 293.66],
+  ]
+  const roots = [55, 43.65, 65.41, 49]
   const scale = [220, 261.63, 293.66, 349.23, 392, 440, 523.25]
   const beatTime = (beat: number): number => leadIn + beat * beatSeconds
 
   for (let bar = 0; bar < bars; bar++) {
-    const section = bar < 4 ? 'intro' : bar < 12 ? 'main' : bar < 16 ? 'build' : bar < 22 ? 'peak' : 'outro'
+    const section = withMelody
+      ? bar < 4 ? 'intro' : bar < 10 ? 'main' : bar < 14 ? 'breakdown' : bar < 16 ? 'build' : bar < 22 ? 'peak' : 'outro'
+      : bar < 4 ? 'intro' : bar < 12 ? 'main' : bar < 16 ? 'build' : bar < 22 ? 'peak' : 'outro'
     const barStart = bar * 4
 
     if (section === 'peak' && bar === 16) mix(beatTime(barStart), crash(), 1.6)
 
     for (let beat = 0; beat < 4; beat++) {
       const position = barStart + beat
+      // The breakdown drops the drums, so the melody's long notes ring out on their own.
+      if (section === 'breakdown') continue
       if (section === 'intro') {
         if (beat % 2 === 0) mix(beatTime(position), kick(0.85), 0.4)
         mix(beatTime(position + 0.5), hat(0.16), 0.1)
@@ -136,7 +156,33 @@ export function renderTestRhythm(options: SynthOptions = {}): SynthResult {
         if (section === 'peak' && rng.chance(0.3)) mix(beatTime(position + 0.75), hat(0.11, 60), 0.06)
       }
       if (section !== 'intro' && section !== 'outro' && beat % 2 === 0) {
-        mix(beatTime(position), bass(55 * (1 + (bar % 4) * 0.25)), 0.7)
+        mix(beatTime(position), bass(roots[bar % 4] * (beat === 2 ? 1.5 : 1)), 0.7)
+      }
+    }
+
+    // A soft chord pad under every bar.
+    const barSeconds = 4 * beatSeconds
+    const padAmp = section === 'intro' || section === 'outro' ? 0.05 : 0.07
+    if (withMelody) for (const freq of chords[bar % 4]) mix(beatTime(barStart), sustained(freq, barSeconds, padAmp, 0.1), barSeconds)
+
+    // The main groove sings a phrase with long notes to hold, two bars at a time.
+    if (withMelody && section === 'breakdown') {
+      const phrase: [number, number, number][] = bar % 2 === 0
+        ? [[0, 2, 4], [2, 2, 2]]
+        : [[0, 1.5, 3], [2, 2, 0]]
+      for (const [beat, beats, note] of phrase) {
+        const seconds = beats * beatSeconds - 0.08
+        mix(beatTime(barStart + beat), sustained(scale[note] * 4, seconds, 0.36, 0.5), seconds)
+      }
+    }
+
+    if (withMelody && section === 'main') {
+      const phrase: [number, number, number][] = bar % 2 === 0
+        ? [[0.5, 1.5, 4], [2.5, 1.5, 2]]
+        : [[0.5, 1, 0], [1.5, 0.5, 1], [2.5, 1.5, 4]]
+      for (const [beat, beats, note] of phrase) {
+        const freq = scale[(note + (bar % 4 === 3 ? 1 : 0)) % scale.length] * 4
+        mix(beatTime(barStart + beat), sustained(freq, beats * beatSeconds * 0.95, 0.24), beats * beatSeconds)
       }
     }
 
@@ -198,11 +244,14 @@ export function encodeWav(samples: Float32Array, sampleRate: number, channels = 
   return buffer
 }
 
+/** The demo's file name; the setup screen shows it as a generated track rather than a file. */
+export const DEMO_FILE_NAME = 'Demo Track.wav'
+
 /** Browser helper: wrap the synthetic rhythm in a File so it flows through the normal import path. */
 export function createTestSongFile(options: SynthOptions = {}): { file: File; truth: SynthResult } {
   const truth = renderTestRhythm(options)
   const wav = encodeWav(truth.samples, truth.sampleRate, 1)
-  const fileName = `Demo Rhythm (${Math.round(truth.bpm)} BPM).wav`
+  const fileName = DEMO_FILE_NAME
   const file = new File([wav], fileName, { type: 'audio/wav', lastModified: Date.now() })
   return { file, truth }
 }

@@ -24,6 +24,7 @@ import type { Settings } from '../../store/settings'
 import { decodeAudioFile } from '../../audio/engine'
 import { downmixMono } from '../../audio/analyze'
 import { autoTrimWindow } from '../../audio/trim'
+import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
@@ -386,7 +387,7 @@ export function SetupScreen({
   if (phase === 'importing' || !bundle) {
     return (
       <div className="page narrow">
-        <Panel title={file ? `Building charts for ${file.name}` : 'Loading song'}>
+        <Panel title={file ? (file.name === DEMO_FILE_NAME ? 'Generating audio track' : `Building charts for ${file.name}`) : 'Loading song'}>
           <div className="row-between gap-16">
             <Spinner label={progress.stage} />
             <span className="mono small">{Math.round(progress.fraction * 100)}%</span>

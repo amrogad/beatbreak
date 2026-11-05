@@ -94,7 +94,7 @@ export function HomeScreen({
               <Button variant="primary" size="lg" onClick={() => inputRef.current?.click()}>
                 Add a song
               </Button>
-              <Button size="lg" variant="ghost" onClick={onPlayDemo} title="A built-in drum loop, no file needed">
+              <Button size="lg" variant="ghost" onClick={onPlayDemo} title="A built-in demo track, no file needed">
                 Try a demo
               </Button>
             </div>

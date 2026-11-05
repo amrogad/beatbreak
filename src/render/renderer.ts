@@ -209,6 +209,10 @@ export class PlayfieldRenderer {
   private flash: JudgmentFlash | null = null
   /** Notes by id, so a missed one can be drawn fading where it was missed. */
   private notesById = new Map<string, ChartNote>()
+  /** Shortest gap in one column between a note (or a hold's end) and the next note, in seconds. */
+  private minLaneGap = Infinity
+  /** Half the piano tile's height in units of half a note; grows up to ~2x when the chart has room. */
+  private tileHy = TILE_BASE_HY
   /**
    * Missed arrows fading out on the spot: the note, the song time it froze at, where its head
    * sat (a hold let go late keeps its played part out of view) and the wall-clock start.
@@ -289,6 +293,9 @@ export class PlayfieldRenderer {
     for (const note of chart.notes) {
       this.notesById.set(note.id, note)
     }
+    this.minLaneGap = minLaneGap(chart.notes)
+    this.layoutCache = null
+    this.layoutKey = ''
   }
 
   /**
@@ -438,6 +445,9 @@ export class PlayfieldRenderer {
       travelSeconds: (travelDistance + noteH) / Math.max(1, pxPerSec),
       direction,
     }
+    // Piano tiles stretch toward double height, but never so far that two in one column overlap.
+    const roomHy = (0.85 * this.minLaneGap * pxPerSec) / Math.max(1, noteH)
+    this.tileHy = Math.round(Math.max(TILE_BASE_HY, Math.min(TILE_MAX_HY, roomHy)) * 20) / 20
     this.layoutCache = layout
     this.layoutKey = key
     return layout
@@ -746,7 +756,7 @@ export class PlayfieldRenderer {
     const turn = this.settings.noteShape === 'tile' ? 0 : LANE_ANGLE[lane]
     const cos = Math.cos(turn)
     const sin = Math.sin(turn)
-    const shape = shapePoints(this.settings.noteShape).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
+    const shape = shapePoints(this.settings.noteShape, this.tileHy).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
     const tailSide = (y: number): boolean => (y - headY) * towardTail > 1e-6
     const shift = (x: number, y: number): [number, number] => [x, tailSide(y) ? y + towardTail * length : y]
     const path = new Path2D()
@@ -843,12 +853,13 @@ export class PlayfieldRenderer {
   /** Cached arrow tile: 'note' is the coloured arrow, 'receptor' the grey target, 'flash' white. */
   private noteSprite(kind: 'note' | 'receptor' | 'flash', color: string, lane: Lane, size: number): HTMLCanvasElement {
     const shape = this.settings.noteShape
-    const key = `${kind}|${color}|${kind === 'flash' && shape === 'orb' ? 0 : lane}|${shape}|${Math.round(size)}`
+    const tileHy = shape === 'tile' ? this.tileHy : TILE_BASE_HY
+    const key = `${kind}|${color}|${kind === 'flash' && shape === 'orb' ? 0 : lane}|${shape}|${Math.round(size)}|${tileHy}`
     const cached = this.spriteCache.get(key)
     if (cached) return cached
     const scale = this.dpr
     // Room for the glow: a halo cut off by the sprite's edge shows as a hard straight line.
-    const pad = Math.ceil(size * 0.6)
+    const pad = Math.ceil(size * (0.6 + (tileHy - TILE_BASE_HY) / 2))
     const box = Math.ceil(size + pad * 2)
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(box * scale)
@@ -858,7 +869,7 @@ export class PlayfieldRenderer {
     const c = box / 2
     // Piano tiles are the same block in every column; everything else points its lane's way.
     const angle = shape === 'tile' ? 0 : LANE_ANGLE[lane]
-    const path = tracePath(shape, size, angle, c)
+    const path = tracePath(shape, size, angle, c, tileHy)
     ctx.lineJoin = 'round'
     if (kind === 'note') {
       // Candy-gloss arrow: bright body, a hard white highlight on the top half, a light rim.
@@ -1235,19 +1246,33 @@ function shuffledColors(): string[] {
   return pool.slice(0, 4)
 }
 
+const TILE_BASE_HY = 0.95
+const TILE_MAX_HY = 1.8
+
+function minLaneGap(notes: readonly ChartNote[]): number {
+  const lastEnd: (number | null)[] = [null, null, null, null]
+  let min = Infinity
+  for (const note of [...notes].sort((a, b) => a.time - b.time)) {
+    const end = lastEnd[note.lane]
+    if (end !== null) min = Math.min(min, note.time - end)
+    lastEnd[note.lane] = note.time + (note.kind === 'hold' ? note.duration ?? 0 : 0)
+  }
+  return min
+}
+
 /** The arcade arrow pointing right, in a unit box centred on 0 (shared by sprites and stretched holds). */
 const ARROW_POINTS: [number, number][] = [[-0.94, -0.3], [0.02, -0.3], [0.02, -0.9], [0.96, 0], [0.02, 0.9], [0.02, 0.3], [-0.94, 0.3]]
 
 /** The arrow (or skin shape) traced around a centre point, rotated for its lane. */
 /** A skin's outline as unit points around 0, pointing right (the orb as a 24-sided circle). */
-function shapePoints(shape: NoteShape): [number, number][] {
+function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY): [number, number][] {
   const points: [number, number][] = []
   if (shape === 'arrow' || shape === 'bar') {
     // A chunky arcade arrow pointing right, filling the square tile.
     points.push(...ARROW_POINTS)
   } else if (shape === 'tile') {
-    // A piano tile: a wide block nearly as wide as its column, the touch-screen look.
-    points.push([-1.08, -0.95], [1.08, -0.95], [1.08, 0.95], [-1.08, 0.95])
+    // A piano tile: a block nearly as wide as its column (glow included), as tall as the chart allows.
+    points.push([-0.92, -tileHy], [0.92, -tileHy], [0.92, tileHy], [-0.92, tileHy])
   } else if (shape === 'chevron') {
     points.push([-0.85, -0.92], [0.95, 0], [-0.85, 0.92], [-0.3, 0])
   } else if (shape === 'diamond') {
@@ -1272,8 +1297,8 @@ function shapePoints(shape: NoteShape): [number, number][] {
   return points
 }
 
-function tracePath(shape: NoteShape, size: number, angle: number, center: number): Path2D {
-  const points = shapePoints(shape)
+function tracePath(shape: NoteShape, size: number, angle: number, center: number, tileHy = TILE_BASE_HY): Path2D {
+  const points = shapePoints(shape, tileHy)
   const s = size / 2
   const path = new Path2D()
   if (shape === 'orb') {
