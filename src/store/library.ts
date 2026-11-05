@@ -354,8 +354,10 @@ export async function loadSongBundle(songId: string, options: { requireAudio?: b
   }
   // An analyser update re-reads the saved audio once, so old songs get the new measurements
   // (hold lengths, for one). The regeneration below then rebuilds their unedited charts.
+  let reanalysed = false
   if (analysis && buffer && analysis.version !== ANALYSIS_VERSION) {
     analysis = await reanalyze(songId, buffer)
+    reanalysed = true
     const nextMeta: SongMeta = { ...meta, analysis: summarizeAnalysis(analysis) }
     await saveSong(nextMeta)
     meta = nextMeta
@@ -387,7 +389,8 @@ export async function loadSongBundle(songId: string, options: { requireAudio?: b
     const stale = charts
       .filter((chart) => !chart.edited && chart.generator.version !== GENERATOR_VERSION)
       .map((chart) => chart.difficulty)
-    const difficulties = trimChanged ? charts.filter((chart) => !chart.edited).map((chart) => chart.difficulty) : stale
+    const difficulties =
+      trimChanged || reanalysed ? charts.filter((chart) => !chart.edited).map((chart) => chart.difficulty) : stale
     if (difficulties.length > 0) {
       const regenerated = generateAllDifficulties({
         analysis,
