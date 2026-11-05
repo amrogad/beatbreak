@@ -109,7 +109,7 @@ export function ResultsScreen({
                   On average you hit {Math.abs(Math.round(mean))} ms {mean < 0 ? 'early' : 'late'}.
                 </span>
                 <Button size="sm" onClick={() => onApplyOffset(timingHint)}>
-                  Set arrow timing to {Math.abs(timingHint)} ms {timingHint < 0 ? 'earlier' : 'later'}
+                  Set audio sync to {Math.abs(timingHint)} ms {timingHint < 0 ? 'earlier' : 'later'}
                 </Button>
               </div>
             )}

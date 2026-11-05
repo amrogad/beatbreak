@@ -25,3 +25,8 @@ export function formatClock(seconds: number): string {
   const s = abs - m * 60
   return `${sign}${m}:${s.toFixed(2).padStart(5, '0')}`
 }
+
+export const formatSync = (ms: number): string => (ms === 0 ? '0 ms' : `${Math.abs(ms)} ms ${ms < 0 ? 'earlier' : 'later'}`)
+
+export const SYNC_HINT =
+  'Lines the arrows up with what you hear; arrow speed stays the same. If the beat comes before the arrows reach the targets, move it earlier. It depends on your speakers or headphones, so it counts for every song.'

@@ -13,7 +13,7 @@ import type { Settings } from '../../store/settings'
 import { storageSummary, clearScores, idbAudioClearAndFlag, wipeEverything } from '../../store/maintenance'
 import type { StorageSummary } from '../../store/maintenance'
 import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle } from '../components'
-import { formatBytes, formatPercent } from '../format'
+import { SYNC_HINT, formatBytes, formatPercent, formatSync } from '../format'
 
 export interface SettingsScreenProps {
   settings: Settings
@@ -303,14 +303,14 @@ export function SettingsScreen({
             hint="Defaults to 100%. Your system volume still applies."
           />
           <Slider
-            label="Arrow timing"
+            label="Audio sync"
             value={settings.audioOffsetMs}
             min={-150}
             max={150}
             step={5}
             onChange={(value) => onUpdate({ audioOffsetMs: value })}
-            format={(value) => (value === 0 ? '0 ms' : `${Math.abs(value)} ms ${value < 0 ? 'earlier' : 'later'}`)}
-            hint="Hear the beat before the arrows reach the targets? Move it earlier. The results screen suggests a value after each song."
+            format={formatSync}
+            hint={SYNC_HINT}
           />
           <Toggle
             label="Muffle on miss"

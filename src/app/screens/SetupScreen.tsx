@@ -28,8 +28,8 @@ import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
-import { BackButton, Button, Panel, ProgressBar, Spinner } from '../components'
-import { formatDuration, formatPercent } from '../format'
+import { BackButton, Button, Panel, ProgressBar, Slider, Spinner } from '../components'
+import { SYNC_HINT, formatDuration, formatPercent, formatSync } from '../format'
 import type { BestScores } from './bestScores'
 
 type Phase = 'idle' | 'importing' | 'ready' | 'error'
@@ -39,6 +39,7 @@ export interface SetupScreenProps {
   songId: string | null
   settings: Settings
   bestScores: BestScores
+  onUpdateSettings: (patch: Partial<Settings>) => void
   onBack: () => void
   onRetry: () => void
   onPlay: (request: { songId: string; chartId: string; difficulty: Difficulty; autoPlay: boolean }) => void
@@ -61,6 +62,7 @@ export function SetupScreen({
   songId,
   settings,
   bestScores,
+  onUpdateSettings,
   onBack,
   onRetry,
   onPlay,
@@ -554,6 +556,18 @@ export function SetupScreen({
         <p className="muted tiny mt-8">
           Trim silence only skips near-silent lead-in and lead-out. The song’s ending always plays.
         </p>
+        <div className="mt-20">
+          <Slider
+            label="Audio sync"
+            value={settings.audioOffsetMs}
+            min={-150}
+            max={150}
+            step={5}
+            onChange={(value) => onUpdateSettings({ audioOffsetMs: value })}
+            format={formatSync}
+            hint={SYNC_HINT}
+          />
+        </div>
 
         <details className="disclosure mt-20">
           <summary>More options</summary>

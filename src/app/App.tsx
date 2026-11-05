@@ -19,6 +19,7 @@ import { bestRunFor, listCharts } from '../store/repository'
 import { settingsStore } from '../store/settings'
 import type { Settings } from '../store/settings'
 import { runtime } from './runtime'
+import { formatSync } from './format'
 import { HomeScreen } from './screens/HomeScreen'
 import { SetupScreen } from './screens/SetupScreen'
 import { GameScreen } from './screens/GameScreen'
@@ -323,6 +324,7 @@ function AppShell(): React.JSX.Element {
             songId={route.songId}
             settings={settings}
             bestScores={bestScores}
+            onUpdateSettings={updateSettings}
             onBack={backHome}
             onRetry={() => setRoute((current) => ({ ...current, attempt: (current as { attempt: number }).attempt + 1 }))}
             onPlay={(request) => void startGame(request)}
@@ -396,7 +398,7 @@ function AppShell(): React.JSX.Element {
             audioOffsetMs={settings.audioOffsetMs}
             onApplyOffset={(offsetMs) => {
               updateSettings({ audioOffsetMs: offsetMs })
-              toast(`Arrow timing set to ${offsetMs} ms.`, 'success')
+              toast(`Audio sync set to ${formatSync(offsetMs)}.`, 'success')
             }}
             onExportChart={() => {
               void (async () => {
