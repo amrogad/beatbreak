@@ -64,7 +64,7 @@ export function Tutorial({ open, onClose }: TutorialProps): React.JSX.Element | 
     <div className="tutorial-overlay" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
       <div className="tutorial-card">
         <div className="row-between gap-12">
-          <span className="eyebrow">How to play · {step + 1} of {STEPS.length}</span>
+          <span className="eyebrow">How to play - {step + 1} of {STEPS.length}</span>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close walkthrough">
             ✕
           </Button>

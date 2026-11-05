@@ -419,10 +419,10 @@ export function SetupScreen({
     autoTrim !== null &&
     sameTrim(trim, { start: autoTrim.start, end: autoTrim.end, cuts: [] })
   const rangeLabel = wholeSong
-    ? `Whole song · ${formatDuration(meta.duration)}`
+    ? `Whole song - ${formatDuration(meta.duration)}`
     : isAutoRange
-      ? `${formatDuration(trim.start)}–${formatDuration(trim.end)} · silent edges skipped`
-      : `${formatDuration(trim.start)}–${formatDuration(trim.end)} · custom range`
+      ? `${formatDuration(trim.start)}–${formatDuration(trim.end)} - silent edges skipped`
+      : `${formatDuration(trim.start)}–${formatDuration(trim.end)} - custom range`
   const playLength = Math.max(0, trim.end - trim.start)
 
   return (
@@ -430,13 +430,13 @@ export function SetupScreen({
       <div className="row-between wrap gap-12">
         <div>
           <div className="eyebrow">Choose a difficulty</div>
-          <div className="title-row mt-4">
+          <div className="title-row mt-12">
             <BackButton onClick={onBack} />
             <h1>{meta.title}</h1>
           </div>
           <p className="muted small">
-            {meta.artist ? `${meta.artist} · ` : ''}
-            {formatDuration(meta.duration)} · {charts.length} charts
+            {meta.artist ? `${meta.artist} - ` : ''}
+            {formatDuration(meta.duration)} - {charts.length} charts
           </p>
         </div>
       </div>
@@ -485,11 +485,11 @@ export function SetupScreen({
                 <span className="difficulty-copy">{DIFFICULTY_COPY[item]}</span>
                 <span className="difficulty-meta">
                   {chart ? `${chart.stats.noteCount.toLocaleString('en-US')} arrows` : 'Not available'}
-                  {holds > 0 ? ` · ${holds} holds` : ''}
+                  {holds > 0 ? ` - ${holds} holds` : ''}
                 </span>
                 <span className="difficulty-best">
                   {best
-                    ? `Best ${formatPercent(best.accuracy)}${best.grade ? ` · ${best.grade}` : ''}`
+                    ? `Best ${formatPercent(best.accuracy)}${best.grade ? ` - ${best.grade}` : ''}`
                     : 'No score yet'}
                 </span>
               </button>
@@ -500,7 +500,7 @@ export function SetupScreen({
         <div className="setup-play mt-24">
           <div>
             <strong>{selectedChart ? `${selectedChart.stats.noteCount.toLocaleString('en-US')} arrows` : 'No chart'}</strong>
-            <span className="muted small"> · {formatDuration(playLength)} of play</span>
+            <span className="muted small"> - {formatDuration(playLength)} of play</span>
           </div>
           <div className="row gap-8 wrap">
             <Button
@@ -613,7 +613,7 @@ export function SetupScreen({
           </div>
 
           <p className="muted tiny mt-20">
-            Detected tempo {meta.analysis.bpm.toFixed(1)} BPM · {formatDuration(meta.duration)} · Audio
+            Detected tempo {meta.analysis.bpm.toFixed(1)} BPM - {formatDuration(meta.duration)} - Audio
             {meta.audioCached ? ' saved' : ' not saved'}
           </p>
 

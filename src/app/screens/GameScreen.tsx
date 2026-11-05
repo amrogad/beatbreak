@@ -528,7 +528,7 @@ export function GameScreen({
           <div className="panel">
             <h2>Paused</h2>
             <p className="muted small mt-8">
-              {song.title} · {DIFFICULTY_LABEL[chart.difficulty]}
+              {song.title} - {DIFFICULTY_LABEL[chart.difficulty]}
             </p>
             <div className="pause-stats">
               <div className="stat">
@@ -574,7 +574,7 @@ export function GameScreen({
           ? 'Auto-play: watch the arrows play themselves'
           : touchOnly
             ? 'Tap each lane as its arrow reaches the target'
-            : `${laneKeys(0)} or ${laneKeys(1)} to hit · ${describeKey(settings.controls.pause[0])} pause · ${describeKey(settings.controls.restart[0])} restart`}
+            : `${laneKeys(0)} or ${laneKeys(1)} to hit - ${describeKey(settings.controls.pause[0])} pause - ${describeKey(settings.controls.restart[0])} restart`}
       </div>
     </div>
   )

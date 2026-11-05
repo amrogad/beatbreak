@@ -1129,7 +1129,7 @@ export class PlayfieldRenderer {
       ctx.textAlign = 'right'
       ctx.font = `600 11px ${FONT}`
       ctx.fillStyle = palette.hudMuted
-      ctx.fillText(`${fps} FPS · Q${this.quality + 1}`, this.width - 22, this.height - 30)
+      ctx.fillText(`${fps} FPS - Q${this.quality + 1}`, this.width - 22, this.height - 30)
     }
     ctx.restore()
   }

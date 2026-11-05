@@ -122,7 +122,7 @@ export function ResultsScreen({
               <Stat
                 label="Previous best"
                 value={previousBest.score.toLocaleString('en-US')}
-                hint={`${formatPercent(previousBest.accuracy, 2)} · ${previousBest.grade}`}
+                hint={`${formatPercent(previousBest.accuracy, 2)} - ${previousBest.grade}`}
               />
             )}
             {previousBest && results.score < previousBest.score && !results.autoPlay && (

@@ -545,7 +545,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             <h1>{bundle.meta.title}</h1>
           </div>
           <p className="muted small">
-            Chart editor · {chart.notes.length} notes · {formatDuration(duration)} ·{' '}
+            Chart editor - {chart.notes.length} notes - {formatDuration(duration)} -{' '}
             {dirty ? <span className="warn">unsaved changes</span> : <span className="good">saved</span>}
           </p>
         </div>
@@ -737,9 +737,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             Follow playhead
           </Button>
           <span className="editor-hint">
-            Left-click empty space to add · drag a note to move · right-click to delete · click the time ruler to move the
-            playhead · wheel scrolls · Ctrl+wheel zooms ·
-            Space plays · arrows nudge · Del deletes · Ctrl+Z undoes
+            Left-click empty space to add - drag a note to move - right-click to delete - click the time ruler to move the
+            playhead - wheel scrolls - Ctrl+wheel zooms -
+            Space plays - arrows nudge - Del deletes - Ctrl+Z undoes
           </span>
         </div>
 

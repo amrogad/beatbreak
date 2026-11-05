@@ -173,7 +173,7 @@ export function HomeScreen({
                       </span>
                       <span>
                         <span style={{ color: DIFFICULTY_COLOR[bestRun.difficulty] }}>{DIFFICULTY_LABEL[bestRun.difficulty]}</span>
-                        {` · Grade ${bestRun.entry.grade} · Accuracy: ${Math.round(bestRun.entry.accuracy * 100)}%`}
+                        {` - Grade ${bestRun.entry.grade} - Accuracy: ${Math.round(bestRun.entry.accuracy * 100)}%`}
                       </span>
                     </div>
                   )}
