@@ -295,3 +295,28 @@
 [data-theme='disco'] .game-top-right .btn {
   letter-spacing: 0.015em;
 }
+
+/* Small labels and the grade use the same faces as everything else, at a readable size. */
+[data-theme='disco'] .chip {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+[data-theme='disco'] .grade-badge {
+  font-family: var(--display);
+}
+
+/* On large monitors the whole interface grows with the screen instead of staying laptop-sized. */
+@media (min-width: 1800px) {
+  [data-theme='disco'] .page,
+  [data-theme='disco'] .topbar {
+    zoom: 1.15;
+  }
+}
+
+@media (min-width: 2400px) {
+  [data-theme='disco'] .page,
+  [data-theme='disco'] .topbar {
+    zoom: 1.35;
+  }
+}

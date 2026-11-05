@@ -31,7 +31,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.3'
+export const GENERATOR_VERSION = 'pulsegrid-gen-3.4'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -765,6 +765,11 @@ const HOLD_MAX_SECONDS: Record<Difficulty, number> = { easy: 2, normal: 2.2, har
  * a pad or held vocal rings well past this and becomes a short hold; a drum hit decays fast and
  * stays a tap.
  */
+/** A release snaps onto another lane's arrow within this distance of where the sound ends. */
+const RELEASE_ALIGN_SECONDS = 0.3
+/** No other arrow may come this soon before a hold's release. */
+const RELEASE_CLEAR_SECONDS = 0.3
+
 const HOLD_MIN_SUSTAIN: Record<Difficulty, number> = { easy: 0.5, normal: 0.45, hard: 0.4, expert: 0.35 }
 
 /**
@@ -821,8 +826,9 @@ export function applyHolds(
   }
 
   let holds = 0
+  const cleared = new Set<string>()
   const out = notes.map((note, i) => {
-    if (note.kind !== 'tap' || holds >= holdCap) return note
+    if (note.kind !== 'tap' || holds >= holdCap || cleared.has(note.id)) return note
     if ((sameStep.get(Math.round(note.time * 1000)) ?? 0) > 1) return note
     // Holds are anchors, not decoration. Keep their heads on a beat (Easy/Normal) or at least on
     // an eighth (Hard/Expert) so a short tap never starts halfway through a sung phrase.
@@ -850,14 +856,30 @@ export function applyHolds(
     // rounds, so step down until the snapped time is really inside the wanted span.
     let tailStep = timing.timeToStep(note.time + wanted, settings.stepsPerBeat)
     while (tailStep > 0 && timing.stepToTime(tailStep, settings.stepsPerBeat) > note.time + wanted) tailStep--
-    const tailTime = timing.stepToTime(tailStep, settings.stepsPerBeat)
+    let tailTime = timing.stepToTime(tailStep, settings.stepsPerBeat)
+    // End on an arrow when one is close: the release lands together with another lane's note,
+    // the way hand-made charts end their holds.
+    let partner: ChartNote | null = null
+    for (let j = i + 1; j < notes.length && notes[j].time <= tailTime + RELEASE_ALIGN_SECONDS; j++) {
+      const other = notes[j]
+      if (other.lane === note.lane || other.time < tailTime - RELEASE_ALIGN_SECONDS) continue
+      if (!partner || Math.abs(other.time - tailTime) < Math.abs(partner.time - tailTime)) partner = other
+    }
+    if (partner && partner.time - note.time >= minHoldSeconds && partner.time <= bound + 1e-6) tailTime = partner.time
     const holdSeconds = tailTime - note.time
     if (holdSeconds < minHoldSeconds) return note
+    // Keep the run-up to the release clear: arrows in other lanes just before the tail make the
+    // player split attention exactly when the hold needs it.
+    for (let j = i + 1; j < notes.length && notes[j].time < tailTime - 1e-6; j++) {
+      if (notes[j].lane !== note.lane && notes[j].time > tailTime - RELEASE_CLEAR_SECONDS && notes[j].kind === 'tap') {
+        cleared.add(notes[j].id)
+      }
+    }
     holds++
     return { ...note, kind: 'hold' as const, duration: holdSeconds }
   })
 
-  return { notes: out, holds }
+  return { notes: out.filter((note) => note.kind === 'hold' || !cleared.has(note.id)), holds }
 }
 
 /* ----------------------------------------------------------------------------------------- */

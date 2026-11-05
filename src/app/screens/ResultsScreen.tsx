@@ -92,7 +92,7 @@ export function ResultsScreen({
                 Run ended after {judged.toLocaleString('en-US')} of {results.totalNotes.toLocaleString('en-US')} arrows
               </Chip>
             )}
-            {isNewBest && !results.autoPlay && <Chip color="#009e73">New personal best</Chip>}
+            {isNewBest && !results.autoPlay && <Chip color="#ffc93d">New personal best</Chip>}
             {!isNewBest && !previousBest && !results.autoPlay && !results.failed && results.score > 0 && (
               <Chip color="#009e73">First score on this chart</Chip>
             )}

@@ -158,7 +158,7 @@ strong { font-weight: 700; }
 
 .page {
   width: 100%;
-  max-width: 1180px;
+  max-width: clamp(1180px, 72vw, 1560px);
   margin: 0 auto;
   padding: 28px 24px 88px;
   display: flex;
