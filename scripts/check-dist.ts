@@ -59,8 +59,9 @@ check('no source maps are shipped', !readdirSync(join(dist, 'assets')).some((f) 
 const missing = entries.filter((entry) => !existsSync(join(dist, entry.url.replace(/^\.\//, ''))))
 check('every precache entry exists on disk', missing.length === 0, missing.map((m) => m.url).join(', '))
 
+// The menu theme is fetched only with an empty library, so it is not part of the first load.
 const totalBytes = (dir: string): number =>
-  readdirSync(dir).reduce((sum, name) => {
+  readdirSync(dir).filter((name) => name !== 'music').reduce((sum, name) => {
     const full = join(dir, name)
     return sum + (statSync(full).isDirectory() ? totalBytes(full) : statSync(full).size)
   }, 0)
