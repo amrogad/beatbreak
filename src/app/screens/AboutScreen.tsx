@@ -40,18 +40,10 @@ export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
         </p>
         <p className="muted mt-12">
           Menu music:{' '}
-          <a href="https://opengameart.org/content/space-sprinkles" target="_blank" rel="noreferrer">
-            Space Sprinkles
+          <a href="https://pixabay.com/music/beats-no-copyright-music-270241/" target="_blank" rel="noreferrer">
+            No Copyright Music
           </a>{' '}
-          by Matthew Pablo,{' '}
-          <a href="https://www.matthewpablo.com" target="_blank" rel="noreferrer">
-            www.matthewpablo.com
-          </a>
-          , licensed under{' '}
-          <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">
-            CC BY 3.0
-          </a>
-          . Silent edges trimmed, converted for the web.
+          by Kulakovka, from Pixabay.
         </p>
       </Panel>
 
