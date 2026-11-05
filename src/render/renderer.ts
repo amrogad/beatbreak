@@ -123,6 +123,9 @@ export const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
 /** Picked from at random, four at a time, when arrow colours are shuffled. */
 const SHUFFLE_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d', '#b35cff', '#ff7a3d', '#3de9ff', '#9dff3d']
 const MONO_WHITE = '#f4f4f4'
+/** A missed arrow turns this red and fades out where it was missed, over this long. */
+const MISS_COLOR = '#ff4d5e'
+const MISS_FADE_MS = 320
 
 interface JudgeStyle {
   fill: string
@@ -204,10 +207,13 @@ export class PlayfieldRenderer {
   private releaseAt = [-1e9, -1e9, -1e9, -1e9]
   private explosion: ({ color: string; at: number } | null)[] = [null, null, null, null]
   private flash: JudgmentFlash | null = null
-  /** Hold notes by id, so a missed or dropped hold can keep scrolling away whole. */
-  private holdNotes = new Map<string, ChartNote>()
-  /** Missed and dropped holds still on screen: the note and the song time where the head now sits. */
-  private deadHolds: { note: ChartNote; headTime: number }[] = []
+  /** Notes by id, so a missed one can be drawn fading where it was missed. */
+  private notesById = new Map<string, ChartNote>()
+  /**
+   * Missed arrows fading out on the spot: the note, the song time it froze at, where its head
+   * sat (a hold let go late keeps its played part out of view) and the wall-clock start.
+   */
+  private missFx: { note: ChartNote; frozenMs: number; headTime: number; at: number }[] = []
   private lastCombo = 0
   private comboBumpAt = -1e9
   private comboMilestoneAt = -1e9
@@ -271,8 +277,8 @@ export class PlayfieldRenderer {
     this.laneHeld = [false, false, false, false]
     this.explosion = [null, null, null, null]
     this.lastCombo = 0
-    this.deadHolds = []
-    this.holdNotes.clear()
+    this.missFx = []
+    this.notesById.clear()
     this.columnColors =
       this.settings.arrowColors === 'random' ? shuffledColors() : validColors(this.settings.columnColors)
     const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5)
@@ -281,7 +287,7 @@ export class PlayfieldRenderer {
     if (!chart) return
     this.timing = new TimingMap(chart.timing)
     for (const note of chart.notes) {
-      if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) this.holdNotes.set(note.id, note)
+      this.notesById.set(note.id, note)
     }
   }
 
@@ -339,12 +345,11 @@ export class PlayfieldRenderer {
     const { lane, judgment } = event
     this.flash = { judgment, lane, deltaMs: event.deltaMs, ageMs: 0, ...(event.holdDrop ? { holdDrop: true } : {}) }
     if (judgment === 'miss') {
-      // A missed head, or a hold let go early, does not vanish: it keeps scrolling past the target,
-      // dimmed, head arrow included, the way StepMania shows a failed hold.
-      const hold = this.holdNotes.get(event.noteId.replace(/#tail$/, ''))
-      if (hold) {
-        const headTime = event.noteId.endsWith('#tail') ? Math.max(hold.time, event.time) : hold.time
-        if (headTime < hold.time + (hold.duration ?? 0)) this.deadHolds.push({ note: hold, headTime })
+      // A miss turns red and fades out where it happened instead of scrolling away (Amro's pick).
+      const note = this.notesById.get(event.noteId.replace(/#tail$/, ''))
+      if (note) {
+        const headTime = event.noteId.endsWith('#tail') ? Math.max(note.time, event.time) : note.time
+        this.missFx.push({ note, frozenMs: event.time * 1000, headTime, at: performance.now() })
       }
       return
     }
@@ -682,18 +687,22 @@ export class PlayfieldRenderer {
       if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY, noteH, color)
     })
 
-    this.deadHolds = this.deadHolds.filter(({ note, headTime }) => {
-      const tailDelta = (note.time + (note.duration ?? 0)) * 1000 - songTimeMs
-      const tailY = receptorY + direction * (tailDelta / 1000) * pxPerSec
-      if (direction === 1 ? tailY < -noteH : tailY > this.height + noteH) return false
+    this.missFx = this.missFx.filter((fx) => {
+      const age = this.nowMs - fx.at
+      if (age > MISS_FADE_MS) return false
+      const fade = 1 - age / MISS_FADE_MS
+      const { note } = fx
       const x = laneX[note.lane] + laneW / 2
-      const headY = receptorY + direction * ((headTime * 1000 - songTimeMs) / 1000) * pxPerSec
-      const color = this.columnColor(note.lane)
+      const headY = receptorY + direction * ((fx.headTime * 1000 - fx.frozenMs) / 1000) * pxPerSec
+      const size = noteH * (1 - 0.12 * (1 - fade))
+      const missColor = this.settings.theme === 'mono' ? '#6a6a6a' : MISS_COLOR
+      if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) {
+        const tailY = receptorY + direction * (((note.time + (note.duration ?? 0)) * 1000 - fx.frozenMs) / 1000) * pxPerSec
+        this.drawHoldBody(x, headY, tailY, noteH, missColor, 'dropping', 1, note.lane, 0.6 * fade)
+      }
       ctx.save()
-      ctx.globalAlpha = 0.4
-      this.drawHoldBody(x, headY, tailY, noteH, color, 'dropping', 0.3, note.lane)
-      this.drawHoldEnd(x, tailY, noteH, color, note.lane, 0.4)
-      drawCentered(ctx, this.noteSprite('note', color, note.lane, noteH), x, headY, noteH)
+      ctx.globalAlpha = fade
+      drawCentered(ctx, this.noteSprite('note', missColor, note.lane, noteH), x, headY, size)
       ctx.restore()
       return true
     })
@@ -728,6 +737,7 @@ export class PlayfieldRenderer {
     state: 'waiting' | 'active' | 'dropping',
     life: number,
     lane: Lane,
+    alpha?: number,
   ): void {
     const length = Math.abs(tailY - headY)
     if (length < 1) return
@@ -770,7 +780,7 @@ export class PlayfieldRenderer {
     fill.addColorStop(0.5, state === 'active' ? shade(color, 0.5) : shade(color, 0.2))
     fill.addColorStop(1, shade(color, -0.25))
     ctx.save()
-    ctx.globalAlpha = state === 'waiting' ? 0.9 : state === 'active' ? 1 : 0.35 + 0.5 * life
+    ctx.globalAlpha = alpha ?? (state === 'waiting' ? 0.9 : state === 'active' ? 1 : 0.35 + 0.5 * life)
     ctx.fillStyle = fill
     ctx.fill(path)
     ctx.lineJoin = 'round'

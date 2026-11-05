@@ -574,7 +574,7 @@ export function GameScreen({
         {autoPlay
           ? 'Auto-play: watch the arrows play themselves'
           : touchOnly
-            ? 'Tap each lane as its arrow reaches the target'
+            ? 'Tap each column as its note reaches the target'
             : `${laneKeys(0)} or ${laneKeys(1)} to hit - ${describeKey(settings.controls.pause[0])} pause - ${describeKey(settings.controls.restart[0])} restart`}
       </div>
     </div>
