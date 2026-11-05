@@ -32,7 +32,7 @@ const NOTE_SKINS: { value: NoteShape; label: string; color: string }[] = [
   { value: 'star', label: 'Star', color: '#ff4f9a' },
   { value: 'hex', label: 'Hex', color: '#a9b6c2' },
   { value: 'bar', label: 'Bar', color: '#f2f5f7' },
-  { value: 'tile', label: 'Piano tile', color: '#ffc93d' },
+  { value: 'tile', label: 'Rectangle', color: '#ffc93d' },
   { value: 'square', label: 'Square', color: '#5fb2ff' },
 ]
 

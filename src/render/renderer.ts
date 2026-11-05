@@ -214,8 +214,8 @@ export class PlayfieldRenderer {
   private flash: JudgmentFlash | null = null
   /** Notes by id, so a missed one can be drawn fading where it was missed. */
   private notesById = new Map<string, ChartNote>()
-  /** Seconds from each note to the next one in its column, for trimming piano tiles that would overlap. */
-  private laneGap = new Map<string, number>()
+  /** A rectangle's height in half-note units: always twice its own width. */
+  private tileHy = 2 * TILE_BASE_HX
   /** Half the tile's width in the same units; the short home preview shrinks notes but not columns. */
   private tileHx = TILE_BASE_HX
   /**
@@ -298,7 +298,6 @@ export class PlayfieldRenderer {
     for (const note of chart.notes) {
       this.notesById.set(note.id, note)
     }
-    this.laneGap = laneGaps(chart.notes)
     this.layoutCache = null
     this.layoutKey = ''
   }
@@ -320,14 +319,6 @@ export class PlayfieldRenderer {
       this.glowSprite(color, Math.round(noteH))
     }
     this.glowSprite('#ffffff', Math.round(noteH))
-    // Tiles cut shorter for tight spots: build each size the chart uses before it starts.
-    if (this.settings.noteShape === 'tile') {
-      for (const note of this.notesById.values()) {
-        const hy = this.tileHyFor(note)
-        this.noteSprite('note', this.columnColor(note.lane), note.lane, noteH, hy)
-        this.noteSprite('note', this.missColor(), note.lane, noteH, hy)
-      }
-    }
     this.spritesWarm = true
   }
 
@@ -466,6 +457,7 @@ export class PlayfieldRenderer {
       direction,
     }
     this.tileHx = Math.round(((TILE_BASE_HX * fullNote) / Math.max(1, noteH)) * 20) / 20
+    this.tileHy = 2 * this.tileHx
     this.layoutCache = layout
     this.layoutKey = key
     return layout
@@ -706,14 +698,14 @@ export class PlayfieldRenderer {
       const tailDeltaMs = (note.time + duration) * 1000 - songTimeMs
       if (tailDeltaMs < 0) return
       const x = laneX[note.lane] + laneW / 2
-      const shift = this.tileShift(TILE_HY)
+      const shift = this.tileShift(this.tileHy)
       const headY = receptorY + shift
       const tailY = receptorY + direction * (tailDeltaMs / 1000) * pxPerSec + shift
       const color = this.columnColor(note.lane)
       const held = life >= 1
       this.drawHoldBody(x, headY, tailY, noteH, color, held ? 'active' : 'dropping', life, note.lane)
       this.drawHoldEnd(x, tailY, noteH, color, note.lane)
-      const sprite = this.noteSprite('note', color, note.lane, noteH, TILE_HY)
+      const sprite = this.noteSprite('note', color, note.lane, noteH, this.tileHy)
       ctx.globalAlpha = held ? 1 : 0.45 + 0.55 * life
       drawCentered(ctx, sprite, x, headY, noteH)
       ctx.globalAlpha = 1
@@ -778,15 +770,13 @@ export class PlayfieldRenderer {
   }
 
   /**
-   * A piano tile's height, in the half-note units its shape uses. Every tile is the same long
-   * block; one is only cut shorter when the next tile in its column would otherwise run into it.
+   * A rectangle's height, in the half-note units its shape uses: every one is twice as tall as it
+   * is wide (Amro, 2026-11-05). Close ones in a column overlap, later on top, so each front edge
+   * stays in view.
    */
   private tileHyFor(note: ChartNote): number {
-    if (this.settings.noteShape !== 'tile') return TILE_BASE_HY
-    if (note.kind === 'hold') return TILE_HY
-    const { noteH, pxPerSec } = this.layout()
-    const room = ((this.laneGap.get(note.id) ?? Infinity) * pxPerSec - TILE_GAP_PX) / Math.max(1, noteH)
-    return Math.max(TILE_MIN_HY, Math.floor(Math.min(TILE_HY, room) * 10) / 10)
+    void note
+    return this.settings.noteShape === 'tile' ? this.tileHy : TILE_BASE_HY
   }
 
   /**
@@ -822,7 +812,7 @@ export class PlayfieldRenderer {
     const turn = UNROTATED.has(this.settings.noteShape) ? 0 : LANE_ANGLE[lane]
     const cos = Math.cos(turn)
     const sin = Math.sin(turn)
-    const shape = shapePoints(this.settings.noteShape, TILE_HY, this.tileHx).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
+    const shape = shapePoints(this.settings.noteShape, this.tileHy, this.tileHx).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
     // Cut where the shape is widest, so an up or down arrow stretches its whole head instead of a
     // thin stem; sideways arrows and round shapes are widest through the middle and cut there.
     const cutY = headY + widestCut(shape, headY, half)
@@ -922,7 +912,7 @@ export class PlayfieldRenderer {
   /** Cached arrow tile: 'note' is the coloured arrow, 'receptor' the grey target, 'flash' white. */
   private noteSprite(kind: 'note' | 'receptor' | 'flash', color: string, lane: Lane, size: number, hy?: number): HTMLCanvasElement {
     const shape = this.settings.noteShape
-    const tileHy = shape === 'tile' ? hy ?? TILE_HY : TILE_BASE_HY
+    const tileHy = shape === 'tile' ? hy ?? this.tileHy : TILE_BASE_HY
     const tileHx = shape === 'tile' ? this.tileHx : TILE_BASE_HX
     const key = `${kind}|${color}|${kind === 'flash' && shape === 'orb' ? 0 : lane}|${shape}|${Math.round(size)}|${tileHy}|${tileHx}`
     const cached = this.spriteCache.get(key)
@@ -1320,13 +1310,8 @@ function shuffledColors(): string[] {
 
 const TILE_BASE_HY = 0.95
 const TILE_BASE_HX = 0.92
-/** Every piano tile's height (1.8 notes tall), unless the next tile in its column is too close. */
-const TILE_HY = 1.8
-const TILE_MIN_HY = 0.5
 /** The flat bar a tile lands on. */
 const TILE_BAR_HY = 0.4
-/** Space kept between two tiles in one column. */
-const TILE_GAP_PX = 6
 /** Shapes drawn the same way up in every column. */
 const UNROTATED = new Set<NoteShape>(['tile', 'square'])
 
@@ -1355,17 +1340,6 @@ function widestCut(shape: number[][], centerY: number, half: number): number {
     }
   }
   return best
-}
-
-function laneGaps(notes: readonly ChartNote[]): Map<string, number> {
-  const gaps = new Map<string, number>()
-  const previous: (ChartNote | null)[] = [null, null, null, null]
-  for (const note of [...notes].sort((a, b) => a.time - b.time)) {
-    const before = previous[note.lane]
-    if (before) gaps.set(before.id, note.time - before.time)
-    previous[note.lane] = note
-  }
-  return gaps
 }
 
 /** The arcade arrow pointing right, in a unit box centred on 0 (shared by sprites and stretched holds). */

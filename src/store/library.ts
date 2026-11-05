@@ -11,6 +11,7 @@ import { planForMeta, type EditPlan } from '../core/edit'
 import { decodeAudioFile } from '../audio/engine'
 import { ANALYSIS_VERSION, downmixMono } from '../audio/analyze'
 import { autoTrimWindow } from '../audio/trim'
+import { readSongTags } from '../audio/tags'
 import { toPeakBytes, downsample, normalize } from '../core/math'
 import { createId, hashString } from '../core/rng'
 import { GENERATOR_VERSION, generateAllDifficulties } from '../chart/generate'
@@ -43,6 +44,8 @@ export interface SongBundle {
 export function titleFromFileName(fileName: string): string {
   const withoutExt = fileName.replace(/\.[a-z0-9]{2,5}$/i, '')
   const cleaned = withoutExt.replace(/[_]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  // Phones can hand over a content id instead of the real name ("INBOUND3122…", "1000012345").
+  if (/^(inbound|document|audio|msf:?)?[\s:-]*\d{5,}$/i.test(cleaned)) return 'Untitled song'
   return cleaned.length > 0 ? cleaned : fileName
 }
 
@@ -165,8 +168,10 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     (song) => song.fileName === file.name && song.fileSize === file.size && song.lastModified === file.lastModified,
   )
   // Re-attaching the same file keeps a title or artist the player typed in.
-  const title = options.title?.trim() || existing?.title || titleFromFileName(file.name)
-  const artist = options.artist?.trim() || existing?.artist || ''
+  // The file's own tags beat its name: phones can name a picked file "INBOUND3122…".
+  const tags = existing ? {} : await readSongTags(file)
+  const title = options.title?.trim() || existing?.title || tags.title || titleFromFileName(file.name)
+  const artist = options.artist?.trim() || existing?.artist || tags.artist || ''
   // Stable id derived from the file identity instead of a clock/random pair. Two different files
   // colliding on all three fields is not realistic; the same file always lands on the same row.
   const songId = existing?.id ?? `song_${hashString(`${file.name}|${file.size}|${file.lastModified}`).toString(36)}`
