@@ -30,7 +30,8 @@ function serviceWorkerPrecache(): import('vite').Plugin {
         return out
       }
 
-      const files = walk(dist)
+      // The menu theme is big and only plays with an empty library, so nobody downloads it up front.
+      const files = walk(dist).filter((rel) => !rel.startsWith('music/'))
       const manifest = files.map((rel) => {
         const bytes = fs.readFileSync(path.join(dist, rel))
         const hash = crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 12)
