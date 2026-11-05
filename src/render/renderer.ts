@@ -42,8 +42,6 @@ export interface RenderSettings {
   arrowColors: ArrowColors
   /** Draw an end arrow on holds (let go there) or a plain rounded end (just hold to the end). */
   holdEndArrow?: boolean
-  /** Long arrows: a bar trailing the arrow, or the arrow itself stretched. */
-  holdStyle?: 'bar' | 'stretch'
   /** Where song progress shows: a line across the top, a bar under the title, or text under accuracy. */
   progressStyle?: 'top' | 'column' | 'text'
   /** The four column colours the player picked (used when arrow colours are per column). */
@@ -125,8 +123,6 @@ export const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
 /** Picked from at random, four at a time, when arrow colours are shuffled. */
 const SHUFFLE_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d', '#b35cff', '#ff7a3d', '#3de9ff', '#9dff3d']
 const MONO_WHITE = '#f4f4f4'
-/** The light beam up a pressed lane. */
-const LANE_BEAM = false
 
 interface JudgeStyle {
   fill: string
@@ -572,7 +568,7 @@ export class PlayfieldRenderer {
   private drawLanes(): void {
     const ctx = this.ctx
     const palette = PALETTES[this.settings.theme]
-    const { laneX, laneW, laneAreaX, laneAreaW, receptorY, direction, noteH } = this.layout()
+    const { laneX, laneW, laneAreaX, laneAreaW } = this.layout()
     // The highway is a little wider than the lanes, so the outer arrows do not touch the rails.
     const gap = Math.max(8, laneW * 0.1)
     ctx.fillStyle = palette.lanePanel
@@ -604,27 +600,6 @@ export class PlayfieldRenderer {
     const mono = this.settings.theme === 'mono'
     rail(laneAreaX - gap - 2, mono ? palette.accent : this.railColors[0])
     rail(laneAreaX + laneAreaW + gap, mono ? palette.accent2 : this.railColors[1])
-
-    // A beam shoots up the lane from a pressed receptor and fades after release. Switched off
-    // for now (Amro, 2026-11-06: "disable the long glow on the top arrows for a sec").
-    if (!LANE_BEAM || this.settings.reducedMotion) return
-    for (let lane = 0; lane < 4; lane++) {
-      const held = this.laneHeld[lane]
-      const fade = held ? 1 : Math.max(0, 1 - (this.nowMs - this.releaseAt[lane]) / 180)
-      if (fade <= 0) continue
-      const length = (direction === 1 ? this.height - receptorY : receptorY) * 0.42
-      // The beam fades in from behind the target as well as out along the lane, so it never
-      // starts on a hard horizontal edge.
-      const start = receptorY - direction * noteH * 0.6
-      const end = receptorY + direction * length
-      const beam = ctx.createLinearGradient(0, start, 0, end)
-      const peak = (noteH * 0.6) / Math.max(1, Math.abs(end - start))
-      beam.addColorStop(0, hexToRgba(this.columnColor(lane), 0))
-      beam.addColorStop(peak, hexToRgba(this.columnColor(lane), 0.14 * fade))
-      beam.addColorStop(1, hexToRgba(this.columnColor(lane), 0))
-      ctx.fillStyle = beam
-      ctx.fillRect(laneX[lane] + 2, Math.min(start, end), laneW - 4, Math.abs(end - start))
-    }
   }
 
   /* ---------------------------------------------------------------- notes */
@@ -725,73 +700,11 @@ export class PlayfieldRenderer {
   }
 
   /**
-   * A hold's body: a glowing ribbon from the head to a rounded tail cap. While the key is down it
-   * lights up and light bands race into the receptor; once released it greys out as it drains.
-   */
-  private drawHoldBody(
-    cx: number,
-    headY: number,
-    tailY: number,
-    noteH: number,
-    color: string,
-    state: 'waiting' | 'active' | 'dropping',
-    life: number,
-    lane: Lane,
-  ): void {
-    const ctx = this.ctx
-    if (this.settings.holdStyle === 'stretch') {
-      this.drawStretchedArrow(cx, headY, tailY, noteH, color, state, life, lane)
-      return
-    }
-    const bodyW = noteH * 0.56
-    // The ribbon starts where the head arrow ends, as if the arrow were stretched toward its tail.
-    // Starting behind the arrow let its corners show around the arrow's sides on every column.
-    const towardTail = tailY >= headY ? 1 : -1
-    const start = headY + towardTail * noteH * 0.44
-    const top = Math.min(start, tailY)
-    const bottom = Math.max(start, tailY)
-    const length = bottom - top
-    if (length < 1) return
-    const base = color
-    const left = cx - bodyW / 2
-    const gradient = ctx.createLinearGradient(left, 0, left + bodyW, 0)
-    gradient.addColorStop(0, shade(base, -0.45))
-    gradient.addColorStop(0.5, state === 'active' ? shade(base, 0.45) : shade(base, 0.1))
-    gradient.addColorStop(1, shade(base, -0.45))
-    ctx.save()
-    ctx.globalAlpha = state === 'waiting' ? 0.78 : state === 'active' ? 1 : 0.35 + 0.5 * life
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    // Square where it meets the head arrow, rounded at the far end.
-    const r = Math.min(bodyW / 2, length / 2)
-    ctx.roundRect(left, top, bodyW, length, towardTail === 1 ? [0, 0, r, r] : [r, r, 0, 0])
-    ctx.fill()
-    // A light rim in the hold's own colour instead of a dark outline.
-    ctx.lineWidth = 1.2
-    ctx.strokeStyle = shade(base, 0.5)
-    ctx.stroke()
-    if (state === 'active' && !this.settings.reducedMotion) {
-      // Light bands racing toward the receptor sell "you are holding this".
-      ctx.clip()
-      ctx.globalCompositeOperation = 'lighter'
-      ctx.fillStyle = 'rgba(255,255,255,0.28)'
-      const spacing = 26
-      const direction = tailY > headY ? 1 : -1
-      const offset = ((this.nowMs / 1000) * 260) % spacing
-      for (let d = -spacing; d < length + spacing; d += spacing) {
-        const along = direction === 1 ? d - offset : length - d + offset
-        ctx.fillRect(left, top + along, bodyW, 7)
-      }
-    }
-    ctx.restore()
-  }
-
-  /**
-   * The other long-arrow look: the head arrow itself stretched toward its tail. The arrow is cut
+   * A long arrow: the head arrow itself stretched toward its tail. The arrow is cut
    * across its middle and the half on the tail side slides down the hold, so its own sides become
    * the hold's edges instead of a separate bar.
    */
-  private drawStretchedArrow(
+  private drawHoldBody(
     cx: number,
     headY: number,
     tailY: number,

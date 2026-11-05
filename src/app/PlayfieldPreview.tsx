@@ -92,7 +92,6 @@ function previewSettings(settings: ReturnType<typeof settingsStore.get>) {
     scrollDirection: settings.scrollDirection,
     theme: settings.theme,
     columnColors: settings.columnColors,
-    holdStyle: settings.holdStyle,
     holdEndArrow: settings.holdMode !== 'hold',
     reducedMotion: settings.reducedMotion,
   }

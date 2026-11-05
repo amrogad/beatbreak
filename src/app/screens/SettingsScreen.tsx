@@ -218,15 +218,6 @@ export function SettingsScreen({
             onChange={(value) => onUpdate({ progressStyle: value })}
           />
           <Select
-            label="Long arrow look"
-            value={settings.holdStyle}
-            options={[
-              { value: 'bar', label: 'Bar behind the arrow' },
-              { value: 'stretch', label: 'Stretched arrow' },
-            ]}
-            onChange={(value) => onUpdate({ holdStyle: value })}
-          />
-          <Select
             label="Long arrows"
             value={settings.holdMode}
             options={[
