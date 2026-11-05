@@ -126,8 +126,7 @@ const MONO_WHITE = '#f4f4f4'
 /** A missed arrow turns this red and fades out where it was missed, over this long. */
 const MISS_COLOR = '#ff4d5e'
 const MISS_FADE_MS = 320
-/** The soft background layer: repainted this often, at this fraction of the screen's size. */
-const BG_REFRESH_MS = 100
+/** The soft background layer is painted at this fraction of the screen's size. */
 const BG_SCALE = 0.5
 /** An early or late hit fades out where it was tapped, over this long. */
 const HIT_FADE_MS = 160
@@ -218,8 +217,6 @@ export class PlayfieldRenderer {
   /** Notes by id, so a missed one can be drawn fading where it was missed. */
   private notesById = new Map<string, ChartNote>()
   private bgLayer: HTMLCanvasElement | null = null
-  private bgKey = ''
-  private bgAt = 0
   /** A rectangle's height in half-note units: always twice its own width. */
   private tileHy = 2 * TILE_BASE_HX
   /** Half the tile's width in the same units; the short home preview shrinks notes but not columns. */
@@ -434,7 +431,6 @@ export class PlayfieldRenderer {
     this.spriteCache.clear()
     this.textCache.clear()
     this.spritesWarm = false
-    this.bgKey = ''
   }
 
   private layout(): PlayfieldLayout {
@@ -542,28 +538,22 @@ export class PlayfieldRenderer {
   /* ------------------------------------------------------------- background */
 
   /**
-   * The background is soft light that drifts slowly, so it is painted into a half-resolution layer
-   * ten times a second and stretched over the screen in one copy. Painting its full-screen
-   * gradients every frame at phone resolution was the main cost of a frame there.
+   * The background is soft light, so it is painted every frame into a half-resolution layer and
+   * stretched over the screen in one copy: a quarter of the pixels of painting it full size. (Ten
+   * repaints a second made the sweeping stage lights visibly jump.)
    */
   private drawBackground(songSeconds: number): void {
-    const key = `${this.width}x${this.height}:${this.settings.theme}:${this.settings.laneStyle}:${this.settings.reducedMotion}:${this.quality}`
     if (!this.bgLayer) this.bgLayer = document.createElement('canvas')
     const layer = this.bgLayer
-    if (this.bgKey !== key || this.nowMs - this.bgAt >= BG_REFRESH_MS) {
-      const scale = BG_SCALE
-      const w = Math.max(1, Math.round(this.width * scale))
-      const h = Math.max(1, Math.round(this.height * scale))
-      if (layer.width !== w || layer.height !== h) {
-        layer.width = w
-        layer.height = h
-      }
-      const layerCtx = layer.getContext('2d')!
-      layerCtx.setTransform(scale, 0, 0, scale, 0, 0)
-      this.paintBackground(layerCtx, songSeconds)
-      this.bgKey = key
-      this.bgAt = this.nowMs
+    const w = Math.max(1, Math.round(this.width * BG_SCALE))
+    const h = Math.max(1, Math.round(this.height * BG_SCALE))
+    if (layer.width !== w || layer.height !== h) {
+      layer.width = w
+      layer.height = h
     }
+    const layerCtx = layer.getContext('2d')!
+    layerCtx.setTransform(BG_SCALE, 0, 0, BG_SCALE, 0, 0)
+    this.paintBackground(layerCtx, songSeconds)
     this.ctx.drawImage(layer, 0, 0, this.width, this.height)
   }
 

@@ -49,7 +49,7 @@ function NoteShapeIcon({ shape }: { shape: NoteShape }): React.JSX.Element {
       )}
       {shape === 'hex' && <polygon {...common} points="7,3 17,3 22,12 17,21 7,21 2,12" />}
       {shape === 'bar' && <rect {...common} x="2" y="7" width="20" height="10" rx="4" />}
-      {shape === 'tile' && <rect {...common} x="2" y="6" width="20" height="12" rx="2" />}
+      {shape === 'tile' && <rect {...common} x="7" y="1" width="10" height="22" rx="1.5" />}
       {shape === 'square' && <rect {...common} x="4" y="4" width="16" height="16" rx="2" />}
     </svg>
   )
