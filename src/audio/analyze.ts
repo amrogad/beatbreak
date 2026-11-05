@@ -7,12 +7,12 @@
  * Pipeline: STFT → spectral flux + RMS → adaptive onset peak picking → band classification →
  * silence + section structure → tempo, phase and grid coverage.
  */
-import type { AnalysisResult, OnsetEvent, Section } from '../core/types'
+import type { AnalysisResult, OnsetEvent, Section, SongTexture } from '../core/types'
 import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
 import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
 import { detectTempoStability, estimateBeatsPerBar, estimateTempo } from './tempo'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.8'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-1.9'
 
 /**
  * Players place a beat a little before the energy peak our detector locks onto. Compared with
@@ -101,6 +101,45 @@ function computeBandEnergy(stft: ReturnType<typeof computeStft>): Float32Array[]
     }
   }
   return energy
+}
+
+const TEXTURE_BANDS = 12
+const TEXTURE_MIN_HZ = 60
+const TEXTURE_MAX_HZ = 10000
+const TEXTURE_RANGE_DB = 60
+
+/** Log-band loudness at half the analysis frame rate, kept with the song for bar matching. */
+function computeTexture(stft: ReturnType<typeof computeStft>, sampleRate: number, frameSize: number): SongTexture {
+  const { magnitude, frames, bins, frameRate } = stft
+  const bandOfBin = new Int32Array(bins).fill(-1)
+  for (let k = 1; k < bins; k++) {
+    const hz = (k * sampleRate) / frameSize
+    if (hz < TEXTURE_MIN_HZ || hz >= TEXTURE_MAX_HZ) continue
+    bandOfBin[k] = Math.floor((Math.log(hz / TEXTURE_MIN_HZ) / Math.log(TEXTURE_MAX_HZ / TEXTURE_MIN_HZ)) * TEXTURE_BANDS)
+  }
+  const count = Math.max(1, frames >> 1)
+  const decibels = new Float32Array(count * TEXTURE_BANDS)
+  let loudest = -Infinity
+  for (let i = 0; i < count; i++) {
+    const power = new Float64Array(TEXTURE_BANDS)
+    for (let f = i * 2; f < Math.min(frames, i * 2 + 2); f++) {
+      const base = f * bins
+      for (let k = 0; k < bins; k++) {
+        const band = bandOfBin[k]
+        if (band >= 0) power[band] += magnitude[base + k] * magnitude[base + k]
+      }
+    }
+    for (let band = 0; band < TEXTURE_BANDS; band++) {
+      const value = 10 * Math.log10(power[band] + 1e-9)
+      decibels[i * TEXTURE_BANDS + band] = value
+      if (value > loudest) loudest = value
+    }
+  }
+  const data = new Uint8Array(decibels.length)
+  for (let i = 0; i < decibels.length; i++) {
+    data[i] = Math.round(255 * Math.max(0, Math.min(1, 1 + (decibels[i] - loudest) / TEXTURE_RANGE_DB)))
+  }
+  return { rate: frameRate / 2, bands: TEXTURE_BANDS, data }
 }
 
 export interface AnalyzeOptions {
@@ -242,6 +281,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
     envelopeRate: envelopeBuckets / Math.max(0.001, duration),
     bandEnvelopes: envelopes.bandFlux.map((b) => downsample(b, envelopeBuckets)),
     onsets,
+    texture: computeTexture(stft, sampleRate, frameSize),
     beatTimes,
   }
   progress('Done', 1)

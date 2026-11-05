@@ -16,6 +16,7 @@
  * the same chart exactly.
  */
 import { applyChartRules } from './rules'
+import { BAR_BEATS, groupBars, type BarGroups } from './structure'
 import type {
   AnalysisResult,
   Chart,
@@ -32,7 +33,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.7'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.0'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -200,6 +201,10 @@ export interface Candidate {
    * what `applyHolds` turns into hold length — undefined when the analysis predates the field.
    */
   heldSeconds?: number
+  /** Group and slot this note belongs to: the same pattern gets the same arrows every time. */
+  pattern?: string
+  /** This bar takes its group's arrows flipped left to right. */
+  mirrored?: boolean
 }
 
 export interface SelectionDiagnostics {
@@ -405,81 +410,154 @@ const SECTION_DENSITY: Record<Section['kind'], number> = {
   peak: 1.16,
 }
 
+/** What the song's repeats need to know about the rest of the analysis. */
+export interface SongStructure {
+  groups: BarGroups
+  sections: Section[]
+  isSilent: (time: number) => boolean
+}
+
+/** A slot needs at least this share of its group's bars before the group adopts it. */
+const MIN_SLOT_PRESENCE = 0.34
+/** A slot this common in a group of at least FILL_MIN_BARS is written into every bar of the group. */
+const FILL_SLOT_PRESENCE = 0.6
+const FILL_MIN_BARS = 3
+
+const median = (values: number[]): number => {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[sorted.length >> 1]
+}
+
+/**
+ * Decides the rhythm once per group of matching bars, from what the group agrees on, and writes
+ * the same rhythm into every bar of the group. A bar that matches nothing is a group of one.
+ */
 export function shapeDensity(
   candidates: Candidate[],
   timing: TimingMap,
   duration: number,
   settings: GenerationSettings,
   difficulty: Difficulty,
-  seed: number,
+  structure: SongStructure,
 ): Candidate[] {
   if (candidates.length === 0) return []
-  const rng = createRng(seed ^ 0x5bf03635)
+  const { groups, sections, isSilent } = structure
   const strengths = candidates.map((c) => c.strength)
   const strongThreshold = quantile(strengths, 0.75)
-
   const songDensity = candidates.length / Math.max(1, duration)
   const densityScale = clamp(songDensity / 3.2, 0.72, 1.45)
+  const stepsPerBar = Math.max(1, Math.round(BAR_BEATS * settings.stepsPerBeat))
 
-  const phraseBeats = 4
-  const phraseCount = Math.max(1, Math.ceil(timing.timeToBeat(duration) / phraseBeats) + 1)
-  const kept = new Set<number>()
+  const byBar = new Map<number, Candidate[]>()
+  for (const candidate of candidates) {
+    const bar = Math.floor(candidate.step / stepsPerBar)
+    const list = byBar.get(bar)
+    if (list) list.push(candidate)
+    else byBar.set(bar, [candidate])
+  }
 
-  for (let phrase = 0; phrase < phraseCount; phrase++) {
-    const phraseStart = timing.beatToTime(phrase * phraseBeats)
-    const phraseEnd = timing.beatToTime((phrase + 1) * phraseBeats)
-    const inPhrase = candidates.filter((c) => c.time >= phraseStart - 1e-6 && c.time < phraseEnd - 1e-6)
-    if (inPhrase.length === 0) continue
-
-    const midTime = (phraseStart + phraseEnd) / 2
-    const snapshotSections = inPhrase.map((c) => c.section).filter((s): s is Section => s !== null)
-    const section = snapshotSections.length > 0 ? sectionAt(dedupeSections(snapshotSections), midTime) : null
+  const barBudget = (bar: number, inBar: Candidate[]): number => {
+    const barStart = timing.beatToTime(bar * BAR_BEATS)
+    const barEnd = timing.beatToTime((bar + 1) * BAR_BEATS)
+    const snapshotSections = inBar.map((c) => c.section).filter((s): s is Section => s !== null)
+    const section = snapshotSections.length > 0 ? sectionAt(dedupeSections(snapshotSections), (barStart + barEnd) / 2) : null
     const sectionKind = section?.kind ?? 'groove'
-    const localEnergy = section?.energy ?? 0.5
+    if (sectionKind === 'silent') return 0
+    const energyScale = clamp(1 + ((section?.energy ?? 0.5) - 0.5) * ENERGY_SENSITIVITY[difficulty], 0.7, 1.35)
+    const barSeconds = Math.max(0.05, barEnd - barStart)
+    const budgetByTime = barSeconds * settings.targetNps * densityScale * energyScale * SECTION_DENSITY[sectionKind]
+    const budgetByOnsets = inBar.length * settings.keepRatio
+    // A quiet passage should breathe, but it must not collapse an Easy chart into one arrow every
+    // three seconds: the profile target is a floor as well as a scale.
+    const budgetFloor = Math.round(barSeconds * settings.targetNps)
+    return Math.max(1, Math.min(inBar.length, budgetFloor), Math.round(Math.min(budgetByTime, Math.max(1, budgetByOnsets))))
+  }
 
-    if (sectionKind === 'silent') continue
+  const units: { id: number; bars: number[] }[] = groups.members.map((bars, id) => ({ id, bars }))
+  for (const bar of byBar.keys()) {
+    if ((groups.groupOfBar[bar] ?? -1) < 0) units.push({ id: groups.members.length + bar, bars: [bar] })
+  }
 
-    const energyScale = clamp(1 + (localEnergy - 0.5) * ENERGY_SENSITIVITY[difficulty], 0.7, 1.35)
-    const phraseSeconds = Math.max(0.05, phraseEnd - phraseStart)
-    const budgetByTime = phraseSeconds * settings.targetNps * densityScale * energyScale * SECTION_DENSITY[sectionKind]
-    const budgetByOnsets = inPhrase.length * settings.keepRatio
-    // A quiet/sparse phrase should breathe, but it must not collapse an Easy chart into one arrow
-    // every three seconds. The profile target is a floor as well as a scale: there are always
-    // enough *real* onsets in the phrase, so fill it to the target instead of under-cutting it.
-    const budgetFloor = Math.round(phraseSeconds * settings.targetNps)
-    const budget = Math.max(
-      1,
-      Math.min(inPhrase.length, budgetFloor),
-      Math.round(Math.min(budgetByTime, Math.max(1, budgetByOnsets))),
-    )
+  const kept: Candidate[] = []
+  for (const unit of units) {
+    const present = unit.bars.filter((bar) => byBar.has(bar))
+    if (present.length === 0) continue
+    const budget = Math.round(median(present.map((bar) => barBudget(bar, byBar.get(bar)!))))
+    if (budget <= 0) continue
 
-    const scored = inPhrase
-      .map((candidate) => {
-        const beat = candidate.step / settings.stepsPerBeat
+    const slots = new Map<number, Candidate[]>()
+    for (const bar of present) {
+      for (const candidate of byBar.get(bar)!) {
+        const slot = candidate.step - bar * stepsPerBar
+        const list = slots.get(slot)
+        if (list) list.push(candidate)
+        else slots.set(slot, [candidate])
+      }
+    }
+
+    const size = unit.bars.length
+    const ranked = [...slots.entries()]
+      .map(([slot, hits]) => {
+        const beat = slot / settings.stepsPerBeat
         const onBeat = Math.abs(beat - Math.round(beat)) < 1e-6
         const onHalfBeat = Math.abs(beat * 2 - Math.round(beat * 2)) < 1e-6
         const beatBonus = onBeat ? settings.onBeatBonus : onHalfBeat ? settings.onBeatBonus * 0.45 : 0
-        const accent = Math.pow(clamp(candidate.strength, 0.001, 1), settings.accent)
-        const chordBonus = candidate.simultaneousHits > 1 ? 0.16 : 0
-        const jitter = rng.range(-0.015, 0.015)
+        const strength = hits.reduce((acc, hit) => acc + hit.strength, 0) / hits.length
+        const presence = hits.length / size
+        const accent = Math.pow(clamp(strength, 0.001, 1), settings.accent) * (0.5 + 0.5 * presence)
+        const chords = hits.filter((hit) => hit.simultaneousHits > 1).length / hits.length
         return {
-          candidate,
-          score: accent + beatBonus + chordBonus + jitter,
-          keepAlways: onBeat && candidate.strength >= strongThreshold,
+          slot,
+          hits,
+          strength,
+          presence,
+          score: accent + beatBonus + chords * 0.16,
+          keepAlways: onBeat && strength >= strongThreshold && presence >= 0.5,
         }
       })
-      .sort((a, b) => b.score - a.score)
+      .filter((entry) => entry.presence >= MIN_SLOT_PRESENCE)
+      .sort((a, b) => b.score - a.score || a.slot - b.slot)
 
     let used = 0
-    for (const entry of scored) {
+    for (const entry of ranked) {
       if (used >= budget && !entry.keepAlways) continue
-      if (kept.has(entry.candidate.step)) continue
-      kept.add(entry.candidate.step)
       used++
+      const held = entry.hits.flatMap((hit) => (hit.heldSeconds === undefined ? [] : [hit.heldSeconds]))
+      const heldSeconds = held.length > 0 ? median(held) : undefined
+      const pattern = `${unit.id}:${entry.slot}`
+      const model = entry.hits.reduce((best, hit) => (hit.strength > best.strength ? hit : best))
+      for (const bar of unit.bars) {
+        const step = bar * stepsPerBar + entry.slot
+        const own = entry.hits.find((hit) => hit.step === step)
+        const mirrored = groups.mirrored[bar] ?? false
+        if (own) {
+          kept.push({ ...own, heldSeconds, pattern, mirrored })
+          continue
+        }
+        if (entry.presence < FILL_SLOT_PRESENCE || size < FILL_MIN_BARS) continue
+        const time = timing.stepToTime(step, settings.stepsPerBeat)
+        if (time < 0 || time >= duration || isSilent(time)) continue
+        kept.push({
+          ...model,
+          step,
+          time,
+          attack: time,
+          strength: entry.strength,
+          hits: 1,
+          hitTimes: [time],
+          hitBands: [model.band],
+          simultaneousHits: 1,
+          bands: [model.band],
+          section: sectionAt(sections, time),
+          heldSeconds,
+          pattern,
+          mirrored,
+        })
+      }
     }
   }
 
-  return candidates.filter((c) => kept.has(c.step))
+  return kept.sort((a, b) => a.step - b.step)
 }
 
 /** Sections snapshots come from different windows; merge identical kinds into one list. */
@@ -584,8 +662,11 @@ export function assignLanes(
   let currentMotif: Motif | null = null
   let motifCursor = 0
   const motifsUsed = new Set<string>()
+  const remembered = new Map<string, Lane[]>()
+  const flip = (lanes: Lane[], mirrored?: boolean): Lane[] => (mirrored ? lanes.map((lane) => (3 - lane) as Lane) : lanes)
 
   const commit = (candidate: Candidate, lanes: Lane[]): void => {
+    if (candidate.pattern && !remembered.has(candidate.pattern)) remembered.set(candidate.pattern, flip(lanes, candidate.mirrored))
     for (const lane of lanes) {
       notes.push({
         id: `${difficulty}-${candidate.step}-${lane}`,
@@ -646,6 +727,20 @@ export function assignLanes(
       currentMotif = chooseMotif(rng, candidate, difficulty, currentMotif?.id ?? '')
       motifsUsed.add(currentMotif.id)
       motifCursor = 0
+    }
+
+    // The same music takes the same arrows, as long as they can physically be played here.
+    const stored = candidate.pattern ? remembered.get(candidate.pattern) : undefined
+    const repeat = stored && flip(stored, candidate.mirrored)
+    if (repeat && repeat.every(free) && !(fast && repeat.length === 1 && repeat[0] === lastLane)) {
+      commit(candidate, repeat)
+      if (repeat.length > 1) {
+        lastChordTime = candidate.time
+        if (repeat.length >= 3) lastHandTime = candidate.time
+        lastChordLanes = repeat
+      }
+      motifCursor++
+      continue
     }
 
     // ---------------------------------------------------------------- chords
@@ -772,6 +867,8 @@ const RELEASE_ALIGN_SECONDS = 0.15
 const RELEASE_CLEAR_SECONDS = 0.3
 
 const HOLD_MIN_SUSTAIN: Record<Difficulty, number> = { easy: 0.5, normal: 0.45, hard: 0.4, expert: 0.35 }
+/** Repeats of a held pattern may push the chart this far past its hold cap. */
+const HOLD_REPEAT_ROOM = 1.6
 
 /**
  * Turn notes into hold notes where the music sustains and the lane stays clear long enough.
@@ -797,6 +894,7 @@ export function applyHolds(
   difficulty: Difficulty,
   seed: number,
   sustains: ReadonlyMap<number, number> = new Map(),
+  patterns: ReadonlyMap<number, string> = new Map(),
 ): HoldApplicationResult {
   if (notes.length === 0) return { notes, holds: 0 }
   const rng = createRng(seed ^ 0x51ed270b)
@@ -828,8 +926,14 @@ export function applyHolds(
 
   let holds = 0
   const cleared = new Set<string>()
+  const heldPatterns = new Set<string>()
   const out = notes.map((note, i) => {
-    if (note.kind !== 'tap' || holds >= holdCap || cleared.has(note.id)) return note
+    if (note.kind !== 'tap' || cleared.has(note.id)) return note
+    // The cap is paced through the song so the long arrows don't all land in the opening. A pattern
+    // that held before holds again, up to a hard limit.
+    const pattern = patterns.get(Math.round(note.time * 1000))
+    const allowed = pattern !== undefined && heldPatterns.has(pattern) ? holdCap * HOLD_REPEAT_ROOM : holdCap * ((i + 1) / notes.length)
+    if (holds >= Math.max(1, allowed)) return note
     if ((sameStep.get(Math.round(note.time * 1000)) ?? 0) > 1) return note
     // Holds are anchors, not decoration. Keep their heads on a beat (Easy/Normal) or at least on
     // an eighth (Hard/Expert) so a short tap never starts halfway through a sung phrase.
@@ -880,6 +984,7 @@ export function applyHolds(
       }
     }
     holds++
+    if (pattern !== undefined) heldPatterns.add(pattern)
     return { ...note, kind: 'hold' as const, duration: holdSeconds }
   })
 
@@ -1089,20 +1194,25 @@ export function generateChart(input: GenerateChartInput): Chart {
     input.options?.seed ??
     hashString(`${songId}|${difficulty}|${GENERATOR_VERSION}|${input.options?.salt ?? 0}`)
 
-  const selection = selectCandidates(filterOnsetsForEdit(analysis, input.edit), timing, duration, settings)
-  const shaped = shapeDensity(selection.candidates, timing, duration, settings, difficulty, seed)
+  const heard = filterOnsetsForEdit(analysis, input.edit)
+  const selection = selectCandidates(heard, timing, duration, settings)
+  const shaped = shapeDensity(selection.candidates, timing, duration, settings, difficulty, {
+    groups: groupBars(heard.onsets, timing, duration, analysis.texture),
+    sections: analysis.sections,
+    isSilent: (time) => analysis.silentRegions.some((region) => time >= region.start - 0.05 && time <= region.end + 0.05),
+  })
   const assignment = assignLanes(shaped, timing, settings, difficulty, seed)
-  // Sustain per quantized step: a note whose sound keeps ringing becomes a hold. Keyed by rounded
-  // milliseconds because lane assignment only ever reuses the candidate's time.
   // Sustain per quantized step: a note whose sound keeps ringing in its own band becomes a hold.
   // Keyed by rounded milliseconds because lane assignment only ever reuses the candidate's time.
   const sustains = new Map<number, number>()
+  const patterns = new Map<number, string>()
   for (const candidate of shaped) {
-    if (candidate.heldSeconds === undefined) continue
     const key = Math.round(candidate.time * 1000)
+    if (candidate.pattern) patterns.set(key, candidate.pattern)
+    if (candidate.heldSeconds === undefined) continue
     sustains.set(key, Math.max(sustains.get(key) ?? 0, candidate.heldSeconds))
   }
-  const withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains)
+  const withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns)
   const tidied = applyChartRules(withHolds.notes, timing, settings, difficulty)
   const clipped = clipNotesToEdit(tidied, input.edit, duration, timing, settings.stepsPerBeat)
   const notes = clipped.notes

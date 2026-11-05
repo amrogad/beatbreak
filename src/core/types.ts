@@ -229,6 +229,14 @@ export interface OnsetEvent {
   heldSeconds?: number
 }
 
+export interface SongTexture {
+  /** Frames per second. */
+  rate: number
+  bands: number
+  /** Loudness per frame and band, 0..255 on a log scale, frame-major. */
+  data: Uint8Array
+}
+
 export interface AnalysisResult extends AnalysisSummary {
   /** Onset strength envelope for UI/preview (normalized 0..1). */
   envelope: Float32Array
@@ -237,6 +245,8 @@ export interface AnalysisResult extends AnalysisSummary {
   /** Per-band onset strength envelopes (normalized), for future models. */
   bandEnvelopes: Float32Array[]
   onsets: OnsetEvent[]
+  /** Small spectrogram of the song, for telling which bars are the same music. */
+  texture?: SongTexture
   /** Detected beat times in seconds (musical grid, may extend past audio end). */
   beatTimes: number[]
 }
