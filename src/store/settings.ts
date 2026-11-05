@@ -54,6 +54,8 @@ export interface Settings {
   menuMusic: boolean
   /** Long arrows: let go on the end arrow ('release') or just hold to the end ('hold'). */
   holdMode: 'release' | 'hold'
+  /** How wide the timing windows are: 'phone' is 1.5x wider, since tapping glass is harder. */
+  timing: 'pc' | 'phone'
   /** Difficulty a song opens on before you pick one for it; 'auto' uses the recommended one. */
   defaultDifficulty: Difficulty | 'auto'
   /**
@@ -90,6 +92,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showStats: false,
   menuMusic: true,
   holdMode: 'hold',
+  timing: 'pc',
   defaultDifficulty: 'auto',
   // A screen shows a frame a frame or two after it is drawn, so arrows reach the target a little
   // after the beat is heard. 20 ms earlier makes up for a typical monitor; players fine-tune it.
@@ -115,7 +118,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 13
+const SETTINGS_SCHEMA = 14
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -223,6 +226,7 @@ export function sanitizeSettings(input: unknown): Settings {
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
     holdMode: raw.holdMode === 'release' ? 'release' : 'hold',
+    timing: raw.timing === 'phone' ? 'phone' : 'pc',
     defaultDifficulty:
       raw.defaultDifficulty === 'easy' || raw.defaultDifficulty === 'normal' || raw.defaultDifficulty === 'hard' || raw.defaultDifficulty === 'expert'
         ? raw.defaultDifficulty
@@ -238,7 +242,7 @@ export function sanitizeSettings(input: unknown): Settings {
  */
 function touchDefaults(): Partial<Settings> {
   const touch = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
-  return touch ? { scrollDirection: 'down', noteShape: 'tile' } : {}
+  return touch ? { scrollDirection: 'down', noteShape: 'tile', timing: 'phone' } : {}
 }
 
 export function loadSettings(): Settings {
@@ -267,6 +271,8 @@ export function loadSettings(): Settings {
       if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
+      // v14: phones and tablets start on the wider phone timing.
+      if ((parsed.schema ?? 1) < 14 && touchDefaults().timing) parsed.timing = 'phone'
       // v13: holds only ask you to keep holding by default, no timed release.
       if ((parsed.schema ?? 1) < 13) parsed.holdMode = 'hold'
       // v12: phones and tablets start on falling piano tiles, also when settings were saved before.

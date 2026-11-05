@@ -231,6 +231,16 @@ export function SettingsScreen({
             hint="Either way, letting go early misses the hold."
           />
           <Select
+            label="Timing"
+            value={settings.timing}
+            options={[
+              { value: 'pc', label: 'PC, tight windows for keys' },
+              { value: 'phone', label: 'Phone, wider windows for tapping' },
+            ]}
+            onChange={(value) => onUpdate({ timing: value })}
+            hint="Phones start on phone timing."
+          />
+          <Select
             label="Theme"
             value={settings.theme === 'mono' ? 'mono' : 'disco'}
             options={[

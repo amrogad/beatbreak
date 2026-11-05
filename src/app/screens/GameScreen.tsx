@@ -82,8 +82,8 @@ export function GameScreen({
   // here would rebuild the whole run (the volume slider in the pause menu used to do that).
   const customWindowsKey = JSON.stringify(settings.customWindows)
   const windows = useMemo(
-    () => windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows),
-    [settings.windowPreset, customWindowsKey, chart.difficulty],
+    () => windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows, settings.timing === 'phone'),
+    [settings.windowPreset, customWindowsKey, chart.difficulty, settings.timing],
   )
 
   /**

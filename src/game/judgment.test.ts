@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_WINDOWS,
+  TOUCH_WINDOW_SCALE,
   JUDGMENT_LABEL,
   JUDGMENT_WEIGHT,
   WINDOW_PRESETS,
@@ -155,5 +156,15 @@ describe('compensateInputLatency', () => {
     expect(timingLabel(0.4)).toBe('on time')
     expect(timingLabel(-6)).toBe('early')
     expect(timingLabel(6)).toBe('late')
+  })
+})
+
+describe('touch windows', () => {
+  it('widens every window by the touch scale on touch screens', () => {
+    const keys = windowsForDifficulty('standard', 'normal')
+    const touch = windowsForDifficulty('standard', 'normal', undefined, true)
+    expect(touch.good).toBe(Math.round(keys.good * TOUCH_WINDOW_SCALE))
+    expect(touch.marvelous).toBe(Math.round(keys.marvelous * TOUCH_WINDOW_SCALE))
+    expect(touch.missAfter).toBe(touch.good)
   })
 })

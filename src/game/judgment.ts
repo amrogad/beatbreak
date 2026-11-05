@@ -66,10 +66,18 @@ export function normalizeCustomWindows(custom: Partial<CustomWindows> | undefine
  * is applied by the engine, not by widening the windows. A hand-set ("custom") window set is used
  * exactly as entered — that is the point of setting it.
  */
+/**
+ * Touch screens get windows this much wider than the preset, since tapping glass is harder than
+ * pressing keys (Amro, 2026-11-05: easier on phones is the principle). 1.5x puts the standard
+ * preset at roughly StepMania's own windows.
+ */
+export const TOUCH_WINDOW_SCALE = 1.5
+
 export function windowsForDifficulty(
   preset: WindowPreset,
   difficulty: Difficulty,
   custom?: Partial<CustomWindows>,
+  touch = false,
 ): JudgmentWindows {
   if (preset === 'custom') {
     const normalized = normalizeCustomWindows(custom)
@@ -77,7 +85,7 @@ export function windowsForDifficulty(
   }
   const base = WINDOW_PRESETS[preset]
   // Easy and Normal used to widen the windows; an arrow should only count when it is on its target.
-  const scale = difficulty === 'expert' ? 0.92 : 1
+  const scale = (difficulty === 'expert' ? 0.92 : 1) * (touch ? TOUCH_WINDOW_SCALE : 1)
   if (scale === 1) return { ...base }
   return {
     marvelous: Math.round(base.marvelous * scale),

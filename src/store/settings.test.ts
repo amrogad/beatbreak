@@ -122,7 +122,7 @@ describe('settings migration and storage', () => {
     expect(settings.keyMap.up).toEqual(['KeyW', 'ArrowUp'])
     expect(settings.keyMap.right).toEqual(['KeyD', 'ArrowRight'])
     const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as { schema?: number }
-    expect(raw.schema).toBe(13)
+    expect(raw.schema).toBe(14)
   })
 
   it('stamps the current schema on save and round-trips through load', () => {
@@ -130,7 +130,7 @@ describe('settings migration and storage', () => {
     vi.stubGlobal('localStorage', storage)
     saveSettings({ ...DEFAULT_SETTINGS, volume: 0.25, windowPreset: 'stepmania' })
     const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as { schema?: number }
-    expect(raw.schema).toBe(13)
+    expect(raw.schema).toBe(14)
     const reloaded = loadSettings()
     expect(reloaded.volume).toBe(0.25)
     expect(reloaded.windowPreset).toBe('stepmania')
