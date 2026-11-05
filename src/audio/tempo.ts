@@ -328,6 +328,14 @@ export function estimatePhaseFromOnsets(
  * phase tracker it cannot get dragged away by a loud section, and it degrades gracefully on real
  * music (the residual it reports tells the UI how tightly the song actually locked to the grid).
  */
+/**
+ * How much an onset's band counts when fitting the grid. Low-band onsets are the least precise:
+ * bass swells and the pumping of sidechained mixes rise slowly and land tens of milliseconds off
+ * the beat, and on dance tracks they pulled the whole grid a 16th late.
+ */
+const BAND_FIT_WEIGHT = [0.3, 0.6, 1, 1]
+const fitWeight = (onset: OnsetEvent): number => onset.strength * (BAND_FIT_WEIGHT[onset.band] ?? 1)
+
 export function refineTempoFromOnsets(
   onsets: OnsetEvent[],
   bpm: number,
@@ -349,7 +357,7 @@ export function refineTempoFromOnsets(
     for (const onset of slice) {
       const relative = onset.time - phaseCandidate
       const distance = relative - Math.round(relative / gridStep) * gridStep
-      score += onset.strength * Math.exp(-0.5 * (distance / sigma) * (distance / sigma))
+      score += fitWeight(onset) * Math.exp(-0.5 * (distance / sigma) * (distance / sigma))
     }
     return score
   }
@@ -417,6 +425,35 @@ export function refineTempoFromOnsets(
     }
   }
 
+  // Least-squares fit of period and phase over the whole song: every onset close to a grid line
+  // votes for where that line really is. A period off by 0.05% drifts a tenth of a second over four
+  // minutes, which the alignment search above cannot always resolve; a straight-line fit can.
+  for (const accept of [0.25, 0.2, 0.15]) {
+    const step = period / 4
+    let sw = 0
+    let sk = 0
+    let st = 0
+    let skk = 0
+    let skt = 0
+    for (const onset of onsets) {
+      const k = Math.round((onset.time - currentPhase) / step)
+      const residual = onset.time - (currentPhase + k * step)
+      if (Math.abs(residual) > step * accept) continue
+      const w = fitWeight(onset)
+      sw += w
+      sk += w * k
+      st += w * onset.time
+      skk += w * k * k
+      skt += w * k * onset.time
+    }
+    const denominator = sw * skk - sk * sk
+    if (sw <= 1e-9 || Math.abs(denominator) < 1e-9) break
+    const fittedStep = (sw * skt - sk * st) / denominator
+    if (!Number.isFinite(fittedStep) || Math.abs(fittedStep / step - 1) > 0.003) break
+    period = fittedStep * 4
+    currentPhase = (st - fittedStep * sk) / sw
+  }
+
   const polishStep = period / 4
   for (let iteration = 0; iteration < 2; iteration++) {
     let weightSum = 0
@@ -425,8 +462,8 @@ export function refineTempoFromOnsets(
       const k = Math.round((onset.time - currentPhase) / polishStep)
       const residual = onset.time - (currentPhase + k * polishStep)
       if (Math.abs(residual) > polishStep * 0.5) continue
-      weightSum += onset.strength
-      correction += onset.strength * residual
+      weightSum += fitWeight(onset)
+      correction += fitWeight(onset) * residual
     }
     if (weightSum <= 1e-9) break
     currentPhase += correction / weightSum
@@ -507,7 +544,7 @@ export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, ph
     }
     return total
   }
-  const eighthScores = [0, 1].map((k) => score(phase + k * sixteenth, periodSeconds / 2, 0.03, (o) => o.strength))
+  const eighthScores = [0, 1].map((k) => score(phase + k * sixteenth, periodSeconds / 2, 0.03, fitWeight))
   const eighth = eighthScores[0] >= eighthScores[1] ? 0 : 1
   const lowWeight = (o: OnsetEvent): number => (o.band <= 1 ? o.strength * o.strength : 0)
   let beatScores = [eighth, eighth + 2].map((k) => score(phase + k * sixteenth, periodSeconds, 0.04, lowWeight))
@@ -527,7 +564,7 @@ const FAMILY_RANGE = { min: 88, max: 185 }
  * and how far above chance the strong onsets line up with it. Returns the winning tempo moved into
  * {@link FAMILY_RANGE}, or null when there are too few onsets or no tempo clearly beats chance.
  */
-export function scanTempoFamily(onsets: OnsetEvent[]): number | null {
+export function scanTempoFamily(onsets: OnsetEvent[], currentBpm?: number): number | null {
   const strong = onsets.filter((onset) => onset.strength >= 0.3)
   if (strong.length < 24) return null
   const sigma = 0.02
@@ -563,6 +600,19 @@ export function scanTempoFamily(onsets: OnsetEvent[]): number | null {
     }
   }
   if (bestLift < 1.6) return null
+  // Only overrule the current estimate when the scan's tempo fits clearly better than any octave
+  // of it: two families that fit about equally (105 vs 157.5 on Goin' Under) keep the estimate.
+  if (currentBpm !== undefined && currentBpm > 0) {
+    let currentLift = 0
+    for (const ratio of [0.5, 1, 2]) {
+      const center = currentBpm * ratio
+      if (center < 55 || center > 210) continue
+      for (let bpm = center * 0.996; bpm <= center * 1.004; bpm += center * 0.0005) {
+        currentLift = Math.max(currentLift, lift(bpm, coarseSet))
+      }
+    }
+    if (bestLift < currentLift * 1.25) return null
+  }
   let fineBpm = bestBpm
   let fineLift = 0
   for (let bpm = bestBpm - 0.15; bpm <= bestBpm + 0.15; bpm += 0.01) {
@@ -671,7 +721,7 @@ export function estimateTempo(
   // and triplets pulled XO Tour Llif3 to 102 BPM instead of 155). A direct scan of how well the
   // detected hits line up with an eighth-note grid finds the family reliably; when it disagrees
   // with the autocorrelation pick, it wins.
-  const scanned = scanTempoFamily(onsets)
+  const scanned = scanTempoFamily(onsets, pick.bpm)
   const related = (a: number, b: number): boolean =>
     [0.5, 1, 2].some((ratio) => Math.abs(a / b / ratio - 1) < 0.012)
   const bpm = scanned !== null && !related(scanned, pick.bpm) ? scanned : pick.bpm
