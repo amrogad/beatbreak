@@ -1065,6 +1065,12 @@ export class PlayfieldRenderer {
   /** Judgment and combo sit together in the middle of the highway, clear of the receptors. */
   private judgmentY(): number {
     const { receptorY, direction } = this.layout()
+    if (this.settings.noteShape === 'tile') {
+      // Rectangles' targets are tall: centre the text in the open space past them, never on them.
+      const targetEdge = receptorY + 2 * this.tileShift(this.tileHy)
+      const screenEdge = direction === 1 ? this.height : 0
+      return (targetEdge + screenEdge) / 2 - 20 * this.textScale()
+    }
     const travel = direction === 1 ? this.height - receptorY : receptorY
     return receptorY + direction * travel * 0.34
   }

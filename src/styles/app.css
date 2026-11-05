@@ -883,7 +883,7 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
   .difficulty-copy { min-height: 0; }
   .option-row { align-items: flex-start; }
   .hero-grid { grid-template-columns: 1fr; }
-  .hero-preview-canvas { height: 150px; }
+  .hero-preview-canvas { height: 260px; }
   .hero-side { flex-direction: row; align-items: stretch; flex-wrap: wrap; }
   .hero-preview { flex: 1 1 240px; }
   .hero-side > .stat { flex: 0 1 150px; }
