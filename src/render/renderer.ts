@@ -734,10 +734,10 @@ export class PlayfieldRenderer {
   ): void {
     const ctx = this.ctx
     const bodyW = noteH * 0.56
-    // Start the ribbon a little behind the head arrow's centre with a rounded end, so its corners
-    // never poke out around the arrow's sides.
+    // The ribbon starts where the head arrow ends, as if the arrow were stretched toward its tail.
+    // Starting behind the arrow let its corners show around the arrow's sides on every column.
     const towardTail = tailY >= headY ? 1 : -1
-    const start = headY + towardTail * noteH * 0.12
+    const start = headY + towardTail * noteH * 0.44
     const top = Math.min(start, tailY)
     const bottom = Math.max(start, tailY)
     const length = bottom - top
@@ -752,7 +752,9 @@ export class PlayfieldRenderer {
     ctx.globalAlpha = state === 'waiting' ? 0.78 : state === 'active' ? 1 : 0.35 + 0.5 * life
     ctx.fillStyle = gradient
     ctx.beginPath()
-    ctx.roundRect(left, top, bodyW, length, Math.min(bodyW / 2, length / 2))
+    // Square where it meets the head arrow, rounded at the far end.
+    const r = Math.min(bodyW / 2, length / 2)
+    ctx.roundRect(left, top, bodyW, length, towardTail === 1 ? [0, 0, r, r] : [r, r, 0, 0])
     ctx.fill()
     // A light rim in the hold's own colour instead of a dark outline.
     ctx.lineWidth = 1.2
