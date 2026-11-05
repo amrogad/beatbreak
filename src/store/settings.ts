@@ -188,7 +188,8 @@ export function sanitizeSettings(input: unknown): Settings {
     raw.noteShape === 'orb' ||
     raw.noteShape === 'star' ||
     raw.noteShape === 'hex' ||
-    raw.noteShape === 'tile'
+    raw.noteShape === 'tile' ||
+    raw.noteShape === 'square'
       ? raw.noteShape
       : 'arrow'
   const scrollDirection: ScrollDirection = raw.scrollDirection === 'down' ? 'down' : 'up'

@@ -21,7 +21,7 @@ import { ParticleSystem } from './particles'
 
 export type LaneStyle = 'neon' | 'classic' | 'minimal'
 /** Note skin: the thick default arrow, a vector chevron, a diamond, or a plain bar. */
-export type NoteShape = 'arrow' | 'chevron' | 'diamond' | 'orb' | 'star' | 'hex' | 'bar' | 'tile'
+export type NoteShape = 'arrow' | 'chevron' | 'diamond' | 'orb' | 'star' | 'hex' | 'bar' | 'tile' | 'square'
 /** 'up' = arcade layout (targets at the top, arrows rise); 'down' = classic falling arrows. */
 export type ScrollDirection = 'up' | 'down'
 /** Whole-app skin: the colour arcade, or a pitch-black room lit only in white. */
@@ -214,10 +214,8 @@ export class PlayfieldRenderer {
   private flash: JudgmentFlash | null = null
   /** Notes by id, so a missed one can be drawn fading where it was missed. */
   private notesById = new Map<string, ChartNote>()
-  /** Shortest gap in one column between a note (or a hold's end) and the next note, in seconds. */
-  private minLaneGap = Infinity
-  /** Half the piano tile's height in units of half a note; grows up to ~2x when the chart has room. */
-  private tileHy = TILE_BASE_HY
+  /** Seconds from each note to the next one in its column, for trimming piano tiles that would overlap. */
+  private laneGap = new Map<string, number>()
   /** Half the tile's width in the same units; the short home preview shrinks notes but not columns. */
   private tileHx = TILE_BASE_HX
   /**
@@ -300,7 +298,7 @@ export class PlayfieldRenderer {
     for (const note of chart.notes) {
       this.notesById.set(note.id, note)
     }
-    this.minLaneGap = minLaneGap(chart.notes)
+    this.laneGap = laneGaps(chart.notes)
     this.layoutCache = null
     this.layoutKey = ''
   }
@@ -315,12 +313,21 @@ export class PlayfieldRenderer {
       const color = this.columnColor(lane)
       this.noteSprite('note', color, lane as Lane, noteH)
       this.noteSprite('note', this.missColor(), lane as Lane, noteH)
-      this.noteSprite('receptor', color, lane as Lane, noteH)
-      this.noteSprite('flash', color, lane as Lane, noteH)
-      this.noteSprite('flash', '#ffffff', lane as Lane, noteH)
+      const bar = this.settings.noteShape === 'tile' ? TILE_BAR_HY : undefined
+      this.noteSprite('receptor', color, lane as Lane, noteH, bar)
+      this.noteSprite('flash', color, lane as Lane, noteH, bar)
+      this.noteSprite('flash', '#ffffff', lane as Lane, noteH, bar)
       this.glowSprite(color, Math.round(noteH))
     }
     this.glowSprite('#ffffff', Math.round(noteH))
+    // Tiles cut shorter for tight spots: build each size the chart uses before it starts.
+    if (this.settings.noteShape === 'tile') {
+      for (const note of this.notesById.values()) {
+        const hy = this.tileHyFor(note)
+        this.noteSprite('note', this.columnColor(note.lane), note.lane, noteH, hy)
+        this.noteSprite('note', this.missColor(), note.lane, noteH, hy)
+      }
+    }
     this.spritesWarm = true
   }
 
@@ -443,7 +450,7 @@ export class PlayfieldRenderer {
     const noteH = this.preview ? Math.min(fullNote, this.height * 0.2) : fullNote
     // The receptor inset mirrors between layouts: at the top for rising arrows, at the bottom
     // for falling ones, so touch-thumb room and HUD clearance are the same either way.
-    const inset = this.preview ? noteH * (this.settings.noteShape === 'tile' ? (TILE_MAX_HY + 0.2) / 2 : 0.8) : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
+    const inset = this.preview ? noteH * (this.settings.noteShape === 'tile' ? 0.5 : 0.8) : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
     const receptorY = direction === 1 ? inset : this.height - inset
     const travelDistance = direction === 1 ? this.height - receptorY : receptorY
     const pxPerSec = scrollPixelsPerSecond(this.settings.scrollSpeed, travelDistance)
@@ -458,10 +465,7 @@ export class PlayfieldRenderer {
       travelSeconds: (travelDistance + noteH) / Math.max(1, pxPerSec),
       direction,
     }
-    // Piano tiles stretch toward double height, but never so far that two in one column overlap.
-    const roomHy = (0.85 * this.minLaneGap * pxPerSec) / Math.max(1, noteH)
     this.tileHx = Math.round(((TILE_BASE_HX * fullNote) / Math.max(1, noteH)) * 20) / 20
-    this.tileHy = Math.round(Math.max(TILE_BASE_HY, Math.min(TILE_MAX_HY, roomHy)) * 20) / 20
     this.layoutCache = layout
     this.layoutKey = key
     return layout
@@ -657,9 +661,12 @@ export class PlayfieldRenderer {
       const sincePress = this.nowMs - this.pressAt[lane]
       const squash = sincePress < 110 ? 0.85 + 0.15 * (sincePress / 110) : 1
       const size = noteH * squash
-      const sprite = this.noteSprite('receptor', this.columnColor(lane), lane as Lane, noteH)
+      const tiles = this.settings.noteShape === 'tile'
+      const sprite = this.noteSprite('receptor', this.columnColor(lane), lane as Lane, noteH, tiles ? TILE_BAR_HY : undefined)
+      // A tile's target is a bar its front edge lands on, sitting just past the hit line.
+      const targetY = tiles ? receptorY - this.tileShift(TILE_BAR_HY) : receptorY
       ctx.globalAlpha = 0.9
-      drawCentered(ctx, sprite, x, receptorY, size)
+      drawCentered(ctx, sprite, x, targetY, size)
       ctx.globalAlpha = 1
 
       // The press overlay: a bright copy that settles at 40% while held and swells away on release.
@@ -676,11 +683,11 @@ export class PlayfieldRenderer {
         }
       }
       if (overlay > 0) {
-        const flash = this.noteSprite('flash', this.columnColor(lane), lane as Lane, noteH)
+        const flash = this.noteSprite('flash', this.columnColor(lane), lane as Lane, noteH, tiles ? TILE_BAR_HY : undefined)
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
         ctx.globalAlpha = overlay
-        drawCentered(ctx, flash, x, receptorY, size * zoom)
+        drawCentered(ctx, flash, x, targetY, size * zoom)
         ctx.restore()
       }
     }
@@ -699,14 +706,16 @@ export class PlayfieldRenderer {
       const tailDeltaMs = (note.time + duration) * 1000 - songTimeMs
       if (tailDeltaMs < 0) return
       const x = laneX[note.lane] + laneW / 2
-      const tailY = receptorY + direction * (tailDeltaMs / 1000) * pxPerSec
+      const shift = this.tileShift(TILE_HY)
+      const headY = receptorY + shift
+      const tailY = receptorY + direction * (tailDeltaMs / 1000) * pxPerSec + shift
       const color = this.columnColor(note.lane)
       const held = life >= 1
-      this.drawHoldBody(x, receptorY, tailY, noteH, color, held ? 'active' : 'dropping', life, note.lane)
+      this.drawHoldBody(x, headY, tailY, noteH, color, held ? 'active' : 'dropping', life, note.lane)
       this.drawHoldEnd(x, tailY, noteH, color, note.lane)
-      const sprite = this.noteSprite('note', color, note.lane, noteH)
+      const sprite = this.noteSprite('note', color, note.lane, noteH, TILE_HY)
       ctx.globalAlpha = held ? 1 : 0.45 + 0.55 * life
-      drawCentered(ctx, sprite, x, receptorY, noteH)
+      drawCentered(ctx, sprite, x, headY, noteH)
       ctx.globalAlpha = 1
       if (held && !reduced && this.quality > 0) this.drawHoldGlow(x, receptorY, noteH, color)
     })
@@ -718,32 +727,37 @@ export class PlayfieldRenderer {
       const fade = 1 - age / life
       const { note } = fx
       const x = laneX[note.lane] + laneW / 2
-      const headY = receptorY + direction * ((fx.headTime * 1000 - fx.frozenMs) / 1000) * pxPerSec
+      const hy = this.tileHyFor(note)
+      const shift = this.tileShift(hy)
+      const headY = receptorY + direction * ((fx.headTime * 1000 - fx.frozenMs) / 1000) * pxPerSec + shift
       const size = noteH * (1 - 0.12 * (1 - fade))
       const missColor = fx.hit ? this.columnColor(note.lane) : this.missColor()
       if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) {
-        const tailY = receptorY + direction * (((note.time + (note.duration ?? 0)) * 1000 - fx.frozenMs) / 1000) * pxPerSec
+        const tailY = receptorY + direction * (((note.time + (note.duration ?? 0)) * 1000 - fx.frozenMs) / 1000) * pxPerSec + shift
         this.drawHoldBody(x, headY, tailY, noteH, missColor, 'dropping', 1, note.lane, 0.6 * fade)
       }
       ctx.save()
       ctx.globalAlpha = fade
-      drawCentered(ctx, this.noteSprite('note', missColor, note.lane, noteH), x, headY, size)
+      drawCentered(ctx, this.noteSprite('note', missColor, note.lane, noteH, hy), x, headY, size)
       ctx.restore()
       return true
     })
 
     session.forEachPending(untilMs, (note: ChartNote) => {
       const delta = note.time * 1000 - songTimeMs
-      const y = receptorY + direction * (delta / 1000) * pxPerSec
+      const hy = this.tileHyFor(note)
+      const shift = this.tileShift(hy)
+      const y = receptorY + direction * (delta / 1000) * pxPerSec + shift
       const x = laneX[note.lane] + laneW / 2
       const color = this.columnColor(note.lane)
       if (note.kind === 'hold' && note.duration && note.duration > 0.05) {
-        const tailY = receptorY + direction * ((delta + note.duration * 1000) / 1000) * pxPerSec
+        const tailY = receptorY + direction * ((delta + note.duration * 1000) / 1000) * pxPerSec + shift
         this.drawHoldBody(x, y, tailY, noteH, color, 'waiting', 1, note.lane)
         this.drawHoldEnd(x, tailY, noteH, color, note.lane)
       }
-      if (direction === 1 ? y > this.height + noteH || y < -noteH : y < -noteH || y > this.height + noteH) return
-      const sprite = this.noteSprite('note', color, note.lane, noteH)
+      const margin = noteH * Math.max(1, hy)
+      if (direction === 1 ? y > this.height + margin || y < -margin : y < -margin || y > this.height + margin) return
+      const sprite = this.noteSprite('note', color, note.lane, noteH, hy)
       // Past its target and still not hit: it turns red right there, then fades out once missed.
       const late = Math.max(0, Math.min(1, (-delta - LATE_RED_FROM_MS) / LATE_RED_MS))
       if (late <= 0) {
@@ -754,13 +768,35 @@ export class PlayfieldRenderer {
       ctx.globalAlpha = 1 - late
       drawCentered(ctx, sprite, x, y, noteH)
       ctx.globalAlpha = late
-      drawCentered(ctx, this.noteSprite('note', this.missColor(), note.lane, noteH), x, y, noteH)
+      drawCentered(ctx, this.noteSprite('note', this.missColor(), note.lane, noteH, hy), x, y, noteH)
       ctx.restore()
     })
   }
 
   private missColor(): string {
     return this.settings.theme === 'mono' ? '#6a6a6a' : MISS_COLOR
+  }
+
+  /**
+   * A piano tile's height, in the half-note units its shape uses. Every tile is the same long
+   * block; one is only cut shorter when the next tile in its column would otherwise run into it.
+   */
+  private tileHyFor(note: ChartNote): number {
+    if (this.settings.noteShape !== 'tile') return TILE_BASE_HY
+    if (note.kind === 'hold') return TILE_HY
+    const { noteH, pxPerSec } = this.layout()
+    const room = ((this.laneGap.get(note.id) ?? Infinity) * pxPerSec - TILE_GAP_PX) / Math.max(1, noteH)
+    return Math.max(TILE_MIN_HY, Math.floor(Math.min(TILE_HY, room) * 10) / 10)
+  }
+
+  /**
+   * Piano tiles are timed by their leading edge: a tile is on time when its front edge lands on the
+   * target bar, the way a player reads a tile. Every other style is timed by its centre.
+   */
+  private tileShift(hy: number): number {
+    if (this.settings.noteShape !== 'tile') return 0
+    const { noteH, direction } = this.layout()
+    return (direction * hy * noteH) / 2
   }
 
   /**
@@ -783,10 +819,10 @@ export class PlayfieldRenderer {
     if (length < 1) return
     const towardTail = tailY >= headY ? 1 : -1
     const half = noteH / 2
-    const turn = this.settings.noteShape === 'tile' ? 0 : LANE_ANGLE[lane]
+    const turn = UNROTATED.has(this.settings.noteShape) ? 0 : LANE_ANGLE[lane]
     const cos = Math.cos(turn)
     const sin = Math.sin(turn)
-    const shape = shapePoints(this.settings.noteShape, this.tileHy, this.tileHx).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
+    const shape = shapePoints(this.settings.noteShape, TILE_HY, this.tileHx).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
     // Cut where the shape is widest, so an up or down arrow stretches its whole head instead of a
     // thin stem; sideways arrows and round shapes are widest through the middle and cut there.
     const cutY = headY + widestCut(shape, headY, half)
@@ -884,9 +920,9 @@ export class PlayfieldRenderer {
   /* ---------------------------------------------------------------- sprites */
 
   /** Cached arrow tile: 'note' is the coloured arrow, 'receptor' the grey target, 'flash' white. */
-  private noteSprite(kind: 'note' | 'receptor' | 'flash', color: string, lane: Lane, size: number): HTMLCanvasElement {
+  private noteSprite(kind: 'note' | 'receptor' | 'flash', color: string, lane: Lane, size: number, hy?: number): HTMLCanvasElement {
     const shape = this.settings.noteShape
-    const tileHy = shape === 'tile' ? this.tileHy : TILE_BASE_HY
+    const tileHy = shape === 'tile' ? hy ?? TILE_HY : TILE_BASE_HY
     const tileHx = shape === 'tile' ? this.tileHx : TILE_BASE_HX
     const key = `${kind}|${color}|${kind === 'flash' && shape === 'orb' ? 0 : lane}|${shape}|${Math.round(size)}|${tileHy}|${tileHx}`
     const cached = this.spriteCache.get(key)
@@ -902,12 +938,14 @@ export class PlayfieldRenderer {
     ctx.scale(scale, scale)
     const c = box / 2
     // Piano tiles are the same block in every column; everything else points its lane's way.
-    const angle = shape === 'tile' ? 0 : LANE_ANGLE[lane]
+    const angle = UNROTATED.has(shape) ? 0 : LANE_ANGLE[lane]
     const path = tracePath(shape, size, angle, c, tileHy, tileHx)
+    // Gradients span the shape's real height: a tall tile squeezed into a note-high gradient banded.
+    const hh = shape === 'tile' ? (size * tileHy) / 2 : size / 2
     ctx.lineJoin = 'round'
     if (kind === 'note') {
       // Candy-gloss arrow: bright body, a hard white highlight on the top half, a light rim.
-      const gradient = ctx.createLinearGradient(0, c - size / 2, 0, c + size / 2)
+      const gradient = ctx.createLinearGradient(0, c - hh, 0, c + hh)
       gradient.addColorStop(0, shade(color, 0.7))
       gradient.addColorStop(0.3, shade(color, 0.15))
       gradient.addColorStop(0.75, color)
@@ -921,18 +959,18 @@ export class PlayfieldRenderer {
       ctx.restore()
       ctx.save()
       ctx.clip(path)
-      const gloss = ctx.createLinearGradient(0, c - size / 2, 0, c + size * 0.02)
+      const gloss = ctx.createLinearGradient(0, c - hh, 0, c + hh * 0.04)
       gloss.addColorStop(0, 'rgba(255,255,255,0.85)')
       gloss.addColorStop(0.55, 'rgba(255,255,255,0.35)')
       gloss.addColorStop(1, 'rgba(255,255,255,0)')
       ctx.fillStyle = gloss
-      ctx.fillRect(0, 0, box, c + size * 0.02)
+      ctx.fillRect(0, 0, box, c + hh * 0.04)
       // A thin specular glint along the lower edge, like light bouncing off plastic.
-      const glint = ctx.createLinearGradient(0, c + size * 0.3, 0, c + size / 2)
+      const glint = ctx.createLinearGradient(0, c + hh * 0.6, 0, c + hh)
       glint.addColorStop(0, 'rgba(255,255,255,0)')
       glint.addColorStop(1, 'rgba(255,255,255,0.35)')
       ctx.fillStyle = glint
-      ctx.fillRect(0, c + size * 0.3, box, size * 0.2)
+      ctx.fillRect(0, c + hh * 0.6, box, hh * 0.4)
       ctx.restore()
       ctx.lineWidth = Math.max(1.5, size * 0.035)
       ctx.strokeStyle = shade(color, 0.6)
@@ -940,7 +978,7 @@ export class PlayfieldRenderer {
     } else if (kind === 'receptor') {
       ctx.fillStyle = 'rgba(14, 12, 30, 0.75)'
       ctx.fill(path)
-      const rim = ctx.createLinearGradient(0, c - size / 2, 0, c + size / 2)
+      const rim = ctx.createLinearGradient(0, c - hh, 0, c + hh)
       rim.addColorStop(0, shade(color, 0.55))
       rim.addColorStop(1, shade(color, -0.2))
       ctx.lineWidth = Math.max(1.5, size * 0.05)
@@ -954,7 +992,7 @@ export class PlayfieldRenderer {
       // The lit-up target: the column's colour, bright at the top, with a soft halo.
       ctx.shadowColor = color
       ctx.shadowBlur = size * 0.3 * scale
-      const lit = ctx.createLinearGradient(0, c - size / 2, 0, c + size / 2)
+      const lit = ctx.createLinearGradient(0, c - hh, 0, c + hh)
       lit.addColorStop(0, shade(color, 0.75))
       lit.addColorStop(1, color)
       ctx.fillStyle = lit
@@ -1282,7 +1320,15 @@ function shuffledColors(): string[] {
 
 const TILE_BASE_HY = 0.95
 const TILE_BASE_HX = 0.92
-const TILE_MAX_HY = 1.8
+/** Every piano tile's height (1.8 notes tall), unless the next tile in its column is too close. */
+const TILE_HY = 1.8
+const TILE_MIN_HY = 0.5
+/** The flat bar a tile lands on. */
+const TILE_BAR_HY = 0.4
+/** Space kept between two tiles in one column. */
+const TILE_GAP_PX = 6
+/** Shapes drawn the same way up in every column. */
+const UNROTATED = new Set<NoteShape>(['tile', 'square'])
 
 /** Offset from the centre, within half a note, of the shape's widest horizontal cross-section. */
 function widestCut(shape: number[][], centerY: number, half: number): number {
@@ -1311,15 +1357,15 @@ function widestCut(shape: number[][], centerY: number, half: number): number {
   return best
 }
 
-function minLaneGap(notes: readonly ChartNote[]): number {
-  const lastEnd: (number | null)[] = [null, null, null, null]
-  let min = Infinity
+function laneGaps(notes: readonly ChartNote[]): Map<string, number> {
+  const gaps = new Map<string, number>()
+  const previous: (ChartNote | null)[] = [null, null, null, null]
   for (const note of [...notes].sort((a, b) => a.time - b.time)) {
-    const end = lastEnd[note.lane]
-    if (end !== null) min = Math.min(min, note.time - end)
-    lastEnd[note.lane] = note.time + (note.kind === 'hold' ? note.duration ?? 0 : 0)
+    const before = previous[note.lane]
+    if (before) gaps.set(before.id, note.time - before.time)
+    previous[note.lane] = note
   }
-  return min
+  return gaps
 }
 
 /** The arcade arrow pointing right, in a unit box centred on 0 (shared by sprites and stretched holds). */
@@ -1332,6 +1378,8 @@ function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY, tileHx = TILE_BASE
   if (shape === 'arrow' || shape === 'bar') {
     // A chunky arcade arrow pointing right, filling the square tile.
     points.push(...ARROW_POINTS)
+  } else if (shape === 'square') {
+    points.push([-0.88, -0.88], [0.88, -0.88], [0.88, 0.88], [-0.88, 0.88])
   } else if (shape === 'tile') {
     // A piano tile: a block nearly as wide as its column (glow included), as tall as the chart allows.
     points.push([-tileHx, -tileHy], [tileHx, -tileHy], [tileHx, tileHy], [-tileHx, tileHy])

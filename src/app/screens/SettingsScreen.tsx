@@ -33,6 +33,7 @@ const NOTE_SKINS: { value: NoteShape; label: string; color: string }[] = [
   { value: 'hex', label: 'Hex', color: '#a9b6c2' },
   { value: 'bar', label: 'Bar', color: '#f2f5f7' },
   { value: 'tile', label: 'Piano tile', color: '#ffc93d' },
+  { value: 'square', label: 'Square', color: '#5fb2ff' },
 ]
 
 function NoteShapeIcon({ shape }: { shape: NoteShape }): React.JSX.Element {
@@ -49,6 +50,7 @@ function NoteShapeIcon({ shape }: { shape: NoteShape }): React.JSX.Element {
       {shape === 'hex' && <polygon {...common} points="7,3 17,3 22,12 17,21 7,21 2,12" />}
       {shape === 'bar' && <rect {...common} x="2" y="7" width="20" height="10" rx="4" />}
       {shape === 'tile' && <rect {...common} x="2" y="6" width="20" height="12" rx="2" />}
+      {shape === 'square' && <rect {...common} x="4" y="4" width="16" height="16" rx="2" />}
     </svg>
   )
 }
