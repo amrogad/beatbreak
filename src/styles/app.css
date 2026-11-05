@@ -306,7 +306,7 @@ strong { font-weight: 700; }
 .settings-stack { display: flex; flex-direction: column; gap: 26px; }
 .settings-stack > .toggle { padding-top: 0; }
 
-.choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
 .choice-btn {
   min-height: 48px;
   padding: 10px 12px;
@@ -324,9 +324,9 @@ strong { font-weight: 700; }
 }
 .choice-btn:hover { border-color: var(--choice, var(--border-strong)); background: var(--control-hover); }
 .choice-btn.is-selected {
-  border-color: var(--choice, var(--magenta));
-  background: var(--choice, var(--magenta));
-  color: #14112b;
+  border-color: var(--choice, var(--solid));
+  background: var(--choice, var(--solid));
+  color: var(--on-solid);
 }
 
 .settings-group { display: flex; flex-direction: column; gap: 12px; }

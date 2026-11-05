@@ -133,43 +133,44 @@ export function SettingsScreen({
             label="Default difficulty"
             value={settings.defaultDifficulty}
             options={[
-              { value: 'auto', label: 'Recommended for each song' },
+              { value: 'auto', label: 'Auto' },
               { value: 'easy', label: 'Easy', color: DIFFICULTY_COLOR.easy },
               { value: 'normal', label: 'Normal', color: DIFFICULTY_COLOR.normal },
               { value: 'hard', label: 'Hard', color: DIFFICULTY_COLOR.hard },
               { value: 'expert', label: 'Expert', color: DIFFICULTY_COLOR.expert },
             ]}
             onChange={(value) => onUpdate({ defaultDifficulty: value })}
-            hint="Used until you pick a difficulty for a song; that song then remembers your pick."
+            hint="Auto picks the right one for each song. A song remembers what you last picked."
           />
           <Choice
             label="Timing"
             value={settings.timing}
             options={[
-              { value: 'pc', label: 'PC, tight windows for keys' },
-              { value: 'phone', label: 'Phone, wider windows for tapping' },
+              { value: 'pc', label: 'PC' },
+              { value: 'phone', label: 'Phone' },
             ]}
             onChange={(value) => onUpdate({ timing: value })}
-            hint="Phones start on phone timing."
+            hint="Phone timing is easier, for tapping on a screen. Phones start on it."
           />
           <Choice
             label="Long arrows"
             value={settings.holdMode}
             options={[
-              { value: 'hold', label: 'Just hold to the end' },
-              { value: 'release', label: 'Let go on the end arrow' },
+              { value: 'hold', label: 'Hold' },
+              { value: 'release', label: 'Let go' },
             ]}
             onChange={(value) => onUpdate({ holdMode: value })}
-            hint="Either way, letting go early misses the hold."
+            hint="Hold: keep holding to the end. Let go: release on the end arrow. Letting go early always misses."
           />
           <Choice
             label="Direction"
             value={settings.scrollDirection}
             options={[
-              { value: 'up', label: 'Rise — targets at the top (arcade)' },
-              { value: 'down', label: 'Fall — targets at the bottom (classic)' },
+              { value: 'up', label: 'Up' },
+              { value: 'down', label: 'Down' },
             ]}
             onChange={(value) => onUpdate({ scrollDirection: value })}
+            hint="Up: arrows rise to targets at the top. Down: they fall to targets at the bottom."
           />
           <Slider
             label="Scroll speed"
@@ -219,20 +220,21 @@ export function SettingsScreen({
             label="Theme"
             value={settings.theme === 'mono' ? 'mono' : 'disco'}
             options={[
-              { value: 'disco', label: 'Arcade, in colour' },
-              { value: 'mono', label: 'Blackout, white light only' },
+              { value: 'disco', label: 'Arcade' },
+              { value: 'mono', label: 'Blackout' },
             ]}
             onChange={(value) => onUpdate({ theme: value })}
+            hint="Blackout is pitch black with white light only."
           />
           <Choice
             label="Arrow colours"
             value={settings.arrowColors}
             options={[
-              { value: 'column', label: 'One colour per column' },
-              { value: 'random', label: 'Shuffle colours every song' },
+              { value: 'column', label: 'Per column' },
+              { value: 'random', label: 'Shuffle' },
             ]}
             onChange={(value) => onUpdate({ arrowColors: value })}
-            hint="The Blackout theme keeps every arrow white."
+            hint="Shuffle picks new colours every song. Blackout keeps every arrow white."
           />
           {settings.arrowColors === 'column' && (
             <div className="field">
@@ -259,9 +261,9 @@ export function SettingsScreen({
             label="Song progress"
             value={settings.progressStyle}
             options={[
-              { value: 'top', label: 'Line across the top' },
-              { value: 'column', label: 'Bar under the song title' },
-              { value: 'text', label: 'Percentage under accuracy' },
+              { value: 'top', label: 'Top line' },
+              { value: 'column', label: 'Under title' },
+              { value: 'text', label: 'Percent' },
             ]}
             onChange={(value) => onUpdate({ progressStyle: value })}
           />
@@ -398,11 +400,11 @@ export function SettingsScreen({
             label="Display mode"
             value={settings.displayMode}
             options={[
-              { value: 'window', label: 'Windowed' },
-              { value: 'fullscreen', label: 'Fullscreen while playing' },
+              { value: 'window', label: 'Window' },
+              { value: 'fullscreen', label: 'Fullscreen' },
             ]}
             onChange={(value) => onUpdate({ displayMode: value })}
-            hint="The browser can refuse fullscreen."
+            hint="Fullscreen applies while playing. The browser can refuse it."
           />
           <Toggle
             label="Show diagnostics"
