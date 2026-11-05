@@ -15,6 +15,7 @@
  * Every stage is deterministic given a seed, so regenerating with the same settings reproduces
  * the same chart exactly.
  */
+import { applyChartRules } from './rules'
 import type {
   AnalysisResult,
   Chart,
@@ -31,7 +32,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.5'
+export const GENERATOR_VERSION = 'pulsegrid-gen-3.6'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -1102,7 +1103,8 @@ export function generateChart(input: GenerateChartInput): Chart {
     sustains.set(key, Math.max(sustains.get(key) ?? 0, candidate.heldSeconds))
   }
   const withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains)
-  const clipped = clipNotesToEdit(withHolds.notes, input.edit, duration, timing, settings.stepsPerBeat)
+  const tidied = applyChartRules(withHolds.notes, timing, settings, difficulty)
+  const clipped = clipNotesToEdit(tidied, input.edit, duration, timing, settings.stepsPerBeat)
   const notes = clipped.notes
 
   const stats = computeStats(notes, duration)
