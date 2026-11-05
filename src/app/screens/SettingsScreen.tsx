@@ -210,6 +210,27 @@ export function SettingsScreen({
             onChange={(value) => onUpdate({ arrowColors: value })}
             hint="The Blackout theme keeps every arrow white."
           />
+          {settings.arrowColors === 'column' && (
+            <div className="field">
+              <span className="field-label">Column colours</span>
+              <div className="color-row">
+                {['Left', 'Down', 'Up', 'Right'].map((label, index) => (
+                  <label key={label} className="color-pick">
+                    <input
+                      type="color"
+                      value={settings.columnColors[index]}
+                      onChange={(event) => {
+                        const next = [...settings.columnColors]
+                        next[index] = event.target.value
+                        onUpdate({ columnColors: next })
+                      }}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <Toggle
             label="Reduced motion"
             checked={settings.reducedMotion}

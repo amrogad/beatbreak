@@ -91,6 +91,7 @@ function previewSettings(settings: ReturnType<typeof settingsStore.get>) {
     noteShape: settings.noteShape,
     scrollDirection: settings.scrollDirection,
     theme: settings.theme,
+    columnColors: settings.columnColors,
     reducedMotion: settings.reducedMotion,
   }
 }

@@ -6,11 +6,7 @@ export interface AboutScreenProps {
   onBack: () => void
 }
 
-const BUG_MAILTO = `mailto:amro9gad@gmail.com?subject=${encodeURIComponent(
-  'PULSEGRID bug report',
-)}&body=${encodeURIComponent(
-  'What happened:\n\n\nSteps to reproduce:\n\n\nBrowser and device:\n\n',
-)}`
+const BUG_MAILTO = 'mailto:amro9gad@gmail.com'
 
 export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
   return (

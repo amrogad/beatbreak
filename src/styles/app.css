@@ -898,3 +898,15 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
 @media (prefers-reduced-motion: reduce) {
   .difficulty-card { transition: none; }
 }
+
+.color-row { display: flex; gap: 14px; flex-wrap: wrap; }
+.color-pick { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.color-pick input[type='color'] {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}

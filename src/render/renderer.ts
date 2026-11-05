@@ -40,6 +40,8 @@ export interface RenderSettings {
   scrollDirection: ScrollDirection
   theme: ThemeName
   arrowColors: ArrowColors
+  /** The four column colours the player picked (used when arrow colours are per column). */
+  columnColors: string[]
   reducedMotion: boolean
 }
 
@@ -51,6 +53,7 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   scrollDirection: 'up',
   theme: 'disco',
   arrowColors: 'column',
+  columnColors: ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d'],
   reducedMotion: false,
 }
 
@@ -110,7 +113,7 @@ const PALETTES: Record<ThemeName, PlayfieldPalette> = {
 }
 
 /** Each column's own colour: arrows, the target rim, its press glow and its lane beam. */
-const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
+export const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
 /** Picked from at random, four at a time, when arrow colours are shuffled. */
 const SHUFFLE_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d', '#b35cff', '#ff7a3d', '#3de9ff', '#9dff3d']
 const MONO_WHITE = '#f4f4f4'
@@ -124,12 +127,13 @@ interface JudgeStyle {
 
 const MONO_JUDGE: JudgeStyle = { fill: '#ffffff', shadow: '#3a3a3a', burst: '#ffffff' }
 
+/** Judgment colours come from the same palette as the arrows. */
 const JUDGE_STYLE: Record<Judgment, JudgeStyle> = {
-  marvelous: { fill: '#eafcff', shadow: '#1683b8', burst: '#5fe1ff' },
-  perfect: { fill: '#ffd23d', shadow: '#a8520c', burst: '#ffc21f' },
-  great: { fill: '#62f08e', shadow: '#17783a', burst: '#3fe07a' },
-  good: { fill: '#79aeff', shadow: '#26449c', burst: '#4d8dff' },
-  miss: { fill: '#ff5468', shadow: '#7c1324', burst: '#ff3a50' },
+  marvelous: { fill: '#3de9ff', shadow: '#13708a', burst: '#3de9ff' },
+  perfect: { fill: '#ffc93d', shadow: '#8a5a06', burst: '#ffc93d' },
+  great: { fill: '#3fe08a', shadow: '#127040', burst: '#3fe08a' },
+  good: { fill: '#b35cff', shadow: '#55208a', burst: '#b35cff' },
+  miss: { fill: '#ff4f9a', shadow: '#8a1648', burst: '#ff4f9a' },
 }
 
 interface JudgmentFlash {
@@ -180,6 +184,8 @@ export class PlayfieldRenderer {
   private particles = new ParticleSystem()
   private timing = TimingMap.single(120, 0)
   private columnColors = [...COLUMN_COLORS]
+  /** The two side rails take two of the column colours, picked fresh for every song. */
+  private railColors = [COLUMN_COLORS[0], COLUMN_COLORS[3]]
   private width = 0
   private height = 0
   private dpr = 1
@@ -252,7 +258,10 @@ export class PlayfieldRenderer {
     this.laneHeld = [false, false, false, false]
     this.explosion = [null, null, null, null]
     this.lastCombo = 0
-    this.columnColors = this.settings.arrowColors === 'random' ? shuffledColors() : [...COLUMN_COLORS]
+    this.columnColors =
+      this.settings.arrowColors === 'random' ? shuffledColors() : validColors(this.settings.columnColors)
+    const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5)
+    this.railColors = [this.columnColors[order[0]], this.columnColors[order[1]]]
     if (!chart) return
     this.timing = new TimingMap(chart.timing)
   }
@@ -404,25 +413,23 @@ export class PlayfieldRenderer {
     const songSeconds = songTimeMs / 1000
     const beat = this.timing.timeToBeat(songSeconds)
     const beatFrac = beat - Math.floor(beat)
-    // 1 on the beat, decaying over it: the heartbeat every pulse in the scene follows.
-    const pulse = reduced ? 0 : Math.exp(-beatFrac * 5)
 
-    this.drawBackground(songSeconds, beat, pulse)
+    this.drawBackground(songSeconds)
     this.drawLanes()
-    this.drawReceptors(pulse)
-    this.drawNotes(session, songTimeMs, beat)
+    this.drawReceptors()
+    this.drawNotes(session, songTimeMs)
     this.drawExplosions()
     if (!reduced && this.quality > 0) this.particles.draw(ctx)
     this.drawJudgmentFlash()
     this.drawCombo(hud)
     if (this.preview) return
-    this.drawHud(hud, pulse)
+    this.drawHud(hud)
     this.drawCountdown(hud)
   }
 
   /* ------------------------------------------------------------- background */
 
-  private drawBackground(songSeconds: number, beat: number, pulse: number): void {
+  private drawBackground(songSeconds: number): void {
     const ctx = this.ctx
     const palette = PALETTES[this.settings.theme]
     const skyKey = `${this.width}x${this.height}:${this.settings.theme}`
@@ -448,8 +455,8 @@ export class PlayfieldRenderer {
 
     // A wash of colour that swells on every beat and drifts around the colour wheel.
     const glow = ctx.createRadialGradient(w / 2, h * 0.62, 0, w / 2, h * 0.62, Math.max(w, h) * 0.75)
-    glow.addColorStop(0, `hsla(${hue}, ${sat}%, ${sat ? 55 : 80}%, ${0.05 + pulse * 0.04})`)
-    glow.addColorStop(0.55, `hsla(${(hue + 60) % 360}, ${sat}%, ${sat ? 50 : 75}%, ${0.02 + pulse * 0.015})`)
+    glow.addColorStop(0, `hsla(${hue}, ${sat}%, ${sat ? 55 : 80}%, 0.06)`)
+    glow.addColorStop(0.55, `hsla(${(hue + 60) % 360}, ${sat}%, ${sat ? 50 : 75}%, 0.025)`)
     glow.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
     ctx.fillStyle = glow
     ctx.fillRect(0, 0, w, h)
@@ -478,16 +485,6 @@ export class PlayfieldRenderer {
         ctx.fill()
       }
 
-      // A ring that rolls out from the middle on every downbeat.
-      const barFrac = (beat / 4) - Math.floor(beat / 4)
-      if (beat >= 0) {
-        const radius = Math.max(w, h) * 0.08 + barFrac * Math.max(w, h) * 0.7
-        ctx.strokeStyle = `hsla(${(hue + 180) % 360}, ${sat ? 100 : 0}%, ${sat ? 65 : 90}%, ${0.08 * (1 - barFrac)})`
-        ctx.lineWidth = 2 + 4 * (1 - barFrac)
-        ctx.beginPath()
-        ctx.arc(w / 2, h * 0.55, radius, 0, Math.PI * 2)
-        ctx.stroke()
-      }
     }
 
     // Mirror-ball light: small flecks sweep slowly across the walls as an unseen ball turns.
@@ -550,8 +547,9 @@ export class PlayfieldRenderer {
       ctx.fillStyle = hexToRgba(color, 0.9)
       ctx.fillRect(x, 0, 2, this.height)
     }
-    rail(laneAreaX - gap - 2, palette.accent)
-    rail(laneAreaX + laneAreaW + gap, palette.accent2)
+    const mono = this.settings.theme === 'mono'
+    rail(laneAreaX - gap - 2, mono ? palette.accent : this.railColors[0])
+    rail(laneAreaX + laneAreaW + gap, mono ? palette.accent2 : this.railColors[1])
 
     // A beam shoots up the lane from a pressed receptor and fades after release.
     if (this.settings.reducedMotion) return
@@ -572,7 +570,7 @@ export class PlayfieldRenderer {
 
   /* ---------------------------------------------------------------- notes */
 
-  private drawReceptors(pulse: number): void {
+  private drawReceptors(): void {
     const ctx = this.ctx
     const { laneX, laneW, receptorY, noteH } = this.layout()
     for (let lane = 0; lane < 4; lane++) {
@@ -582,7 +580,7 @@ export class PlayfieldRenderer {
       const squash = sincePress < 110 ? 0.85 + 0.15 * (sincePress / 110) : 1
       const size = noteH * squash
       const sprite = this.noteSprite('receptor', this.columnColor(lane), lane as Lane, noteH)
-      ctx.globalAlpha = 0.78 + 0.22 * pulse
+      ctx.globalAlpha = 0.9
       drawCentered(ctx, sprite, x, receptorY, size)
       ctx.globalAlpha = 1
 
@@ -610,14 +608,11 @@ export class PlayfieldRenderer {
     }
   }
 
-  private drawNotes(session: GameSession, songTimeMs: number, beat: number): void {
+  private drawNotes(session: GameSession, songTimeMs: number): void {
     const ctx = this.ctx
     const { laneX, laneW, receptorY, noteH, pxPerSec, travelSeconds, direction } = this.layout()
     const untilMs = songTimeMs + travelSeconds * 1000
     const reduced = this.settings.reducedMotion
-    // The arrows shimmer with the beat, like StepMania's animated note skin.
-    const beatFrac = beat - Math.floor(beat)
-    const shimmer = reduced ? 0 : Math.max(0, 1 - beatFrac * 4) * 0.1
 
     // Holds already being played: the head stays pinned on the receptor while the body drains.
     session.forEachActiveHold(songTimeMs, (note, life) => {
@@ -649,13 +644,6 @@ export class PlayfieldRenderer {
       if (direction === 1 ? y > this.height + noteH || y < -noteH : y < -noteH || y > this.height + noteH) return
       const sprite = this.noteSprite('note', color, note.lane, noteH)
       drawCentered(ctx, sprite, x, y, noteH)
-      if (shimmer > 0.01) {
-        ctx.save()
-        ctx.globalCompositeOperation = 'lighter'
-        ctx.globalAlpha = shimmer
-        drawCentered(ctx, this.noteSprite('flash', '#ffffff', note.lane, noteH), x, y, noteH)
-        ctx.restore()
-      }
     })
   }
 
@@ -895,8 +883,8 @@ export class PlayfieldRenderer {
       this.settings.theme === 'mono'
         ? MONO_JUDGE
         : hot
-          ? { fill: '#ffd23d', shadow: '#a8520c', burst: '#ffb300' }
-          : { fill: '#ffffff', shadow: '#4a3a9c', burst: '#8fd8ff' }
+          ? { fill: '#ff7a3d', shadow: '#8a3a10', burst: '#ff7a3d' }
+          : { fill: '#3d9bff', shadow: '#163e80', burst: '#3d9bff' }
     drawStyledText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), comboStyle, this.quality > 0)
     ctx.restore()
     ctx.save()
@@ -925,7 +913,7 @@ export class PlayfieldRenderer {
     return fitted
   }
 
-  private drawHud(hud: HudState, pulse: number): void {
+  private drawHud(hud: HudState): void {
     const ctx = this.ctx
     const palette = PALETTES[this.settings.theme]
     const { laneAreaX, laneAreaW } = this.layout()
@@ -951,7 +939,7 @@ export class PlayfieldRenderer {
       ctx.fillStyle = fill
       ctx.fillRect(x, y, w * progress, h)
       if (progress > 0 && progress < 1) {
-        ctx.fillStyle = `rgba(255,255,255,${0.6 + pulse * 0.4})`
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'
         ctx.fillRect(x + w * progress - 2, y - 1, 3, h + 2)
       }
     }
@@ -1050,13 +1038,18 @@ export class PlayfieldRenderer {
     }
     ctx.translate(x, y)
     ctx.scale(scale, scale)
-    const countStyle: JudgeStyle = this.settings.theme === 'mono' ? MONO_JUDGE : { fill: '#ffffff', shadow: '#ff3d7f', burst: '#ff6fae' }
+    const countStyle: JudgeStyle = this.settings.theme === 'mono' ? MONO_JUDGE : { fill: '#ff4f9a', shadow: '#8a1648', burst: '#ff4f9a' }
     drawStyledText(ctx, number > 0 ? String(number) : 'GO!', 0, 0, 96, countStyle, this.quality > 0)
     ctx.restore()
   }
 }
 
 /* -------------------------------------------------------------------- helpers */
+
+function validColors(colors: string[] | undefined): string[] {
+  const ok = Array.isArray(colors) && colors.length === 4 && colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))
+  return ok ? [...colors] : [...COLUMN_COLORS]
+}
 
 function shuffledColors(): string[] {
   const pool = [...SHUFFLE_COLORS]

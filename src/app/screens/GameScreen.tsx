@@ -262,6 +262,7 @@ export function GameScreen({
       scrollDirection: settingsRef.current.scrollDirection,
       theme: settingsRef.current.theme,
       arrowColors: settingsRef.current.arrowColors,
+      columnColors: settingsRef.current.columnColors,
       reducedMotion: settingsRef.current.reducedMotion,
     })
     rendererRef.current = renderer
@@ -455,6 +456,7 @@ export function GameScreen({
       scrollDirection: settings.scrollDirection,
       theme: settings.theme,
       arrowColors: settings.arrowColors,
+      columnColors: settings.columnColors,
       reducedMotion: settings.reducedMotion,
     })
   }, [settings])

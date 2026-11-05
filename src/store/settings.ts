@@ -11,6 +11,7 @@ import type { ControlMap, KeyMap } from '../game/input'
 import { CONTROL_DEFAULTS, DEFAULT_KEYMAP } from '../game/input'
 import type { CustomWindows, WindowPreset } from '../game/judgment'
 import { normalizeCustomWindows } from '../game/judgment'
+import { COLUMN_COLORS } from '../render/renderer'
 import type { ArrowColors, LaneStyle, NoteShape, ScrollDirection, ThemeName } from '../render/renderer'
 
 /** Windowed play always; `fullscreen` asks the browser for fullscreen when a run starts. */
@@ -34,6 +35,8 @@ export interface Settings {
   noteShape: NoteShape
   theme: ThemeName
   arrowColors: ArrowColors
+  /** The colour of each column's arrows, left to right. */
+  columnColors: string[]
   displayMode: DisplayMode
   reducedMotion: boolean
   keyMap: KeyMap
@@ -66,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   noteShape: 'arrow',
   theme: 'disco',
   arrowColors: 'column',
+  columnColors: [...COLUMN_COLORS],
   displayMode: 'window',
   reducedMotion: false,
   keyMap: DEFAULT_KEYMAP,
@@ -188,6 +192,10 @@ export function sanitizeSettings(input: unknown): Settings {
     noteShape,
     theme,
     arrowColors,
+    columnColors:
+      Array.isArray(raw.columnColors) && raw.columnColors.length === 4 && raw.columnColors.every((c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c))
+        ? [...raw.columnColors]
+        : [...COLUMN_COLORS],
     displayMode,
     reducedMotion: typeof raw.reducedMotion === 'boolean' ? raw.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     keyMap: sanitizeKeyMap(raw.keyMap),
