@@ -305,17 +305,24 @@
   font-family: var(--display);
 }
 
-/* On large monitors the whole interface grows with the screen instead of staying laptop-sized. */
+/* On large monitors the whole interface grows with the screen instead of staying laptop-sized,
+   dialogs included, so a key in Help is the same size as the same key in Settings. */
 @media (min-width: 1800px) {
   [data-theme='disco'] .page,
-  [data-theme='disco'] .topbar {
+  [data-theme='disco'] .topbar,
+  [data-theme='disco'] .tutorial-card,
+  [data-theme='disco'] .modal,
+  [data-theme='disco'] .toast-stack {
     zoom: 1.15;
   }
 }
 
 @media (min-width: 2400px) {
   [data-theme='disco'] .page,
-  [data-theme='disco'] .topbar {
+  [data-theme='disco'] .topbar,
+  [data-theme='disco'] .tutorial-card,
+  [data-theme='disco'] .modal,
+  [data-theme='disco'] .toast-stack {
     zoom: 1.35;
   }
 }

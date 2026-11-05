@@ -42,6 +42,8 @@ export interface RenderSettings {
   arrowColors: ArrowColors
   /** Draw an end arrow on holds (let go there) or a plain rounded end (just hold to the end). */
   holdEndArrow?: boolean
+  /** Long arrows: a bar trailing the arrow, or the arrow itself stretched. */
+  holdStyle?: 'bar' | 'stretch'
   /** Where song progress shows: a line across the top, a bar under the title, or text under accuracy. */
   progressStyle?: 'top' | 'column' | 'text'
   /** The four column colours the player picked (used when arrow colours are per column). */
@@ -678,7 +680,7 @@ export class PlayfieldRenderer {
       const tailY = receptorY + direction * (tailDeltaMs / 1000) * pxPerSec
       const color = this.columnColor(note.lane)
       const held = life >= 1
-      this.drawHoldBody(x, receptorY, tailY, noteH, color, held ? 'active' : 'dropping', life)
+      this.drawHoldBody(x, receptorY, tailY, noteH, color, held ? 'active' : 'dropping', life, note.lane)
       this.drawHoldEnd(x, tailY, noteH, color, note.lane)
       const sprite = this.noteSprite('note', color, note.lane, noteH)
       ctx.globalAlpha = held ? 1 : 0.45 + 0.55 * life
@@ -696,7 +698,7 @@ export class PlayfieldRenderer {
       const color = this.columnColor(note.lane)
       ctx.save()
       ctx.globalAlpha = 0.4
-      this.drawHoldBody(x, headY, tailY, noteH, color, 'dropping', 0.3)
+      this.drawHoldBody(x, headY, tailY, noteH, color, 'dropping', 0.3, note.lane)
       this.drawHoldEnd(x, tailY, noteH, color, note.lane, 0.4)
       drawCentered(ctx, this.noteSprite('note', color, note.lane, noteH), x, headY, noteH)
       ctx.restore()
@@ -710,7 +712,7 @@ export class PlayfieldRenderer {
       const color = this.columnColor(note.lane)
       if (note.kind === 'hold' && note.duration && note.duration > 0.05) {
         const tailY = receptorY + direction * ((delta + note.duration * 1000) / 1000) * pxPerSec
-        this.drawHoldBody(x, y, tailY, noteH, color, 'waiting', 1)
+        this.drawHoldBody(x, y, tailY, noteH, color, 'waiting', 1, note.lane)
         this.drawHoldEnd(x, tailY, noteH, color, note.lane)
       }
       if (direction === 1 ? y > this.height + noteH || y < -noteH : y < -noteH || y > this.height + noteH) return
@@ -731,8 +733,13 @@ export class PlayfieldRenderer {
     color: string,
     state: 'waiting' | 'active' | 'dropping',
     life: number,
+    lane: Lane,
   ): void {
     const ctx = this.ctx
+    if (this.settings.holdStyle === 'stretch' && this.settings.noteShape === 'arrow') {
+      this.drawStretchedArrow(cx, headY, tailY, noteH, color, state, life, lane)
+      return
+    }
     const bodyW = noteH * 0.56
     // The ribbon starts where the head arrow ends, as if the arrow were stretched toward its tail.
     // Starting behind the arrow let its corners show around the arrow's sides on every column.
@@ -773,6 +780,71 @@ export class PlayfieldRenderer {
         ctx.fillRect(left, top + along, bodyW, 7)
       }
     }
+    ctx.restore()
+  }
+
+  /**
+   * The other long-arrow look: the head arrow itself stretched toward its tail. The arrow is cut
+   * across its middle and the half on the tail side slides down the hold, so its own sides become
+   * the hold's edges instead of a separate bar.
+   */
+  private drawStretchedArrow(
+    cx: number,
+    headY: number,
+    tailY: number,
+    noteH: number,
+    color: string,
+    state: 'waiting' | 'active' | 'dropping',
+    life: number,
+    lane: Lane,
+  ): void {
+    const length = Math.abs(tailY - headY)
+    if (length < 1) return
+    const towardTail = tailY >= headY ? 1 : -1
+    const half = noteH / 2
+    const cos = Math.cos(LANE_ANGLE[lane])
+    const sin = Math.sin(LANE_ANGLE[lane])
+    const shape = ARROW_POINTS.map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
+    const tailSide = (y: number): boolean => (y - headY) * towardTail > 1e-6
+    const shift = (x: number, y: number): [number, number] => [x, tailSide(y) ? y + towardTail * length : y]
+    const path = new Path2D()
+    const points: [number, number][] = []
+    for (let k = 0; k < shape.length; k++) {
+      const [x1, y1] = shape[k]
+      const [x2, y2] = shape[(k + 1) % shape.length]
+      points.push(shift(x1, y1))
+      // A corner sitting exactly on the cut (a sideways arrow's tip) gets a second copy at the far
+      // end, so its side runs straight down the hold instead of slanting.
+      const onCut = (y: number): boolean => Math.abs(y - headY) <= 1e-6
+      if (onCut(y1) && tailSide(y2)) points.push([x1, headY + towardTail * length])
+      if (tailSide(y1) && onCut(y2)) points.push([x2, headY + towardTail * length])
+      // Where an edge crosses the cut, add both ends of the new straight side.
+      if (tailSide(y1) !== tailSide(y2) && Math.abs(y2 - y1) > 1e-6) {
+        const t = (headY - y1) / (y2 - y1)
+        if (t > 0 && t < 1) {
+          const x = x1 + (x2 - x1) * t
+          const near: [number, number] = [x, headY]
+          const far: [number, number] = [x, headY + towardTail * length]
+          if (tailSide(y1)) points.push(far, near)
+          else points.push(near, far)
+        }
+      }
+    }
+    points.forEach(([x, y], index) => (index === 0 ? path.moveTo(x, y) : path.lineTo(x, y)))
+    path.closePath()
+    const ctx = this.ctx
+    const fill = ctx.createLinearGradient(cx - half, 0, cx + half, 0)
+    fill.addColorStop(0, shade(color, -0.25))
+    fill.addColorStop(0.5, state === 'active' ? shade(color, 0.5) : shade(color, 0.2))
+    fill.addColorStop(1, shade(color, -0.25))
+    ctx.save()
+    ctx.globalAlpha = state === 'waiting' ? 0.9 : state === 'active' ? 1 : 0.35 + 0.5 * life
+    ctx.fillStyle = fill
+    ctx.fill(path)
+    ctx.lineJoin = 'round'
+    ctx.lineWidth = Math.max(1.5, noteH * 0.035)
+    ctx.strokeStyle = shade(color, 0.6)
+    ctx.stroke(path)
     ctx.restore()
   }
 
@@ -1220,13 +1292,16 @@ function shuffledColors(): string[] {
   return pool.slice(0, 4)
 }
 
+/** The arcade arrow pointing right, in a unit box centred on 0 (shared by sprites and stretched holds). */
+const ARROW_POINTS: [number, number][] = [[-0.94, -0.3], [0.02, -0.3], [0.02, -0.9], [0.96, 0], [0.02, 0.9], [0.02, 0.3], [-0.94, 0.3]]
+
 /** The arrow (or skin shape) traced around a centre point, rotated for its lane. */
 function tracePath(shape: NoteShape, size: number, angle: number, center: number): Path2D {
   const points: [number, number][] = []
   const s = size / 2
   if (shape === 'arrow' || shape === 'bar') {
     // A chunky arcade arrow pointing right, filling the square tile.
-    points.push([-0.94, -0.3], [0.02, -0.3], [0.02, -0.9], [0.96, 0], [0.02, 0.9], [0.02, 0.3], [-0.94, 0.3])
+    points.push(...ARROW_POINTS)
   } else if (shape === 'chevron') {
     points.push([-0.85, -0.92], [0.95, 0], [-0.85, 0.92], [-0.3, 0])
   } else if (shape === 'diamond') {

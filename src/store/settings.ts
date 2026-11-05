@@ -63,6 +63,8 @@ export interface Settings {
   audioOffsetMs: number
   /** Where song progress shows in a run. */
   progressStyle: 'top' | 'column' | 'text'
+  /** Long arrow look: a bar behind the arrow, or the arrow itself stretched. */
+  holdStyle: 'bar' | 'stretch'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -95,6 +97,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // after the beat is heard. 20 ms earlier makes up for a typical monitor; players fine-tune it.
   audioOffsetMs: -20,
   progressStyle: 'top',
+  holdStyle: 'bar',
 }
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -228,6 +231,7 @@ export function sanitizeSettings(input: unknown): Settings {
         : 'auto',
     audioOffsetMs: Math.round(clamp(raw.audioOffsetMs, -250, 250, DEFAULT_SETTINGS.audioOffsetMs)),
     progressStyle: raw.progressStyle === 'column' || raw.progressStyle === 'text' ? raw.progressStyle : 'top',
+    holdStyle: raw.holdStyle === 'stretch' ? 'stretch' : 'bar',
   }
 }
 

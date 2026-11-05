@@ -264,6 +264,7 @@ export function GameScreen({
       arrowColors: settingsRef.current.arrowColors,
       holdEndArrow: settingsRef.current.holdMode !== 'hold',
       progressStyle: settingsRef.current.progressStyle,
+      holdStyle: settingsRef.current.holdStyle,
       columnColors: settingsRef.current.columnColors,
       reducedMotion: settingsRef.current.reducedMotion,
     })
@@ -476,6 +477,7 @@ export function GameScreen({
       arrowColors: settings.arrowColors,
       holdEndArrow: settings.holdMode !== 'hold',
       progressStyle: settings.progressStyle,
+      holdStyle: settings.holdStyle,
       columnColors: settings.columnColors,
       reducedMotion: settings.reducedMotion,
     })
