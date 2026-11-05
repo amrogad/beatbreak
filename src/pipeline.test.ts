@@ -295,8 +295,8 @@ describe('hold notes', () => {
       expect(hold.duration!).toBeGreaterThanOrEqual(0.24 - 1e-9)
       // Never longer than the sound itself (1.4 s here).
       expect(hold.duration!).toBeLessThanOrEqual(1.4 + 1e-9)
-      // The tail sits on the subdivision grid (the `.sm` export depends on it)...
-      const step = timing.timeToStep(tail, settings.stepsPerBeat)
+      // The tail sits on the 16th grid...
+      const step = timing.timeToStep(tail, Math.max(4, settings.stepsPerBeat))
       expect(Math.abs(step - Math.round(step))).toBeLessThan(1e-6)
       // ...and clears the next note in the same lane.
       const next = out.find((n) => n.lane === hold.lane && n.time > hold.time + 1e-9)

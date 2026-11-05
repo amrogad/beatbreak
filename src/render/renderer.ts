@@ -346,9 +346,7 @@ export class PlayfieldRenderer {
     const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}`
     const cached = this.layoutCache
     if (cached && this.layoutKey === key) return cached
-    // StepMania sizes the playfield from the screen height, so a big monitor gets bigger arrows
-    // instead of the same small column in a sea of empty space.
-    const laneAreaW = this.preview ? this.width * 0.84 : Math.max(180, Math.min(this.width * 0.72, this.height * 0.62))
+    const laneAreaW = this.preview ? this.width * 0.84 : Math.max(180, Math.min(this.width * 0.72, 460))
     const laneW = laneAreaW / 4
     const laneAreaX = (this.width - laneAreaW) / 2
     const direction: 1 | -1 = this.settings.scrollDirection === 'down' ? -1 : 1

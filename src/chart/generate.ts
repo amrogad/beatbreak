@@ -31,7 +31,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-3.4'
+export const GENERATOR_VERSION = 'pulsegrid-gen-3.5'
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -766,7 +766,7 @@ const HOLD_MAX_SECONDS: Record<Difficulty, number> = { easy: 2, normal: 2.2, har
  * stays a tap.
  */
 /** A release snaps onto another lane's arrow within this distance of where the sound ends. */
-const RELEASE_ALIGN_SECONDS = 0.3
+const RELEASE_ALIGN_SECONDS = 0.15
 /** No other arrow may come this soon before a hold's release. */
 const RELEASE_CLEAR_SECONDS = 0.3
 
@@ -854,9 +854,12 @@ export function applyHolds(
     }
     // Snap the tail to the subdivision grid so the export and the editor stay exact. `timeToStep`
     // rounds, so step down until the snapped time is really inside the wanted span.
-    let tailStep = timing.timeToStep(note.time + wanted, settings.stepsPerBeat)
-    while (tailStep > 0 && timing.stepToTime(tailStep, settings.stepsPerBeat) > note.time + wanted) tailStep--
-    let tailTime = timing.stepToTime(tailStep, settings.stepsPerBeat)
+    // Tails snap to the nearest 16th on every difficulty. Snapping down to Easy's whole beats
+    // ended holds up to a beat before the sound did, so letting go "on time" felt early.
+    const tailGrid = Math.max(4, settings.stepsPerBeat)
+    let tailStep = Math.round(timing.timeToBeat(note.time + wanted) * tailGrid)
+    while (tailStep > 0 && timing.stepToTime(tailStep, tailGrid) > bound + 1e-6) tailStep--
+    let tailTime = timing.stepToTime(tailStep, tailGrid)
     // End on an arrow when one is close: the release lands together with another lane's note,
     // the way hand-made charts end their holds.
     let partner: ChartNote | null = null
