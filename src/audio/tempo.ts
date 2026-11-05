@@ -482,32 +482,41 @@ export function measureGridCoverage(
  * Decide which grid line marks beat 0.
  *
  * A 16th-note grid fit is invariant to shifting by one grid step — the *positions* are the same
- * set — so the fit alone cannot tell whether beats land on the kick or on an offbeat. Strong hits
- * (kicks, snares, bass) sit on beats, so we try each of the four grid lines in the candidate's
- * neighbourhood and keep the one whose beat-level grid catches the most onset strength.
+ * set — so the fit alone cannot tell whether beats land on the kick or on an offbeat. Two steps:
+ *
+ *  1. Eighth-note level: of the two ways to pair up the 16th lines, the one carrying more onset
+ *     strength is the eighth grid. Music puts far more on eighths than on odd 16ths, so this is
+ *     reliable even when the loudest single sound is syncopated.
+ *  2. Beat level: of the two eighth lines, the beat is the one the low and low-mid hits (kick,
+ *     bass, snare body) favour. Hi-hats are left out because they often sit on the offbeat.
+ *
+ * Choosing among all four 16th lines by raw loudness let a pumping bass or a swelling pad pull
+ * beat 0 onto the second 16th, which put every Easy and Normal arrow between the beats.
  */
 export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, phase: number): number {
   if (onsets.length === 0 || periodSeconds <= 0) return phase
-  const scoreAt = (candidate: number): number => {
-    let score = 0
+  const sixteenth = periodSeconds / 4
+  const score = (candidate: number, step: number, sigma: number, use: (o: OnsetEvent) => number): number => {
+    let total = 0
     for (const onset of onsets) {
+      const weight = use(onset)
+      if (weight <= 0) continue
       const relative = onset.time - candidate
-      const distanceToBeat = Math.abs(relative - Math.round(relative / periodSeconds) * periodSeconds)
-      score += onset.strength * onset.strength * Math.exp(-0.5 * Math.pow(distanceToBeat / 0.055, 2))
+      const distance = relative - Math.round(relative / step) * step
+      total += weight * Math.exp(-0.5 * (distance / sigma) * (distance / sigma))
     }
-    return score
+    return total
   }
-  let best = phase
-  let bestScore = -1
-  for (let step = 0; step < 4; step++) {
-    const candidate = phase + (periodSeconds * step) / 4
-    const score = scoreAt(candidate)
-    if (score > bestScore) {
-      bestScore = score
-      best = candidate
-    }
+  const eighthScores = [0, 1].map((k) => score(phase + k * sixteenth, periodSeconds / 2, 0.03, (o) => o.strength))
+  const eighth = eighthScores[0] >= eighthScores[1] ? 0 : 1
+  const lowWeight = (o: OnsetEvent): number => (o.band <= 1 ? o.strength * o.strength : 0)
+  let beatScores = [eighth, eighth + 2].map((k) => score(phase + k * sixteenth, periodSeconds, 0.04, lowWeight))
+  // No low-end hits to go by (a cappella, solo piano): fall back to every band.
+  if (beatScores[0] + beatScores[1] < 1e-6) {
+    beatScores = [eighth, eighth + 2].map((k) => score(phase + k * sixteenth, periodSeconds, 0.04, (o) => o.strength * o.strength))
   }
-  return best
+  const beat = beatScores[0] >= beatScores[1] ? eighth : eighth + 2
+  return phase + beat * sixteenth
 }
 
 /** Detect a likely bar length by scoring 3 vs 4 beat groups of onset energy. */

@@ -25,10 +25,11 @@ describe('judge: window boundaries', () => {
     expect(judge(40, w)).toBe('perfect')
     expect(judge(-40, w)).toBe('perfect')
     expect(judge(70, w)).toBe('great')
-    expect(judge(80, w)).toBe('great')
+    expect(judge(75, w)).toBe('great')
+    expect(judge(90, w)).toBe('good')
     expect(judge(100, w)).toBe('good')
-    expect(judge(120, w)).toBe('good')
-    expect(judge(-120, w)).toBe('good')
+    expect(judge(-100, w)).toBe('good')
+    expect(judge(110, w)).toBe('miss')
     expect(judge(500, w)).toBe('miss')
   })
 
@@ -78,7 +79,7 @@ describe('window presets and difficulty scaling', () => {
     }
   })
 
-  it('tightens windows as difficulty rises', () => {
+  it('keeps windows tight on every difficulty, tighter still on expert', () => {
     const easy = windowsForDifficulty('standard', 'easy')
     const normal = windowsForDifficulty('standard', 'normal')
     const hard = windowsForDifficulty('standard', 'hard')
@@ -89,8 +90,8 @@ describe('window presets and difficulty scaling', () => {
       expect(hard[tier]).toBeGreaterThanOrEqual(expert[tier])
     }
     expect(hard).toEqual(DEFAULT_WINDOWS) // standard preset is the reference point
-    expect(expert).toEqual({ marvelous: 15, perfect: 37, great: 74, good: 110, missAfter: 110 })
-    expect(easy).toEqual({ marvelous: 18, perfect: 46, great: 92, good: 138, missAfter: 138 })
+    expect(expert).toEqual({ marvelous: 17, perfect: 37, great: 69, good: 92, missAfter: 92 })
+    expect(easy).toEqual(DEFAULT_WINDOWS)
   })
 
   it('ships StepMania’s own windows (W1–W4) as a preset', () => {

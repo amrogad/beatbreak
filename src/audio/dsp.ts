@@ -426,7 +426,19 @@ export function refineOnsetTime(
   const slopeAfter = energyEnvelope[bestIndex + 1] - energyEnvelope[bestIndex]
   const denom = slopeBefore - 2 * bestSlope + slopeAfter
   const shift = Math.abs(denom) > 1e-12 ? Math.max(-0.5, Math.min(0.5, (0.5 * (slopeBefore - slopeAfter)) / denom)) : 0
-  const refined = (bestIndex + shift) / envelopeRate
+  // Players hear a note when its attack begins, not at the middle of the rise: walk back from the
+  // steepest point while the envelope is still clearly rising (up to 12 ms). On a sharp drum hit
+  // this moves a millisecond or two; on a softer attack it removes a late bias of 10-20 ms.
+  const maxBack = Math.round(0.012 * envelopeRate)
+  let startIndex2 = bestIndex
+  while (
+    bestIndex - startIndex2 < maxBack &&
+    startIndex2 - 1 > 0 &&
+    energyEnvelope[startIndex2 - 1] - energyEnvelope[startIndex2 - 2] >= bestSlope * 0.35
+  ) {
+    startIndex2--
+  }
+  const refined = (startIndex2 === bestIndex ? bestIndex + shift : startIndex2) / envelopeRate
   // Never let refinement move an onset further than the analysis resolution.
   if (Math.abs(refined - center) > 0.06) return center
   return refined

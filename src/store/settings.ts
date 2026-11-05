@@ -54,8 +54,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   uiSounds: true,
-  windowPreset: 'stepmania',
-  customWindows: { marvelous: 16, perfect: 40, great: 80, good: 120 },
+  windowPreset: 'standard',
+  customWindows: { marvelous: 18, perfect: 40, great: 75, good: 100 },
   // Casual-friendly default: a first run should reach the results screen even while the player
   // is still learning the lanes. Arcade failure is one click away in Settings.
   failRule: 'never',
@@ -94,7 +94,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 8
+const SETTINGS_SCHEMA = 9
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -155,7 +155,7 @@ export function sanitizeSettings(input: unknown): Settings {
     raw.windowPreset === 'lenient' ||
     raw.windowPreset === 'custom'
       ? raw.windowPreset
-      : 'stepmania'
+      : DEFAULT_SETTINGS.windowPreset
   const laneStyle: LaneStyle = raw.laneStyle === 'classic' || raw.laneStyle === 'minimal' ? raw.laneStyle : 'neon'
   const noteShape: NoteShape =
     raw.noteShape === 'bar' ||
@@ -219,6 +219,8 @@ export function loadSettings(): Settings {
         parsed.uiSounds = true
       }
       parsed.autoPlay = false
+      // v9: the default timing windows got tighter; the old default preset moves to the new one.
+      if ((parsed.schema ?? 1) < 9 && parsed.windowPreset === 'stepmania') parsed.windowPreset = 'standard'
       if ((parsed.schema ?? 1) < 8) {
         // v8: the mixer used to start at 90%. A full mixer is the closest a browser can get to
         // "follow the system volume" (the OS level is applied after this gain). The old note and

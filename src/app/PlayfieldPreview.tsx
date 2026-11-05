@@ -34,7 +34,7 @@ export function PlayfieldPreview(): React.JSX.Element {
 
     const session = new GameSession({
       chart,
-      windows: windowsForDifficulty('stepmania', 'normal'),
+      windows: windowsForDifficulty('standard', 'normal'),
       autoPlay: true,
       onJudgment: (event) => renderer.notify(event, session.scoreState.combo),
       onHoldComplete: (lane) => renderer.holdComplete(lane),

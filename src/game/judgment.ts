@@ -12,12 +12,17 @@
  */
 import type { Difficulty, Judgment, JudgmentWindows } from '../core/types'
 
+/**
+ * The default windows. Tighter than StepMania's on the outside (Good ends at 100 ms instead of
+ * 135 ms): a tap more than a tenth of a second early is visibly before the arrow reaches its
+ * target, and counting it felt like the game was guessing.
+ */
 export const DEFAULT_WINDOWS: JudgmentWindows = {
-  marvelous: 16,
+  marvelous: 18,
   perfect: 40,
-  great: 80,
-  good: 120,
-  missAfter: 120,
+  great: 75,
+  good: 100,
+  missAfter: 100,
 }
 
 /** The four hit windows a player can set by hand; `missAfter` always follows `good`. */
@@ -72,7 +77,8 @@ export function windowsForDifficulty(
     return { ...normalized, missAfter: normalized.good }
   }
   const base = WINDOW_PRESETS[preset]
-  const scale = difficulty === 'easy' ? 1.15 : difficulty === 'normal' ? 1.05 : difficulty === 'hard' ? 1 : 0.92
+  // Easy and Normal used to widen the windows; an arrow should only count when it is on its target.
+  const scale = difficulty === 'expert' ? 0.92 : 1
   if (scale === 1) return { ...base }
   return {
     marvelous: Math.round(base.marvelous * scale),
