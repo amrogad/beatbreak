@@ -89,7 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPlay: false,
   showStats: false,
   menuMusic: true,
-  holdMode: 'release',
+  holdMode: 'hold',
   defaultDifficulty: 'auto',
   // A screen shows a frame a frame or two after it is drawn, so arrows reach the target a little
   // after the beat is heard. 20 ms earlier makes up for a typical monitor; players fine-tune it.
@@ -115,7 +115,7 @@ const STORAGE_KEY = 'pulsegrid:settings:v1'
  * v8: audio is always remembered, beat lines and the separate receptor size are gone, the game
  *     starts at full mixer volume, and one larger Arrow size drives notes, holds and receptors.
  */
-const SETTINGS_SCHEMA = 12
+const SETTINGS_SCHEMA = 13
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -222,7 +222,7 @@ export function sanitizeSettings(input: unknown): Settings {
     autoPlay: typeof raw.autoPlay === 'boolean' ? raw.autoPlay : DEFAULT_SETTINGS.autoPlay,
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
-    holdMode: raw.holdMode === 'hold' ? 'hold' : 'release',
+    holdMode: raw.holdMode === 'release' ? 'release' : 'hold',
     defaultDifficulty:
       raw.defaultDifficulty === 'easy' || raw.defaultDifficulty === 'normal' || raw.defaultDifficulty === 'hard' || raw.defaultDifficulty === 'expert'
         ? raw.defaultDifficulty
@@ -267,6 +267,8 @@ export function loadSettings(): Settings {
       if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
+      // v13: holds only ask you to keep holding by default, no timed release.
+      if ((parsed.schema ?? 1) < 13) parsed.holdMode = 'hold'
       // v12: phones and tablets start on falling piano tiles, also when settings were saved before.
       if ((parsed.schema ?? 1) < 12) Object.assign(parsed, touchDefaults())
       if ((parsed.schema ?? 1) < 8) {
