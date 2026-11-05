@@ -901,7 +901,7 @@ export class PlayfieldRenderer {
       ctx.shadowColor = comboStyle.burst
       ctx.shadowBlur = 10
     }
-    ctx.fillText('combo', x, y + 28 * this.textScale())
+    ctx.fillText('COMBO', x, y + 28 * this.textScale())
     ctx.restore()
   }
 
