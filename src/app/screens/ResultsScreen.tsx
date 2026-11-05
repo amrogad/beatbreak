@@ -4,7 +4,7 @@ import type { Chart, RunResults, SongMeta } from '../../core/types'
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL, JUDGMENTS } from '../../core/types'
 import type { StoredRun } from '../../store/db'
 import { JUDGMENT_COLOR, JUDGMENT_LABEL } from '../../game/judgment'
-import { comboRecognition, gradeFor, maxScore } from '../../game/score'
+import { comboRecognition, gradeFor, maxScore, DIFFICULTY_SCORE_SCALE } from '../../game/score'
 import { Button, Chip, Panel, Stat } from '../components'
 import { formatPercent } from '../format'
 
@@ -34,7 +34,7 @@ export function ResultsScreen({
   onExportChart,
 }: ResultsScreenProps): React.JSX.Element {
   const grade = gradeFor(results.accuracy, results.failed)
-  const max = maxScore(results.totalNotes)
+  const max = maxScore(results.totalNotes, DIFFICULTY_SCORE_SCALE[results.difficulty] ?? 1)
   const percentage = max > 0 ? results.score / max : 0
   // A failed run stopped where the fail rule was met; the arrows after that were never played.
   const judged = JUDGMENTS.reduce((sum, judgment) => sum + results.tally[judgment], 0)

@@ -255,7 +255,7 @@ describe('scoring through a run', () => {
     expect(state.tally).toEqual({ marvelous: 3, perfect: 0, great: 1, good: 0, miss: 1 })
     expect(state.combo).toBe(1)
     expect(state.bestCombo).toBe(3)
-    expect(state.score).toBe(100 + 100 + 72 + 100)
+    expect(state.score).toBe(150 + 151 + 109 + 150) // a Normal chart scores 1.5x per arrow
   })
 
   it('keeps the combo for low hit tiers and breaks it on a miss', () => {

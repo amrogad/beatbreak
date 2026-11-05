@@ -13,7 +13,7 @@
 import type { Chart, ChartNote, FailRule, HitEvent, Judgment, JudgmentWindows, Lane, ScoreState } from '../core/types'
 import { LANE_COUNT } from '../core/types'
 import { isMissed, isWithinHitWindow, judge } from './judgment'
-import { applyJudgment, createScoreState } from './score'
+import { DIFFICULTY_SCORE_SCALE, applyJudgment, createScoreState } from './score'
 
 export interface GameSessionOptions {
   chart: Chart
@@ -117,7 +117,7 @@ export class GameSession {
       good: this.windows.good * HOLD_RELEASE_SCALE,
       missAfter: this.windows.missAfter * HOLD_RELEASE_SCALE,
     }
-    this.state = createScoreState(this.totalNotes + this.holdCount)
+    this.state = createScoreState(this.totalNotes + this.holdCount, DIFFICULTY_SCORE_SCALE[this.chart.difficulty] ?? 1)
   }
 
   setAutoPlay(autoPlay: boolean): void {
@@ -306,7 +306,7 @@ export class GameSession {
     this.deltaSum = 0
     this.deltaCount = 0
     this.finished = false
-    this.state = createScoreState(this.totalNotes + this.holdCount)
+    this.state = createScoreState(this.totalNotes + this.holdCount, DIFFICULTY_SCORE_SCALE[this.chart.difficulty] ?? 1)
   }
 
   /**

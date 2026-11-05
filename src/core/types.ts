@@ -293,6 +293,8 @@ export interface ScoreState {
   totalNotes: number
   /** Holds released too early: each breaks the combo and counts against accuracy and fail rules. */
   droppedHolds: number
+  /** Points multiplier for the chart's difficulty (Easy 1x up to Expert 3x). */
+  scoreScale?: number
 }
 
 export interface HitEvent {

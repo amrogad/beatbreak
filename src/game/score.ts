@@ -8,7 +8,7 @@
  *   comboMultiplier = 1 + min(combo, 150) / 300   (so a long combo can add up to +50%)
  *   accuracy    = Σ judgmentWeight / notes judged
  */
-import type { Judgment, JudgmentTally, ScoreState } from '../core/types'
+import type { Difficulty, Judgment, JudgmentTally, ScoreState } from '../core/types'
 import { JUDGMENT_WEIGHT } from './judgment'
 
 /**
@@ -19,10 +19,14 @@ export const BASE_NOTE_SCORE = 100
 export const COMBO_BONUS_CAP = 150
 export const COMBO_BONUS_SCALE = 300
 
+/** Harder charts are worth more per arrow, so a score says something about what was played. */
+export const DIFFICULTY_SCORE_SCALE: Record<Difficulty, number> = { easy: 1, normal: 1.5, hard: 2, expert: 3 }
+
 export const emptyTally = (): JudgmentTally => ({ marvelous: 0, perfect: 0, great: 0, good: 0, miss: 0 })
 
-export function createScoreState(totalNotes: number): ScoreState {
+export function createScoreState(totalNotes: number, scoreScale = 1): ScoreState {
   return {
+    scoreScale,
     score: 0,
     combo: 0,
     bestCombo: 0,
@@ -39,8 +43,8 @@ export function comboMultiplier(combo: number): number {
 }
 
 /** Points a note is worth at the given combo (before the judgment is applied). */
-export function noteScore(judgment: Judgment, combo: number): number {
-  return Math.round(BASE_NOTE_SCORE * JUDGMENT_WEIGHT[judgment] * comboMultiplier(combo))
+export function noteScore(judgment: Judgment, combo: number, scale = 1): number {
+  return Math.round(BASE_NOTE_SCORE * scale * JUDGMENT_WEIGHT[judgment] * comboMultiplier(combo))
 }
 
 /**
@@ -51,7 +55,7 @@ export function applyJudgment(state: ScoreState, judgment: Judgment): ScoreState
   const tally: JudgmentTally = { ...state.tally, [judgment]: state.tally[judgment] + 1 }
   const breaksCombo = judgment === 'miss'
   const combo = breaksCombo ? 0 : state.combo + 1
-  const gained = noteScore(judgment, state.combo)
+  const gained = noteScore(judgment, state.combo, state.scoreScale ?? 1)
   const judged = state.judged + 1
   return {
     score: state.score + gained,
@@ -62,6 +66,7 @@ export function applyJudgment(state: ScoreState, judgment: Judgment): ScoreState
     tally,
     totalNotes: state.totalNotes,
     droppedHolds: state.droppedHolds,
+    scoreScale: state.scoreScale,
   }
 }
 
@@ -167,9 +172,9 @@ export function gradeFor(accuracy: number, failed = false): Grade {
 }
 
 /** Maximum achievable score for a chart, used for the progress bar and the results readout. */
-export function maxScore(totalNotes: number): number {
+export function maxScore(totalNotes: number, scale = 1): number {
   let score = 0
-  for (let i = 0; i < totalNotes; i++) score += noteScore('marvelous', i)
+  for (let i = 0; i < totalNotes; i++) score += noteScore('marvelous', i, scale)
   return score
 }
 
