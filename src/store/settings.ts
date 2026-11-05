@@ -56,6 +56,13 @@ export interface Settings {
   holdMode: 'release' | 'hold'
   /** Difficulty a song opens on before you pick one for it; 'auto' uses the recommended one. */
   defaultDifficulty: Difficulty | 'auto'
+  /**
+   * Arrow timing correction in ms: negative moves arrows (and judging) earlier, for setups where
+   * the music reaches you before the arrows do. The results screen suggests a value.
+   */
+  audioOffsetMs: number
+  /** Where song progress shows in a run. */
+  progressStyle: 'top' | 'column' | 'text'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -84,6 +91,10 @@ export const DEFAULT_SETTINGS: Settings = {
   menuMusic: true,
   holdMode: 'release',
   defaultDifficulty: 'auto',
+  // A screen shows a frame a frame or two after it is drawn, so arrows reach the target a little
+  // after the beat is heard. 20 ms earlier makes up for a typical monitor; players fine-tune it.
+  audioOffsetMs: -20,
+  progressStyle: 'top',
 }
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -215,6 +226,8 @@ export function sanitizeSettings(input: unknown): Settings {
       raw.defaultDifficulty === 'easy' || raw.defaultDifficulty === 'normal' || raw.defaultDifficulty === 'hard' || raw.defaultDifficulty === 'expert'
         ? raw.defaultDifficulty
         : 'auto',
+    audioOffsetMs: Math.round(clamp(raw.audioOffsetMs, -250, 250, DEFAULT_SETTINGS.audioOffsetMs)),
+    progressStyle: raw.progressStyle === 'column' || raw.progressStyle === 'text' ? raw.progressStyle : 'top',
   }
 }
 

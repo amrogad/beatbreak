@@ -19,6 +19,8 @@ export interface ResultsScreenProps {
   onSetup: () => void
   onHome: () => void
   onExportChart: () => void
+  audioOffsetMs: number
+  onApplyOffset: (offsetMs: number) => void
 }
 
 export function ResultsScreen({
@@ -32,7 +34,15 @@ export function ResultsScreen({
   onSetup,
   onHome,
   onExportChart,
+  audioOffsetMs,
+  onApplyOffset,
 }: ResultsScreenProps): React.JSX.Element {
+  // A steady early or late average means the player's setup is out of step with the arrows, not
+  // that they played badly: offer to fold it into the timing setting (rounded to 5 ms).
+  const mean = results.meanTimingMs ?? 0
+  const hits = JUDGMENTS.reduce((sum, judgment) => (judgment === 'miss' ? sum : sum + results.tally[judgment]), 0)
+  const suggested = Math.max(-250, Math.min(250, Math.round((audioOffsetMs + mean) / 5) * 5))
+  const timingHint = !results.autoPlay && hits >= 20 && Math.abs(mean) >= 10 && suggested !== audioOffsetMs ? suggested : 0
   const grade = gradeFor(results.accuracy, results.failed)
   const max = maxScore(results.totalNotes, DIFFICULTY_SCORE_SCALE[results.difficulty] ?? 1)
   const percentage = max > 0 ? results.score / max : 0
@@ -93,6 +103,16 @@ export function ResultsScreen({
               </Chip>
             )}
             {isNewBest && !results.autoPlay && <Chip color="#ffc93d">New personal best</Chip>}
+            {timingHint && (
+              <div className="timing-hint">
+                <span>
+                  On average you hit {Math.abs(Math.round(mean))} ms {mean < 0 ? 'early' : 'late'}.
+                </span>
+                <Button size="sm" onClick={() => onApplyOffset(timingHint)}>
+                  Set arrow timing to {Math.abs(timingHint)} ms {timingHint < 0 ? 'earlier' : 'later'}
+                </Button>
+              </div>
+            )}
             {!isNewBest && !previousBest && !results.autoPlay && !results.failed && results.score > 0 && (
               <Chip color="#3fe08a">First score on this chart</Chip>
             )}

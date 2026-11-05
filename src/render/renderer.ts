@@ -42,6 +42,8 @@ export interface RenderSettings {
   arrowColors: ArrowColors
   /** Draw an end arrow on holds (let go there) or a plain rounded end (just hold to the end). */
   holdEndArrow?: boolean
+  /** Where song progress shows: a line across the top, a bar under the title, or text under accuracy. */
+  progressStyle?: 'top' | 'column' | 'text'
   /** The four column colours the player picked (used when arrow colours are per column). */
   columnColors: string[]
   reducedMotion: boolean
@@ -228,6 +230,8 @@ export class PlayfieldRenderer {
   private scoreTextCache = { value: -1, text: '' }
   private accuracyTextCache = { value: -1, text: '' }
   private titleCache = { key: '', text: '' }
+  private spritesWarm = false
+  private textCache = new Map<string, { canvas: HTMLCanvasElement; w: number; h: number }>()
 
   /* ------------------------------------------------------------- self-tuning
    * The renderer watches its own frame time and sheds decoration when the machine cannot hold a
@@ -273,11 +277,30 @@ export class PlayfieldRenderer {
       this.settings.arrowColors === 'random' ? shuffledColors() : validColors(this.settings.columnColors)
     const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5)
     this.railColors = [this.columnColors[order[0]], this.columnColors[order[1]]]
+    this.spritesWarm = false
     if (!chart) return
     this.timing = new TimingMap(chart.timing)
     for (const note of chart.notes) {
       if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) this.holdNotes.set(note.id, note)
     }
+  }
+
+  /**
+   * Build every arrow, target, flash and glow sprite the run will use before it starts. Each one
+   * is a canvas drawn with blurs; building them lazily put a hitch on the first arrows.
+   */
+  private warmSprites(): void {
+    const { noteH } = this.layout()
+    for (let lane = 0; lane < 4; lane++) {
+      const color = this.columnColor(lane)
+      this.noteSprite('note', color, lane as Lane, noteH)
+      this.noteSprite('receptor', color, lane as Lane, noteH)
+      this.noteSprite('flash', color, lane as Lane, noteH)
+      this.noteSprite('flash', '#ffffff', lane as Lane, noteH)
+      this.glowSprite(color, Math.round(noteH))
+    }
+    this.glowSprite('#ffffff', Math.round(noteH))
+    this.spritesWarm = true
   }
 
   /** The colour every arrow, target and glow in a column uses. */
@@ -360,6 +383,8 @@ export class PlayfieldRenderer {
     this.layoutCache = null
     this.layoutKey = ''
     this.spriteCache.clear()
+    this.textCache.clear()
+    this.spritesWarm = false
     this.skyCache = null
     this.vignetteCache = null
   }
@@ -434,6 +459,7 @@ export class PlayfieldRenderer {
     }
     if (!reduced && this.quality > 0) this.particles.update(dtMs)
 
+    if (!this.spritesWarm) this.warmSprites()
     const songSeconds = songTimeMs / 1000
     const beat = this.timing.timeToBeat(songSeconds)
     const beatFrac = beat - Math.floor(beat)
@@ -926,7 +952,7 @@ export class PlayfieldRenderer {
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
     ctx.globalAlpha = Math.max(0, alpha)
-    drawStyledText(ctx, text, 0, 0, Math.min(30, laneAreaW / 10) * this.textScale(), this.judgeStyle(flash.judgment), this.quality > 0)
+    this.drawText(ctx, text, 0, 0, Math.min(30, laneAreaW / 10) * this.textScale(), this.judgeStyle(flash.judgment), this.quality > 0)
     ctx.restore()
   }
 
@@ -961,19 +987,48 @@ export class PlayfieldRenderer {
     ctx.save()
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
-    drawStyledText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), style, this.quality > 0, glow)
+    this.drawText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), style, this.quality > 0, Math.round(glow * 20) / 20)
     ctx.restore()
-    ctx.save()
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.font = `15px ${DISPLAY}`
-    ctx.fillStyle = style.fill
-    if (this.quality > 0) {
-      ctx.shadowColor = style.burst
-      ctx.shadowBlur = 8 + glow * 8
+    this.drawText(ctx, 'COMBO', x, y + 28 * this.textScale(), 15, style, this.quality > 0, 0.6)
+  }
+
+  /**
+   * Big arcade text through a cache: the chrome gradient and the glow (a canvas shadow blur, the
+   * most expensive thing on screen) are painted once per text and size, then copied each frame.
+   */
+  private drawText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    style: JudgeStyle,
+    glow: boolean,
+    glowScale = 0.5,
+  ): void {
+    const px = Math.round(size)
+    const key = `${text}|${px}|${style.fill}|${style.burst}|${glow ? glowScale : 'flat'}`
+    let entry = this.textCache.get(key)
+    if (!entry) {
+      const measure = this.ctx
+      measure.save()
+      measure.font = `${px}px ${DISPLAY}`
+      const textW = measure.measureText(text).width
+      measure.restore()
+      const pad = Math.ceil(px * (glow ? glowScale * 2 : 0.2)) + 6
+      const w = Math.ceil(textW + pad * 2)
+      const h = Math.ceil(px * 1.4 + pad * 2)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.ceil(w * this.dpr)
+      canvas.height = Math.ceil(h * this.dpr)
+      const c = canvas.getContext('2d')!
+      c.scale(this.dpr, this.dpr)
+      paintStyledText(c, text, w / 2, h / 2, px, style, glow, glowScale)
+      entry = { canvas, w, h }
+      if (this.textCache.size > 160) this.textCache.delete(this.textCache.keys().next().value as string)
+      this.textCache.set(key, entry)
     }
-    ctx.fillText('COMBO', x, y + 28 * this.textScale())
-    ctx.restore()
+    ctx.drawImage(entry.canvas, x - entry.w / 2, y - entry.h / 2, entry.w, entry.h)
   }
 
   /** Cut text with an ellipsis so it fits `maxWidth` at the current font. Cached by input. */
@@ -1003,6 +1058,7 @@ export class PlayfieldRenderer {
       this.accuracyTextCache = { value: accuracy, text: `${(accuracy * 100).toFixed(2)}%` }
     }
     const progress = Math.max(0, Math.min(1, hud.progress))
+    const progressStyle = this.settings.progressStyle ?? 'top'
     ctx.save()
     ctx.textBaseline = 'top'
 
@@ -1039,6 +1095,14 @@ export class PlayfieldRenderer {
       ctx.font = `22px ${DISPLAY}`
       ctx.fillStyle = palette.hudText
       ctx.fillText(this.accuracyTextCache.text, leftX, top + 78)
+      if (progressStyle === 'text') {
+        ctx.font = `600 15px ${FONT}`
+        ctx.fillStyle = palette.hudMuted
+        ctx.fillText('Progress', leftX, top + 116)
+        ctx.font = `22px ${DISPLAY}`
+        ctx.fillStyle = palette.hudText
+        ctx.fillText(`${Math.round(progress * 100)}%`, leftX, top + 136)
+      }
 
       ctx.textAlign = 'left'
       // The title may use the whole column out to the screen edge; only the bar keeps a set width.
@@ -1053,6 +1117,7 @@ export class PlayfieldRenderer {
         ctx.fillStyle = this.settings.theme === 'mono' ? palette.hudText : hud.subtitleColor ?? palette.accent2
         ctx.fillText(hud.subtitle, rightX, top + 28)
       }
+      if (progressStyle === 'column') progressBar(rightX, top + 58, Math.min(220, titleW), 5)
     } else {
       // Narrow screens: one compact row above the receptors, below the pause/fullscreen buttons.
       const y = 50
@@ -1064,7 +1129,8 @@ export class PlayfieldRenderer {
       ctx.fillText(this.accuracyTextCache.text, this.width - 16, y)
     }
     // Song progress runs along the very top of the window on every screen size.
-    progressBar(0, 0, this.width, 5)
+    // On narrow screens there is no column, so every style falls back to the line along the top.
+    if (progressStyle === 'top' || laneAreaX < 180) progressBar(0, 0, this.width, 5)
 
     // Frame rate / quality readout (Settings → Show statistics). Shows the adaptive level so a
     // performance drop is visible instead of felt.
@@ -1118,7 +1184,7 @@ export class PlayfieldRenderer {
     const countColor = this.columnColors[(3 - number + 4) % 4]
     const countStyle: JudgeStyle =
       this.settings.theme === 'mono' ? MONO_JUDGE : { fill: countColor, shadow: shade(countColor, -0.5), burst: countColor }
-    drawStyledText(ctx, number > 0 ? String(number) : 'GO!', 0, 0, 96, countStyle, this.quality > 0)
+    this.drawText(ctx, number > 0 ? String(number) : 'GO!', 0, 0, 96, countStyle, this.quality > 0)
     ctx.restore()
   }
 }
@@ -1200,7 +1266,7 @@ function drawCentered(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, 
 }
 
 /** Big arcade text: chrome lettering with a glow in its own colour. */
-function drawStyledText(
+function paintStyledText(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,

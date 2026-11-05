@@ -144,6 +144,16 @@ export function SettingsScreen({
             format={(value) => `${Math.round(value * 100)}%`}
             hint="Defaults to 100%. Your system volume still applies."
           />
+          <Slider
+            label="Arrow timing"
+            value={settings.audioOffsetMs}
+            min={-150}
+            max={150}
+            step={5}
+            onChange={(value) => onUpdate({ audioOffsetMs: value })}
+            format={(value) => (value === 0 ? '0 ms' : `${Math.abs(value)} ms ${value < 0 ? 'earlier' : 'later'}`)}
+            hint="Hear the beat before the arrows reach the targets? Move it earlier. The results screen suggests a value after each song."
+          />
           <Toggle
             label="Menu music"
             checked={settings.menuMusic}
@@ -196,6 +206,16 @@ export function SettingsScreen({
             ]}
             onChange={(value) => onUpdate({ defaultDifficulty: value })}
             hint="Used until you pick a difficulty for a song; that song then remembers your pick."
+          />
+          <Select
+            label="Song progress"
+            value={settings.progressStyle}
+            options={[
+              { value: 'top', label: 'Line across the top' },
+              { value: 'column', label: 'Bar under the song title' },
+              { value: 'text', label: 'Percentage under accuracy' },
+            ]}
+            onChange={(value) => onUpdate({ progressStyle: value })}
           />
           <Select
             label="Long arrows"

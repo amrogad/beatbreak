@@ -907,3 +907,4 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
 .btn-icon { width: 16px; height: 16px; flex: none; }
 /* A switch with only a label sits centred on it; with a hint underneath, it lines up with the label. */
 .toggle:not(:has(em)) { align-items: center; }
+.timing-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }

@@ -12,7 +12,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Chart, RunResults, SongMeta } from '../../core/types'
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
-import { AudioEngine, getAudioContext, resumeAudioContext } from '../../audio/engine'
+import { AudioEngine, estimateOutputLatency, getAudioContext, resumeAudioContext } from '../../audio/engine'
 import { buildEditPlan, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
@@ -263,6 +263,7 @@ export function GameScreen({
       theme: settingsRef.current.theme,
       arrowColors: settingsRef.current.arrowColors,
       holdEndArrow: settingsRef.current.holdMode !== 'hold',
+      progressStyle: settingsRef.current.progressStyle,
       columnColors: settingsRef.current.columnColors,
       reducedMotion: settingsRef.current.reducedMotion,
     })
@@ -299,12 +300,22 @@ export function GameScreen({
       return Math.max(0, COUNTDOWN_MS + leadInRef.current - (now - countdownStartRef.current))
     }
     countdownStartRef.current = performance.now()
+    // Wake the audio device now, during the countdown. Starting it on GO cost a visible hitch
+    // (creating and resuming an AudioContext can block for a few hundred milliseconds on Windows),
+    // and its latency estimate is needed to line the countdown up with the song.
+    let preRollShiftMs = settingsRef.current.audioOffsetMs
+    void resumeAudioContext()
+      .then(() => {
+        preRollShiftMs = estimateOutputLatency(getAudioContext()) * 1000 + settingsRef.current.audioOffsetMs
+      })
+      .catch(() => undefined)
 
     const engage = async (): Promise<void> => {
       await resumeAudioContext()
       if (disposed) return
       const engine = new AudioEngine(getAudioContext(), buffer, {
         volume: settingsRef.current.volume,
+        offsetMs: settingsRef.current.audioOffsetMs,
         // The run ends at the window end, not the file end: a trimmed tail must not score misses.
         // The song is over at this point, so any arrow that was never reached is a miss — the
         // failure path is different: it stops where the rule was met and leaves the rest unplayed.
@@ -333,7 +344,9 @@ export function GameScreen({
         // and counting to 0 made its first arrows pop up mid-screen on GO.
         leadInRef.current = renderer.leadInMs()
         const remaining = countdownRemaining()
-        renderer.render(activeSession ?? session, playPlan.windowStart * 1000 - remaining, {
+        // The countdown runs on the same clock the song will: shifted by the device latency and the
+        // player's timing correction, so nothing jumps when the music starts.
+        renderer.render(activeSession ?? session, playPlan.windowStart * 1000 - remaining - preRollShiftMs, {
           score: 0,
           combo: 0,
           accuracy: 1,
@@ -452,6 +465,7 @@ export function GameScreen({
 
   useEffect(() => {
     engineRef.current?.setVolume(settings.volume)
+    engineRef.current?.setOutputOffsetMs(settings.audioOffsetMs)
     rendererRef.current?.setSettings({
       scrollSpeed: settings.scrollSpeed,
       noteScale: settings.noteScale,
@@ -461,6 +475,7 @@ export function GameScreen({
       theme: settings.theme,
       arrowColors: settings.arrowColors,
       holdEndArrow: settings.holdMode !== 'hold',
+      progressStyle: settings.progressStyle,
       columnColors: settings.columnColors,
       reducedMotion: settings.reducedMotion,
     })

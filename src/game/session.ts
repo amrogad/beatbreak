@@ -252,10 +252,7 @@ export class GameSession {
     this.state = applyJudgment(this.state, judgment)
     this.marvelousStreak = judgment === 'marvelous' ? this.marvelousStreak + 1 : 0
     if (this.marvelousStreak > this.bestMarvelousStreak) this.bestMarvelousStreak = this.marvelousStreak
-    if (judgment !== 'miss') {
-      this.deltaSum += deltaMs
-      this.deltaCount++
-    }
+    // Releases stay out of the average timing: lifting a finger is not a measure of sync.
     this.emitJudgment(judgment, lane, deltaMs, `${this.notes[hold.index].id}#tail`, songTimeMs, letGo)
     if (judgment !== 'miss') this.options.onHoldComplete?.(lane)
   }

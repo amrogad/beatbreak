@@ -137,9 +137,10 @@ function AppShell(): React.JSX.Element {
   // Menu music: the song being set up or the song just played.
   useEffect(() => {
     if (!settings.menuMusic) return
-    // Music plays only around a song (its setup and its results). The home page, Settings and
-    // About stay quiet (Amro, 2026-11-06), and the game and editor play the song itself.
-    if (route.name !== 'setup' && route.name !== 'results') {
+    // Music plays only on a song's setup screen. The home page, Settings and About stay quiet
+    // (Amro, 2026-11-06), and the results stay quiet too: the song starting again right after it
+    // ended sounded like a replay.
+    if (route.name !== 'setup') {
       stopMenuMusic(0.3)
       return
     }
@@ -383,6 +384,11 @@ function AppShell(): React.JSX.Element {
             onRetry={() => void startGame({ songId: route.songId, chartId: route.chartId, difficulty: chart.difficulty, autoPlay: route.results.autoPlay ?? false })}
             onSetup={() => setRoute({ name: 'setup', file: null, songId: route.songId, attempt: 0 })}
             onHome={backHome}
+            audioOffsetMs={settings.audioOffsetMs}
+            onApplyOffset={(offsetMs) => {
+              updateSettings({ audioOffsetMs: offsetMs })
+              toast(`Arrow timing set to ${offsetMs} ms.`, 'success')
+            }}
             onExportChart={() => {
               void (async () => {
                 const { serializeChart } = await import('../chart/serialize')
