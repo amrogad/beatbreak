@@ -168,19 +168,12 @@ export function HomeScreen({
                   </div>
                   {bestRun && (
                     <div className="song-high-score">
-                      <span className="song-high-score-label">High score</span>
-                      <span className="song-high-score-value">
-                        {bestRun.entry.score.toLocaleString('en-US')}
+                      <span>
+                        High score: <strong>{bestRun.entry.score.toLocaleString('en-US')}</strong>
                       </span>
-                      <span
-                        className="song-high-score-meta"
-                        style={{ color: DIFFICULTY_COLOR[bestRun.difficulty] }}
-                      >
-                        {bestRun.entry.failed || bestRun.entry.score <= 0
-                          ? `Not cleared · ${DIFFICULTY_LABEL[bestRun.difficulty]}`
-                          : `${DIFFICULTY_LABEL[bestRun.difficulty]} · ${bestRun.entry.grade} · ${Math.round(
-                              bestRun.entry.accuracy * 100,
-                            )}%`}
+                      <span>
+                        <span style={{ color: DIFFICULTY_COLOR[bestRun.difficulty] }}>{DIFFICULTY_LABEL[bestRun.difficulty]}</span>
+                        {` · Grade ${bestRun.entry.grade} · Accuracy: ${Math.round(bestRun.entry.accuracy * 100)}%`}
                       </span>
                     </div>
                   )}
@@ -191,7 +184,7 @@ export function HomeScreen({
                     Play
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="danger"
                     onClick={() => setConfirmDelete(song.id)}
                     title="Delete this song, its charts and its scores"
                   >

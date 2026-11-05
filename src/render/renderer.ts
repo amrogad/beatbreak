@@ -32,7 +32,7 @@ export type ArrowColors = 'column' | 'random'
 export interface RenderSettings {
   /** 1 (slow) … 10 (fast). Converted to pixels per second using the travel distance. */
   scrollSpeed: number
-  /** One multiplier for tap notes, hold notes and receptors, 0.8…1.7. */
+  /** One multiplier for tap notes, hold notes and receptors, 0.6…1.3 (1 = default size). */
   noteScale: number
   /** How much the background moves: full show, calmer, or a still backdrop. */
   laneStyle: LaneStyle
@@ -49,7 +49,7 @@ export interface RenderSettings {
 
 export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   scrollSpeed: 5,
-  noteScale: 1.3,
+  noteScale: 1,
   laneStyle: 'neon',
   noteShape: 'arrow',
   scrollDirection: 'up',
@@ -373,7 +373,7 @@ export class PlayfieldRenderer {
     const laneW = laneAreaW / 4
     const laneAreaX = (this.width - laneAreaW) / 2
     const direction: 1 | -1 = this.settings.scrollDirection === 'down' ? -1 : 1
-    const fullNote = Math.min(laneW * 0.96, laneW * 0.66 * this.settings.noteScale)
+    const fullNote = Math.min(laneW * 0.96, laneW * 0.86 * this.settings.noteScale)
     // A short preview canvas keeps the arrows in proportion to its height.
     const noteH = this.preview ? Math.min(fullNote, this.height * 0.2) : fullNote
     // The receptor inset mirrors between layouts: at the top for rising arrows, at the bottom

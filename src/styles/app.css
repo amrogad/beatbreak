@@ -252,7 +252,6 @@ strong { font-weight: 700; }
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .btn:hover:not(:disabled) { background: var(--control-hover); border-color: var(--text); }
-.btn:active:not(:disabled) { background: #2a2a30; }
 .btn:disabled { opacity: 0.42; cursor: not-allowed; }
 .btn-primary {
   background: var(--solid);
@@ -299,6 +298,9 @@ strong { font-weight: 700; }
   align-items: start;
 }
 .settings-grid > * { min-width: 0; }
+/* A switch next to a labelled field lines up with the field's box, not its label. */
+.settings-grid > .toggle,
+.grid.cols-2 > .toggle { padding-top: 30px; }
 
 .settings-group { display: flex; flex-direction: column; gap: 12px; }
 .settings-group-head {
@@ -537,21 +539,8 @@ input[type='checkbox'] { accent-color: var(--cyan); }
 }
 .song-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .song-actions .btn { min-width: 88px; }
-.song-high-score { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.song-high-score-label {
-  font-size: 10px;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.song-high-score-value {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-}
-.song-high-score-meta { font-size: 11.5px; font-weight: 700; }
+.song-high-score { display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--muted); }
+.song-high-score strong { color: var(--text); font-weight: 700; }
 
 /* ------------------------------------------------------------------- modal */
 
@@ -702,7 +691,8 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
   .song-row { align-items: flex-start; }
   .game-hint { font-size: 10.5px; max-width: 92vw; text-align: center; }
   .settings-grid { grid-template-columns: 1fr; gap: 24px; }
-  .settings-grid > .toggle { padding-top: 0; }
+  .settings-grid > .toggle,
+  .grid.cols-2 > .toggle { padding-top: 0; }
   .settings-key-row { grid-template-columns: 118px minmax(0, 1fr); gap: 12px; }
 }
 

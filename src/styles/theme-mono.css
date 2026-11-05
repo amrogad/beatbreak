@@ -67,7 +67,7 @@
 
 [data-theme='mono'] h1 {
   color: var(--text);
-  text-shadow: 3px 3px 0 #4a4a4a;
+  text-shadow: none;
 }
 
 [data-theme='mono'] h2 {
@@ -105,75 +105,74 @@
   box-shadow: none;
 }
 
-/* The hero is the cabinet's marquee: a yellow rule and a hard pink drop. */
+/* The hero is the cabinet's marquee: a yellow rule. */
 [data-theme='mono'] .hero {
   border-color: var(--amber);
-  box-shadow: 8px 8px 0 #2e2e2e;
+  box-shadow: none;
 }
 
+/* One button system: every button is a solid block that presses in, like an arcade button.
+   Primary is the action you came for, danger deletes, everything else is the plain block. */
 [data-theme='mono'] .btn {
   border-radius: var(--radius-sm);
-  border: 2px solid var(--border-strong);
-  background: var(--control);
-  color: var(--text);
+  border: 0;
+  background: #2a2a2a;
+  color: #ffffff;
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.01em;
+  box-shadow: 0 4px 0 #0c0c0c;
+  transform: translateY(-2px);
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s ease;
 }
 
 [data-theme='mono'] .btn:hover:not(:disabled) {
-  background: var(--control-hover);
-  border-color: var(--text);
+  background: #363636;
+  filter: none;
 }
 
-/* The one loud control: a yellow arcade button that physically presses in. */
+[data-theme='mono'] .btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #0c0c0c;
+}
+
+[data-theme='mono'] .btn:disabled {
+  box-shadow: none;
+  transform: none;
+  opacity: 0.45;
+}
+
+[data-theme='mono'] .btn-ghost {
+  background: #2a2a2a;
+  color: #ffffff;
+}
+
 [data-theme='mono'] .btn-primary {
-  background: var(--amber);
-  border-color: var(--amber);
-  color: var(--on-solid);
-  box-shadow: 0 4px 0 #6a6a6a;
-  transform: translateY(-2px);
-  transition: transform 0.06s ease, box-shadow 0.06s ease;
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 4px 0 #7a7a7a;
 }
 
 [data-theme='mono'] .btn-primary:hover:not(:disabled) {
   background: #e6e6e6;
-  border-color: #e6e6e6;
-  filter: none;
 }
 
 [data-theme='mono'] .btn-primary:active:not(:disabled) {
-  background: var(--amber);
-  transform: translateY(2px);
-  box-shadow: 0 0 0 #6a6a6a;
-}
-
-[data-theme='mono'] .btn-primary:disabled {
-  box-shadow: none;
-  transform: none;
+  box-shadow: 0 0 0 #7a7a7a;
 }
 
 [data-theme='mono'] .btn-danger {
-  border-color: var(--red);
-  color: var(--red);
-  background: transparent;
+  background: #5a5a5a;
+  color: #ffffff;
+  box-shadow: 0 4px 0 #1e1e1e;
 }
 
 [data-theme='mono'] .btn-danger:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: var(--red);
+  background: #6a6a6a;
 }
 
-[data-theme='mono'] .btn-ghost {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--muted);
-}
-
-[data-theme='mono'] .btn-ghost:hover:not(:disabled) {
-  border-color: var(--muted);
-  background: var(--control);
-  color: var(--text);
+[data-theme='mono'] .btn-danger:active:not(:disabled) {
+  box-shadow: 0 0 0 #1e1e1e;
 }
 
 [data-theme='mono'] .chip {
@@ -284,7 +283,7 @@
 
 [data-theme='mono'] .game-overlay .panel {
   border-color: var(--amber);
-  box-shadow: 8px 8px 0 #2e2e2e;
+  box-shadow: none;
 }
 
 [data-theme='mono'] .game-hint,

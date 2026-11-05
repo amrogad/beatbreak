@@ -184,8 +184,8 @@ export function SettingsScreen({
           <Slider
             label="Arrow size"
             value={settings.noteScale}
-            min={0.8}
-            max={1.7}
+            min={0.6}
+            max={1.3}
             step={0.05}
             onChange={(value) => onUpdate({ noteScale: value })}
             format={(value) => `${Math.round(value * 100)}%`}
