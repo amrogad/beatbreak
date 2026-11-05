@@ -125,6 +125,8 @@ export const COLUMN_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d']
 /** Picked from at random, four at a time, when arrow colours are shuffled. */
 const SHUFFLE_COLORS = ['#ff4f9a', '#3d9bff', '#3fe08a', '#ffc93d', '#b35cff', '#ff7a3d', '#3de9ff', '#9dff3d']
 const MONO_WHITE = '#f4f4f4'
+/** The light beam up a pressed lane. */
+const LANE_BEAM = false
 
 interface JudgeStyle {
   fill: string
@@ -603,8 +605,9 @@ export class PlayfieldRenderer {
     rail(laneAreaX - gap - 2, mono ? palette.accent : this.railColors[0])
     rail(laneAreaX + laneAreaW + gap, mono ? palette.accent2 : this.railColors[1])
 
-    // A beam shoots up the lane from a pressed receptor and fades after release.
-    if (this.settings.reducedMotion) return
+    // A beam shoots up the lane from a pressed receptor and fades after release. Switched off
+    // for now (Amro, 2026-11-06: "disable the long glow on the top arrows for a sec").
+    if (!LANE_BEAM || this.settings.reducedMotion) return
     for (let lane = 0; lane < 4; lane++) {
       const held = this.laneHeld[lane]
       const fade = held ? 1 : Math.max(0, 1 - (this.nowMs - this.releaseAt[lane]) / 180)
@@ -736,7 +739,7 @@ export class PlayfieldRenderer {
     lane: Lane,
   ): void {
     const ctx = this.ctx
-    if (this.settings.holdStyle === 'stretch' && this.settings.noteShape === 'arrow') {
+    if (this.settings.holdStyle === 'stretch') {
       this.drawStretchedArrow(cx, headY, tailY, noteH, color, state, life, lane)
       return
     }
@@ -804,7 +807,7 @@ export class PlayfieldRenderer {
     const half = noteH / 2
     const cos = Math.cos(LANE_ANGLE[lane])
     const sin = Math.sin(LANE_ANGLE[lane])
-    const shape = ARROW_POINTS.map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
+    const shape = shapePoints(this.settings.noteShape).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
     const tailSide = (y: number): boolean => (y - headY) * towardTail > 1e-6
     const shift = (x: number, y: number): [number, number] => [x, tailSide(y) ? y + towardTail * length : y]
     const path = new Path2D()
@@ -1296,9 +1299,9 @@ function shuffledColors(): string[] {
 const ARROW_POINTS: [number, number][] = [[-0.94, -0.3], [0.02, -0.3], [0.02, -0.9], [0.96, 0], [0.02, 0.9], [0.02, 0.3], [-0.94, 0.3]]
 
 /** The arrow (or skin shape) traced around a centre point, rotated for its lane. */
-function tracePath(shape: NoteShape, size: number, angle: number, center: number): Path2D {
+/** A skin's outline as unit points around 0, pointing right (the orb as a 24-sided circle). */
+function shapePoints(shape: NoteShape): [number, number][] {
   const points: [number, number][] = []
-  const s = size / 2
   if (shape === 'arrow' || shape === 'bar') {
     // A chunky arcade arrow pointing right, filling the square tile.
     points.push(...ARROW_POINTS)
@@ -1317,7 +1320,18 @@ function tracePath(shape: NoteShape, size: number, angle: number, center: number
       const a = (i * Math.PI) / 3
       points.push([Math.cos(a) * 0.94, Math.sin(a) * 0.94])
     }
+  } else {
+    for (let i = 0; i < 24; i++) {
+      const a = (i * Math.PI) / 12
+      points.push([Math.cos(a) * 0.9, Math.sin(a) * 0.9])
+    }
   }
+  return points
+}
+
+function tracePath(shape: NoteShape, size: number, angle: number, center: number): Path2D {
+  const points = shapePoints(shape)
+  const s = size / 2
   const path = new Path2D()
   if (shape === 'orb') {
     path.arc(center, center, s * 0.9, 0, Math.PI * 2)
