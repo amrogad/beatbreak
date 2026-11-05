@@ -184,7 +184,8 @@ export function sanitizeSettings(input: unknown): Settings {
     raw.noteShape === 'diamond' ||
     raw.noteShape === 'orb' ||
     raw.noteShape === 'star' ||
-    raw.noteShape === 'hex'
+    raw.noteShape === 'hex' ||
+    raw.noteShape === 'tile'
       ? raw.noteShape
       : 'arrow'
   const scrollDirection: ScrollDirection = raw.scrollDirection === 'down' ? 'down' : 'up'
@@ -231,10 +232,19 @@ export function sanitizeSettings(input: unknown): Settings {
   }
 }
 
+/**
+ * Phones and tablets start the other way up: piano tiles falling to targets at the bottom, where
+ * thumbs are. Only for a first visit; a saved choice always wins.
+ */
+function touchDefaults(): Partial<Settings> {
+  const touch = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+  return touch ? { scrollDirection: 'down', noteShape: 'tile' } : {}
+}
+
 export function loadSettings(): Settings {
   try {
     const text = localStorage.getItem(STORAGE_KEY)
-    if (!text) return { ...DEFAULT_SETTINGS }
+    if (!text) return { ...DEFAULT_SETTINGS, ...touchDefaults() }
     const parsed = JSON.parse(text) as Partial<Settings> & { schema?: number }
     if ((parsed.schema ?? 1) < SETTINGS_SCHEMA) {
       // v5: terminal was the app's default, not a choice the player made. Move it to disco;

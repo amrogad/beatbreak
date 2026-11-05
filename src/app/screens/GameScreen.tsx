@@ -427,6 +427,7 @@ export function GameScreen({
     detachTouchRef.current = attachTouchLanes(canvas, {
       onLaneDown: (lane, eventTimeMs) => pressLane(lane, eventTimeMs),
       onLaneUp: (lane, eventTimeMs) => releaseLane(lane, eventTimeMs),
+      laneAt: (x) => rendererRef.current?.laneAt(x) ?? null,
     })
 
     // Audio must never keep playing in a background tab: hiding the tab pauses the run.

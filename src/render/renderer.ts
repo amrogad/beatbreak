@@ -21,7 +21,7 @@ import { ParticleSystem } from './particles'
 
 export type LaneStyle = 'neon' | 'classic' | 'minimal'
 /** Note skin: the thick default arrow, a vector chevron, a diamond, or a plain bar. */
-export type NoteShape = 'arrow' | 'chevron' | 'diamond' | 'orb' | 'star' | 'hex' | 'bar'
+export type NoteShape = 'arrow' | 'chevron' | 'diamond' | 'orb' | 'star' | 'hex' | 'bar' | 'tile'
 /** 'up' = arcade layout (targets at the top, arrows rise); 'down' = classic falling arrows. */
 export type ScrollDirection = 'up' | 'down'
 /** Whole-app skin: the colour arcade, or a pitch-black room lit only in white. */
@@ -303,6 +303,16 @@ export class PlayfieldRenderer {
     this.spritesWarm = true
   }
 
+  /** Which column a screen x position (CSS pixels from the canvas's left edge) falls in. */
+  laneAt(x: number): Lane | null {
+    const { laneAreaX, laneAreaW } = this.layout()
+    // A little slack outside the outer columns so a thumb on the edge still counts.
+    const slack = laneAreaW * 0.12
+    if (x < laneAreaX - slack || x > laneAreaX + laneAreaW + slack) return null
+    const lane = Math.floor(((x - laneAreaX) / laneAreaW) * 4)
+    return Math.max(0, Math.min(3, lane)) as Lane
+  }
+
   /** The colour every arrow, target and glow in a column uses. */
   private columnColor(lane: number): string {
     return this.settings.theme === 'mono' ? MONO_WHITE : this.columnColors[lane]
@@ -394,7 +404,12 @@ export class PlayfieldRenderer {
     const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}`
     const cached = this.layoutCache
     if (cached && this.layoutKey === key) return cached
-    const laneAreaW = this.preview ? this.width * 0.84 : Math.max(180, Math.min(this.width * 0.72, 460))
+    // Phones use nearly the full width: thumbs need big targets more than they need margins.
+    const laneAreaW = this.preview
+      ? this.width * 0.84
+      : this.width < 600
+        ? this.width * 0.92
+        : Math.max(180, Math.min(this.width * 0.72, 460))
     const laneW = laneAreaW / 4
     const laneAreaX = (this.width - laneAreaW) / 2
     const direction: 1 | -1 = this.settings.scrollDirection === 'down' ? -1 : 1
@@ -718,8 +733,9 @@ export class PlayfieldRenderer {
     if (length < 1) return
     const towardTail = tailY >= headY ? 1 : -1
     const half = noteH / 2
-    const cos = Math.cos(LANE_ANGLE[lane])
-    const sin = Math.sin(LANE_ANGLE[lane])
+    const turn = this.settings.noteShape === 'tile' ? 0 : LANE_ANGLE[lane]
+    const cos = Math.cos(turn)
+    const sin = Math.sin(turn)
     const shape = shapePoints(this.settings.noteShape).map(([px, py]) => [cx + (px * cos - py * sin) * half, headY + (px * sin + py * cos) * half])
     const tailSide = (y: number): boolean => (y - headY) * towardTail > 1e-6
     const shift = (x: number, y: number): [number, number] => [x, tailSide(y) ? y + towardTail * length : y]
@@ -830,7 +846,8 @@ export class PlayfieldRenderer {
     const ctx = canvas.getContext('2d')!
     ctx.scale(scale, scale)
     const c = box / 2
-    const angle = LANE_ANGLE[lane]
+    // Piano tiles are the same block in every column; everything else points its lane's way.
+    const angle = shape === 'tile' ? 0 : LANE_ANGLE[lane]
     const path = tracePath(shape, size, angle, c)
     ctx.lineJoin = 'round'
     if (kind === 'note') {
@@ -1218,6 +1235,9 @@ function shapePoints(shape: NoteShape): [number, number][] {
   if (shape === 'arrow' || shape === 'bar') {
     // A chunky arcade arrow pointing right, filling the square tile.
     points.push(...ARROW_POINTS)
+  } else if (shape === 'tile') {
+    // A piano tile: a wide block nearly as wide as its column, the touch-screen look.
+    points.push([-1.08, -0.95], [1.08, -0.95], [1.08, 0.95], [-1.08, 0.95])
   } else if (shape === 'chevron') {
     points.push([-0.85, -0.92], [0.95, 0], [-0.85, 0.92], [-0.3, 0])
   } else if (shape === 'diamond') {

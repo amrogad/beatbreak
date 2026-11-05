@@ -225,12 +225,18 @@ export class InputRouter {
  */
 export function attachTouchLanes(
   element: HTMLElement,
-  handlers: { onLaneDown: (lane: Lane, eventTimeMs: number) => void; onLaneUp?: (lane: Lane, eventTimeMs: number) => void },
+  handlers: {
+    onLaneDown: (lane: Lane, eventTimeMs: number) => void
+    onLaneUp?: (lane: Lane, eventTimeMs: number) => void
+    /** Map an x position (pixels from the element's left) to a column; defaults to equal quarters. */
+    laneAt?: (x: number) => Lane | null
+  },
 ): () => void {
   const active = new Map<number, Lane>()
   const laneFromEvent = (event: PointerEvent): Lane | null => {
     const rect = element.getBoundingClientRect()
     if (rect.width <= 0) return null
+    if (handlers.laneAt) return handlers.laneAt(event.clientX - rect.left)
     const relative = (event.clientX - rect.left) / rect.width
     if (relative < 0 || relative > 1) return null
     const lane = Math.floor(relative * 4)
