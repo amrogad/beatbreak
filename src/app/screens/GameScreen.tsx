@@ -105,6 +105,9 @@ export function GameScreen({
   const finishedRef = useRef(false)
   const failedRef = useRef(false)
   const runCompleteRef = useRef(false)
+  /** The audio window has finished playing; the judge clock runs on until the last window closes. */
+  const audioEndedRef = useRef(false)
+  const finishRunRef = useRef<() => void>(() => undefined)
   const pausedRef = useRef(false)
   const judgingRef = useRef(false)
   const countdownStartRef = useRef(0)
@@ -170,6 +173,12 @@ export function GameScreen({
 
   const pause = useCallback(() => {
     if (finishedRef.current || pausedRef.current) return
+    // Every note is already judged and only the outro is playing: Esc (or a hidden tab) means
+    // "I'm done", so the run is saved and the results open instead of a pause menu.
+    if (runCompleteRef.current && !failedRef.current) {
+      finishRunRef.current()
+      return
+    }
     // Freeze the countdown too, not just the audio. Otherwise pausing before the first note and
     // resuming a moment later starts the song mid-countdown with no run-up.
     if (!engagingRef.current && performance.now() - countdownStartRef.current < COUNTDOWN_MS + leadInRef.current) {
@@ -191,6 +200,8 @@ export function GameScreen({
       countdownStartRef.current += performance.now() - countdownPausedAtRef.current
       countdownPausedAtRef.current = null
     }
+    // Inside the click: the one moment a browser always lets a suspended context start again.
+    void resumeAudioContext()
     engineRef.current?.resume()
     pausedRef.current = false
     judgingRef.current = true
@@ -244,6 +255,7 @@ export function GameScreen({
       window.setTimeout(() => onFinishRef.current(results), failed ? 750 : 1900),
     )
   }, [chart.difficulty, chart.id, song.id])
+  finishRunRef.current = finishRun
 
   const restart = useCallback(() => {
     const session = sessionRef.current
@@ -255,6 +267,7 @@ export function GameScreen({
     finishedRef.current = false
     failedRef.current = false
     runCompleteRef.current = false
+    audioEndedRef.current = false
     pausedRef.current = false
     judgingRef.current = false
     engagingRef.current = false
@@ -409,13 +422,11 @@ export function GameScreen({
         // The run ends at the window end, not the file end: a trimmed tail must not score misses.
         // The song is over at this point, so any arrow that was never reached is a miss — the
         // failure path is different: it stops where the rule was met and leaves the rest unplayed.
+        // The audio has been rendered to the end, but the player hears it a little later and the
+        // last notes and hold tails still have their windows open: the loop finishes the run once
+        // the judge clock is past the window end (see below).
         onEnded: () => {
-          const active = sessionRef.current
-          if (!active) return
-          // If the audio window ends before every note was reached, the rest are misses. A run
-          // that already cleared the chart keeps its score and simply waits for this moment.
-          if (!active.isFinished) active.forfeit()
-          if (runCompleteRef.current || active.isFinished) finishRun()
+          audioEndedRef.current = true
         },
       })
       engineRef.current = engine
@@ -491,6 +502,15 @@ export function GameScreen({
         failedRef.current = true
         sfxFail()
         activeSession.forfeit(judgeMs)
+      }
+      // The audio is over: once the judge clock is past the window end plus the widest window
+      // (a release in let-go mode is 1.5x), anything never reached is a miss and the run ends.
+      if (audioEndedRef.current && !finishedRef.current && !failedRef.current) {
+        const closeMs = playPlan.windowEnd * 1000 + activeSession.windows.missAfter * 1.5 + 50
+        if (judgeMs >= closeMs) {
+          if (!activeSession.isFinished) activeSession.forfeit(judgeMs)
+          finishRun()
+        }
       }
       // The chart can complete before the audio window does (especially with a whole-song ending
       // or a long outro). Keep drawing and let the music play until the window really ends.
@@ -609,6 +629,13 @@ export function GameScreen({
     }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)
+    // A phone call, Siri or a Bluetooth switch can stop the audio clock under a running song: the
+    // picture would freeze with no menu. Pause instead, so Resume restarts the audio.
+    const audioContext = getAudioContext()
+    const onAudioState = (): void => {
+      if (audioContext.state !== 'running' && engineRef.current?.isPlaying && !pausedRef.current) pause()
+    }
+    audioContext.addEventListener('statechange', onAudioState)
 
     return () => {
       disposed = true
@@ -618,6 +645,7 @@ export function GameScreen({
       cancelAnimationFrame(rafRef.current)
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur', onBlur)
+      audioContext.removeEventListener('statechange', onAudioState)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointerup', onPointerUp)

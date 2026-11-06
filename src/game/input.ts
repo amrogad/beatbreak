@@ -176,7 +176,10 @@ export class InputRouter {
     const code = event.code || event.key
     const controls = this.options.controls ?? CONTROL_DEFAULTS
     const enabled = this.options.enabled?.() ?? true
-    const isControl = controls.pause.includes(code) || controls.restart.includes(code) || controls.fullscreen.includes(code)
+    // A key the player put on a lane is a lane key: D F J K must not toggle fullscreen on F, and a
+    // lane on R must not restart the run. Pause (Escape) cannot be put on a lane.
+    const laneFirst = laneForKey(code, this.options.keyMap) !== null && !controls.pause.includes(code)
+    const isControl = !laneFirst && (controls.pause.includes(code) || controls.restart.includes(code) || controls.fullscreen.includes(code))
     if (isControl && event.repeat) {
       event.preventDefault()
       return
@@ -187,13 +190,13 @@ export class InputRouter {
       this.handlers.onPause?.(event.timeStamp)
       return
     }
-    if (controls.restart.includes(code)) {
+    if (controls.restart.includes(code) && !laneFirst) {
       if (!enabled) return
       event.preventDefault()
       this.handlers.onRestart?.()
       return
     }
-    if (controls.fullscreen.includes(code)) {
+    if (controls.fullscreen.includes(code) && !laneFirst) {
       event.preventDefault()
       this.handlers.onFullscreen?.()
       return

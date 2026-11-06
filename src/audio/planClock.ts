@@ -85,6 +85,21 @@ export class PlanClock {
     return last.origEnd
   }
 
+  /**
+   * Like `songTimeAt`, but runs on before the first segment and after the last one instead of
+   * holding still. The judge clock maps a moment shifted by latency and calibration, which can sit
+   * before the start or past the end while the audio is already (or still) playing.
+   */
+  songTimeAtUnclamped(ctxNow: number): number {
+    const segments = this.segments
+    if (segments.length === 0) return this.fallbackOrig
+    const first = segments[0]
+    if (ctxNow < first.ctxStart) return first.origStart - (first.ctxStart - ctxNow)
+    const last = segments[segments.length - 1]
+    if (ctxNow >= last.ctxEnd) return last.origEnd + (ctxNow - last.ctxEnd)
+    return this.songTimeAt(ctxNow)
+  }
+
   /** Edited-timeline position (continuous, counts only played audio). */
   planTimeAt(ctxNow: number): number {
     const segments = this.segments

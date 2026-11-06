@@ -50,9 +50,14 @@ export function getAudioContext(): AudioContext {
   return sharedContext
 }
 
+/**
+ * Wake the shared context. iOS also leaves it 'interrupted' after a call, Siri or the lock screen,
+ * and a refused resume can hang, so this never waits more than a couple of seconds.
+ */
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext()
-  if (ctx.state === 'suspended') await ctx.resume()
+  if (ctx.state === 'running' || ctx.state === 'closed') return
+  await Promise.race([ctx.resume().catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 2500))])
 }
 
 /**
@@ -176,6 +181,8 @@ export class AudioEngine {
   private offsetMs: number
   /** Output latency estimate, sampled once per `play` so judged timing cannot jitter. */
   private latencySeconds = 0
+  /** Judge time at the moment playback was asked to start (see `judgeTime`). */
+  private judgeFloor = -Infinity
   private onEnded?: () => void
   private endCheckTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -226,9 +233,18 @@ export class AudioEngine {
     return this.clock.songTimeAt(this.ctx.currentTime)
   }
 
-  /** Song time used for judgement: what the player hears, minus their calibration offset. */
+  /**
+   * Song time used for judgement: what the player hears, minus their calibration offset. The
+   * shift is applied on the audio clock before mapping to the song, so across a cut the judge
+   * clock jumps when the player hears the join, not when the graph renders it. After the audio
+   * has ended it keeps running, so the last notes and hold tails are still judged.
+   */
   get judgeTime(): number {
-    return this.songTime - this.outputLatency - this.offsetMs / 1000
+    if (this.disposed) return 0
+    const shift = this.outputLatency + this.offsetMs / 1000
+    // During the scheduling lookahead nothing sounds yet: hold at the start instead of stepping back.
+    if (this.playing || this.ended) return Math.max(this.judgeFloor, this.clock.songTimeAtUnclamped(this.ctx.currentTime - shift))
+    return this.pausedAt - shift
   }
 
   /** Device output latency, sampled when playback starts so it cannot jitter mid-run. */
@@ -267,6 +283,7 @@ export class AudioEngine {
     if (playback.segments.length === 0) return
     this.plan = playback
     const start = snapIntoPlayback(playback, fromSeconds)
+    this.judgeFloor = start - this.latencySeconds - this.offsetMs / 1000
     // A short lookahead keeps the scheduling jitter of the main thread out of the audio path.
     const when = this.ctx.currentTime + 0.03
     const startPb = planTimeForSongTime(playback, start)

@@ -64,6 +64,13 @@ describe('PlanClock', () => {
     expect(clock.songTimeAt(110)).toBeCloseTo(24, 9) // clamped to the end
   })
 
+  it('runs on past both ends for the shifted judge clock, and still jumps at the cut', () => {
+    expect(clock.songTimeAtUnclamped(99.97)).toBeCloseTo(9.97, 9)
+    expect(clock.songTimeAtUnclamped(104.97)).toBeCloseTo(14.97, 9)
+    expect(clock.songTimeAtUnclamped(105.01)).toBeCloseTo(20.01, 9)
+    expect(clock.songTimeAtUnclamped(109.5)).toBeCloseTo(24.5, 9)
+  })
+
   it('reports a continuous edited-timeline position', () => {
     expect(clock.planTimeAt(102)).toBeCloseTo(2, 9)
     expect(clock.planTimeAt(105)).toBeCloseTo(5, 9)
