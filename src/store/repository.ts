@@ -139,8 +139,8 @@ export async function listRuns(songId?: string): Promise<StoredRun[]> {
   return runs.sort((a, b) => b.createdAt - a.createdAt)
 }
 
-export async function bestRunFor(songId: string, difficulty: Difficulty): Promise<StoredRun | undefined> {
-  const runs = (await listRuns(songId)).filter((run) => run.difficulty === difficulty && !run.failed)
+export async function bestRunFor(songId: string, difficulty: Difficulty, mode: 'arrows' | 'circles' = 'arrows'): Promise<StoredRun | undefined> {
+  const runs = (await listRuns(songId)).filter((run) => run.difficulty === difficulty && !run.failed && (run.mode ?? 'arrows') === mode)
   let best: StoredRun | undefined
   for (const run of runs) {
     if (!best || run.score > best.score) best = run

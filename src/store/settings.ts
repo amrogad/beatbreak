@@ -70,7 +70,11 @@ export interface Settings {
   audioOffsetMs: number
   /** Where song progress shows in a run. */
   progressStyle: 'top' | 'column' | 'text'
+  /** Arrows in lanes, or circles to click or tap on a field. */
+  playMode: PlayMode
 }
+
+export type PlayMode = 'arrows' | 'circles'
 
 export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
@@ -105,6 +109,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // after the beat is heard. 20 ms earlier makes up for a typical monitor; players fine-tune it.
   audioOffsetMs: 0,
   progressStyle: 'top',
+  playMode: 'arrows',
 }
 
 const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -248,6 +253,7 @@ export function sanitizeSettings(input: unknown): Settings {
         : 'auto',
     audioOffsetMs: Math.round(clamp(raw.audioOffsetMs, -250, 250, DEFAULT_SETTINGS.audioOffsetMs)),
     progressStyle: raw.progressStyle === 'column' || raw.progressStyle === 'text' ? raw.progressStyle : 'top',
+    playMode: raw.playMode === 'circles' ? 'circles' : 'arrows',
   }
 }
 

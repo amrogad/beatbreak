@@ -87,7 +87,7 @@ function AppShell(): React.JSX.Element {
 
   const refreshLibrary = useCallback(async () => {
     try {
-      const [nextSongs, nextBest] = await Promise.all([listSongs(), loadBestScores()])
+      const [nextSongs, nextBest] = await Promise.all([listSongs(), loadBestScores(settings.playMode)])
       setSongs(nextSongs)
       setBestScores(nextBest)
     } catch (error) {
@@ -95,7 +95,7 @@ function AppShell(): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, settings.playMode])
 
   useEffect(() => {
     void refreshLibrary()
@@ -265,7 +265,7 @@ function AppShell(): React.JSX.Element {
       let isNewBest = false
       let history: StoredRun[] = []
       try {
-        previousBest = (await bestRunFor(results.songId, results.difficulty)) ?? null
+        previousBest = (await bestRunFor(results.songId, results.difficulty, results.mode ?? 'arrows')) ?? null
         if (!results.autoPlay) {
           isNewBest = !results.failed && results.score > 0 && (!previousBest || results.score > previousBest.score)
           await saveRun({
@@ -275,7 +275,7 @@ function AppShell(): React.JSX.Element {
             results,
           })
           await updateSong(results.songId, { lastPlayedAt: Date.now() })
-          history = (await listRuns(results.songId)).filter((run) => run.chartId === results.chartId).slice(0, 5)
+          history = (await listRuns(results.songId)).filter((run) => run.chartId === results.chartId && run.mode === results.mode).slice(0, 5)
           await refreshLibrary()
         }
       } catch (error) {

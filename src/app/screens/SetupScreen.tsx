@@ -27,8 +27,9 @@ import { removeFromTrim, removedParts, snapTrimRange, type TrimPlan, type TrimRa
 import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
+import { placeCircles } from '../../chart/circles'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
-import { BackButton, Button, Modal, Panel, ProgressBar, Slider, Spinner } from '../components'
+import { BackButton, Button, Choice, Modal, Panel, ProgressBar, Slider, Spinner } from '../components'
 import { TrimEditor } from '../TrimEditor'
 import { SYNC_HINT, formatDuration, formatPercent, formatSync } from '../format'
 import type { BestScores } from './bestScores'
@@ -64,6 +65,13 @@ const DIFFICULTY_COPY: Record<Difficulty, string> = {
   normal: 'A steady single-arrow stream, still easy to read.',
   hard: 'Faster runs, with occasional two-arrow jumps.',
   expert: 'The full chart, including rare three- and four-arrow accents.',
+}
+
+const CIRCLE_COPY: Record<Difficulty, string> = {
+  easy: 'Slow rings, evenly spaced, on the beat.',
+  normal: 'A steady flow with sliders, no jumps.',
+  hard: 'Quicker runs and jumps on the big beats.',
+  expert: 'Fast rings, wide jumps and short bursts.',
 }
 
 const DIFFICULTY_ORDER: Difficulty[] = [...DIFFICULTIES]
@@ -108,6 +116,17 @@ export function SetupScreen({
   }, [onBundleReady])
 
   const charts = bundle?.charts ?? []
+  const circleMode = settings.playMode === 'circles'
+  // Circle counts come from the real placement: chords become one circle, some pairs one slider.
+  const circleCounts = useMemo(() => {
+    if (!circleMode) return null
+    const counts = new Map<string, { circles: number; sliders: number }>()
+    for (const chart of bundle?.charts ?? []) {
+      const objects = placeCircles(chart).objects
+      counts.set(chart.id, { circles: objects.length, sliders: objects.filter((o) => o.kind === 'slider').length })
+    }
+    return counts
+  }, [circleMode, bundle?.charts])
   const duration = bundle?.meta.duration ?? 0
   const analysis = bundle?.analysis ?? null
 
@@ -506,7 +525,17 @@ export function SetupScreen({
       )}
 
       <Panel title="Choose a difficulty">
-        <div className="difficulty-grid" role="radiogroup" aria-label="Difficulty">
+        <Choice
+          label="Mode"
+          value={settings.playMode}
+          options={[
+            { value: 'arrows', label: 'Arrows' },
+            { value: 'circles', label: 'Circles' },
+          ]}
+          onChange={(value) => onUpdateSettings({ playMode: value })}
+          hint={settings.playMode === 'circles' ? 'Click or tap circles on a field, same rhythm as the arrows.' : 'Arrows rise up four lanes; hit the matching key.'}
+        />
+        <div className="difficulty-grid mt-12" role="radiogroup" aria-label="Difficulty">
           {DIFFICULTY_ORDER.map((item) => {
             const chart = charts.find((candidate) => candidate.difficulty === item)
             const best = scores?.[item]
@@ -526,10 +555,13 @@ export function SetupScreen({
                   <span className="difficulty-name">{DIFFICULTY_LABEL[item]}</span>
                   {recommended === item && <span className="badge badge-recommended">Recommended</span>}
                 </span>
-                <span className="difficulty-copy">{DIFFICULTY_COPY[item]}</span>
+                <span className="difficulty-copy">{(circleMode ? CIRCLE_COPY : DIFFICULTY_COPY)[item]}</span>
                 <span className="difficulty-meta">
-                  {chart ? `${chart.stats.noteCount.toLocaleString('en-US')} arrows` : 'Not available'}
-                  {holds > 0 ? ` - ${holds} holds` : ''}
+                  {!chart
+                    ? 'Not available'
+                    : circleCounts
+                      ? `${(circleCounts.get(chart.id)?.circles ?? 0).toLocaleString('en-US')} circles - ${circleCounts.get(chart.id)?.sliders ?? 0} sliders`
+                      : `${chart.stats.noteCount.toLocaleString('en-US')} arrows${holds > 0 ? ` - ${holds} holds` : ''}`}
                 </span>
                 <span className="difficulty-best">
                   {best
@@ -668,3 +700,4 @@ export function SetupScreen({
     </div>
   )
 }
+

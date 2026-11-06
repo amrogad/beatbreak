@@ -13,10 +13,11 @@ export interface BestScoreEntry {
 export type BestScores = Record<string, Partial<Record<Difficulty, BestScoreEntry>>>
 
 /** One pass over the score store: best finished score per song and difficulty. */
-export async function loadBestScores(): Promise<BestScores> {
+export async function loadBestScores(mode: 'arrows' | 'circles' = 'arrows'): Promise<BestScores> {
   const runs = await listRuns()
   const best: BestScores = {}
   for (const run of runs) {
+    if ((run.mode ?? 'arrows') !== mode) continue
     // Only finished songs count: a failed or empty run is not a high score.
     if (run.failed || run.score <= 0) continue
     const perSong = (best[run.songId] ??= {})

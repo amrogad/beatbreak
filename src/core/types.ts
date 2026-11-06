@@ -343,6 +343,8 @@ export interface RunResults {
   meanTimingMs?: number
   /** Holds released too early during the run. Absent on old records. */
   droppedHolds?: number
+  /** Played in circle mode; absent means arrows. Each mode keeps its own best scores. */
+  mode?: 'circles'
   /** True when this run was played in auto-play (verify) mode, so it is not a real score. */
   autoPlay?: boolean
 }

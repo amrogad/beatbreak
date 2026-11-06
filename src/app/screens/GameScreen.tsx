@@ -16,6 +16,8 @@ import { AudioEngine, estimateOutputLatency, getAudioContext, resumeAudioContext
 import { buildEditPlan, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
+import { CircleSession } from '../../game/circleSession'
+import { placeCircles } from '../../chart/circles'
 import { compensateInputLatency, windowsForDifficulty } from '../../game/judgment'
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
@@ -56,7 +58,7 @@ export function GameScreen({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<PlayfieldRenderer | null>(null)
   const engineRef = useRef<AudioEngine | null>(null)
-  const sessionRef = useRef<GameSession | null>(null)
+  const sessionRef = useRef<GameSession | CircleSession | null>(null)
   const routerRef = useRef<InputRouter | null>(null)
   const detachTouchRef = useRef<(() => void) | null>(null)
   const rafRef = useRef(0)
@@ -74,6 +76,9 @@ export function GameScreen({
   const onFinishRef = useRef(onFinish)
 
   const [paused, setPaused] = useState(false)
+  // The mode is fixed for the run; changing it in Settings applies to the next one.
+  const [circleMode] = useState(() => settings.playMode === 'circles')
+  const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart) : null), [circleMode, sourceChart])
   const [hud, setHud] = useState({ score: 0, combo: 0, accuracy: 1, judged: 0 })
   // Long arrows off: every hold plays as a plain tap at its start.
   const chart = useMemo(
@@ -98,8 +103,9 @@ export function GameScreen({
   // here would rebuild the whole run (the volume slider in the pause menu used to do that).
   const customWindowsKey = JSON.stringify(settings.customWindows)
   const windows = useMemo(
-    () => windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows, settings.timing === 'phone'),
-    [settings.windowPreset, customWindowsKey, chart.difficulty, settings.timing],
+    // Circles ask for aim as well as timing, so they get the wider phone windows everywhere.
+    () => windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows, settings.timing === 'phone' || circleMode),
+    [settings.windowPreset, customWindowsKey, chart.difficulty, settings.timing, circleMode],
   )
 
   /**
@@ -186,6 +192,7 @@ export function GameScreen({
       meanTimingMs: session.meanTimingMs,
       droppedHolds: state.droppedHolds,
       autoPlay: session.isAutoPlay,
+      ...(session instanceof CircleSession ? { mode: 'circles' as const } : {}),
     }
     // Let the outro breathe: fade the music instead of cutting it the instant the last arrow is
     // judged, then switch to results after the fade has finished. The playfield stays visible (no
@@ -239,6 +246,11 @@ export function GameScreen({
     if (!session || !engine || !judgingRef.current || session.isAutoPlay) return
     const now = performance.now()
     const judgeMs = engine.judgeTime * 1000
+    if (session instanceof CircleSession) {
+      const at = session.pointerPosition
+      session.press(at.x, at.y, compensateInputLatency(eventTimeMs, judgeMs, now))
+      return
+    }
     session.handleTap(lane, compensateInputLatency(eventTimeMs, judgeMs, now))
   }, [])
 
@@ -250,6 +262,7 @@ export function GameScreen({
     // A release while paused still counts: otherwise letting go during the pause menu and not
     // pressing again would complete the hold with full credit.
     if (!session || !engine || finishedRef.current || session.isAutoPlay) return
+    if (session instanceof CircleSession) return
     const now = performance.now()
     // Releasing starts the StepMania hold-life drain (250 ms). Pressing the lane again refills
     // it; if it runs out before the tail the session scores a LetGo (miss).
@@ -284,35 +297,52 @@ export function GameScreen({
       reducedMotion: settingsRef.current.reducedMotion,
     })
     rendererRef.current = renderer
+    renderer.setCircles(circleMap)
     renderer.setChart(buffer.duration, chart)
     renderer.resize()
     const observer = new ResizeObserver(() => renderer.resize())
     observer.observe(canvas)
 
     // Rectangles: a tap counts for as long as the rectangle overlaps its target.
-    const catchMs = renderer.tileCatchMs()
+    const catchMs = circleMap ? 0 : renderer.tileCatchMs()
     const runWindows = catchMs > windows.good ? { ...windows, good: catchMs, missAfter: Math.max(windows.missAfter, catchMs) } : windows
-    const session = new GameSession({
-      chart,
-      windows: runWindows,
-      autoPlay: autoPlayRef.current,
-      holdMode: settingsRef.current.holdMode,
-      tailMs: 900,
-      onJudgment: (event) => {
-        // StepMania plays no hit sounds: the song is the feedback. The renderer's hit particles
-        // and judgment text carry the timing instead.
-        renderer.notify(event, session.scoreState.combo)
-        if (event.judgment === 'miss' && settingsRef.current.missMuffle) engineRef.current?.muffle()
-      },
-      onHoldComplete: (lane) => renderer.holdComplete(lane),
-      onComplete: () => {
-        runCompleteRef.current = true
-        // A failed run stops at the failure and goes to results immediately. A cleared chart
-        // waits for the audio window to finish, so the outro is heard instead of the results
-        // dialog appearing on top of the final chord.
-        if (failedRef.current) finishRun()
-      },
-    })
+    const session: GameSession | CircleSession = circleMap
+      ? new CircleSession({
+          chart: sourceChart,
+          map: circleMap,
+          windows: runWindows,
+          autoPlay: autoPlayRef.current,
+          tailMs: 900,
+          onJudgment: (event) => {
+            renderer.notify(event, 0)
+            if (event.judgment === 'miss' && settingsRef.current.missMuffle) engineRef.current?.muffle()
+          },
+          onComplete: () => {
+            runCompleteRef.current = true
+            if (failedRef.current) finishRun()
+          },
+        })
+      : new GameSession({
+          chart,
+          windows: runWindows,
+          autoPlay: autoPlayRef.current,
+          holdMode: settingsRef.current.holdMode,
+          tailMs: 900,
+          onJudgment: (event) => {
+            // StepMania plays no hit sounds: the song is the feedback. The renderer's hit particles
+            // and judgment text carry the timing instead.
+            renderer.notify(event, session.scoreState.combo)
+            if (event.judgment === 'miss' && settingsRef.current.missMuffle) engineRef.current?.muffle()
+          },
+          onHoldComplete: (lane) => renderer.holdComplete(lane),
+          onComplete: () => {
+            runCompleteRef.current = true
+            // A failed run stops at the failure and goes to results immediately. A cleared chart
+            // waits for the audio window to finish, so the outro is heard instead of the results
+            // dialog appearing on top of the final chord.
+            if (failedRef.current) finishRun()
+          },
+        })
     sessionRef.current = session
 
     const countdownRemaining = (): number => {
@@ -438,11 +468,77 @@ export function GameScreen({
 
     rafRef.current = requestAnimationFrame(loop)
 
+    // Circle mode: the mouse or a finger aims; a button, Z / X, any lane key or the finger itself presses.
+    const held = new Set<string>()
+    const judgeAt = (eventTimeMs: number): number | null => {
+      const engine = engineRef.current
+      if (!engine || !judgingRef.current) return null
+      return compensateInputLatency(eventTimeMs, engine.judgeTime * 1000, performance.now())
+    }
+    const aim = (event: PointerEvent): { x: number; y: number } | null => {
+      const rect = canvas.getBoundingClientRect()
+      const sx = event.clientX - rect.left
+      const sy = event.clientY - rect.top
+      rendererRef.current?.setPointer(sx, sy, event.pointerType !== 'touch')
+      const field = rendererRef.current?.toField(sx, sy)
+      if (field && session instanceof CircleSession) session.move(field.x, field.y)
+      return field ?? null
+    }
+    const letGo = (key: string, eventTimeMs: number): void => {
+      if (!held.delete(key) || held.size > 0 || !(session instanceof CircleSession)) return
+      session.release(judgeAt(eventTimeMs) ?? 0)
+    }
+    const onPointerMove = (event: PointerEvent): void => {
+      aim(event)
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      const field = aim(event)
+      if (!field || !(session instanceof CircleSession) || finishedRef.current || pausedRef.current) return
+      event.preventDefault()
+      held.add(`p${event.pointerId}:${event.button}`)
+      const at = judgeAt(event.timeStamp)
+      if (at === null || session.isAutoPlay) return
+      session.press(field.x, field.y, at)
+    }
+    const onPointerUp = (event: PointerEvent): void => {
+      aim(event)
+      letGo(`p${event.pointerId}:${event.button}`, event.timeStamp)
+    }
+    const onPointerCancel = (event: PointerEvent): void => {
+      for (const key of [...held]) if (key.startsWith(`p${event.pointerId}:`)) letGo(key, event.timeStamp)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.code !== 'KeyZ' && event.code !== 'KeyX') return
+      if (event.type === 'keydown') {
+        if (event.repeat || finishedRef.current || pausedRef.current) return
+        held.add(event.code)
+        pressLane(0, event.timeStamp)
+      } else {
+        letGo(event.code, event.timeStamp)
+      }
+    }
+    const noMenu = (event: Event): void => event.preventDefault()
+    if (circleMap) {
+      canvas.addEventListener('pointermove', onPointerMove)
+      canvas.addEventListener('pointerdown', onPointerDown)
+      window.addEventListener('pointerup', onPointerUp)
+      window.addEventListener('pointercancel', onPointerCancel)
+      canvas.addEventListener('contextmenu', noMenu)
+      window.addEventListener('keydown', onKey)
+      window.addEventListener('keyup', onKey)
+    }
+
     routerRef.current = new InputRouter(
       window,
       {
-        onLaneDown: (lane, eventTimeMs) => pressLane(lane, eventTimeMs),
-        onLaneUp: (lane, eventTimeMs) => releaseLane(lane, eventTimeMs),
+        onLaneDown: (lane, eventTimeMs) => {
+          if (circleMap) held.add(`k${lane}`)
+          pressLane(lane, eventTimeMs)
+        },
+        onLaneUp: (lane, eventTimeMs) => {
+          if (circleMap) letGo(`k${lane}`, eventTimeMs)
+          releaseLane(lane, eventTimeMs)
+        },
         onPause: () => togglePause(),
         onRestart: () => restart(),
         onFullscreen: () => void toggleFullscreen(),
@@ -454,11 +550,13 @@ export function GameScreen({
       },
     )
 
-    detachTouchRef.current = attachTouchLanes(canvas, {
-      onLaneDown: (lane, eventTimeMs) => pressLane(lane, eventTimeMs),
-      onLaneUp: (lane, eventTimeMs) => releaseLane(lane, eventTimeMs),
-      laneAt: (x) => rendererRef.current?.laneAt(x) ?? null,
-    })
+    detachTouchRef.current = circleMap
+      ? null
+      : attachTouchLanes(canvas, {
+          onLaneDown: (lane, eventTimeMs) => pressLane(lane, eventTimeMs),
+          onLaneUp: (lane, eventTimeMs) => releaseLane(lane, eventTimeMs),
+          laneAt: (x) => rendererRef.current?.laneAt(x) ?? null,
+        })
 
     // Audio must never keep playing in a background tab: hiding the tab pauses the run.
     const onVisibility = (): void => {
@@ -480,6 +578,13 @@ export function GameScreen({
       cancelAnimationFrame(rafRef.current)
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur', onBlur)
+      canvas.removeEventListener('pointermove', onPointerMove)
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerCancel)
+      canvas.removeEventListener('contextmenu', noMenu)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKey)
       if (document.fullscreenElement === rootRef.current) void document.exitFullscreen().catch(() => undefined)
       detachTouchRef.current?.()
       detachTouchRef.current = null
@@ -490,7 +595,7 @@ export function GameScreen({
       sessionRef.current = null
       rendererRef.current = null
     }
-  }, [buffer, chart, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.title, toggleFullscreen, togglePause, windows])
+  }, [buffer, chart, circleMap, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.title, sourceChart, toggleFullscreen, togglePause, windows])
 
   /* --------------------------------------------------------- live settings */
 
@@ -524,10 +629,10 @@ export function GameScreen({
   return (
     <div className="game-root" ref={rootRef}>
       <canvas
-        className="game-canvas"
+        className={circleMode ? 'game-canvas circles' : 'game-canvas'}
         ref={canvasRef}
         role="img"
-        aria-label="Rhythm game playfield with four arrow lanes"
+        aria-label={circleMode ? 'Rhythm game field with circles to hit' : 'Rhythm game playfield with four arrow lanes'}
       />
 
       {autoPlay && !paused && (
@@ -602,8 +707,14 @@ export function GameScreen({
 
       <div className="game-hint">
         {autoPlay
-          ? 'Auto-play: watch the arrows play themselves'
-          : touchOnly
+          ? circleMode
+            ? 'Auto-play: watch the circles play themselves'
+            : 'Auto-play: watch the arrows play themselves'
+          : circleMode
+            ? touchOnly
+              ? 'Tap each circle as its ring closes, slide along the long ones'
+              : `Aim with the mouse, click or press Z / X as each ring closes - ${describeKey(settings.controls.pause[0])} pause`
+            : touchOnly
             ? 'Tap each column as its note reaches the target'
             : `${laneKeys(0)} or ${laneKeys(1)} to hit - ${describeKey(settings.controls.pause[0])} pause - ${describeKey(settings.controls.restart[0])} restart`}
       </div>

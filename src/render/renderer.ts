@@ -17,6 +17,9 @@ import type { Chart, ChartNote, HitEvent, Judgment, Lane } from '../core/types'
 import { TimingMap } from '../chart/timing'
 import { JUDGMENT_LABEL } from '../game/judgment'
 import type { GameSession } from '../game/session'
+import { CircleSession } from '../game/circleSession'
+import type { CircleMap } from '../chart/circles'
+import { CircleField } from './circleField'
 import { ParticleSystem } from './particles'
 
 export type LaneStyle = 'neon' | 'classic' | 'minimal'
@@ -260,6 +263,8 @@ export class PlayfieldRenderer {
 
   /** A small demo playfield (the home page): lanes fill the canvas and there is no HUD. */
   private preview: boolean
+  /** Circle mode: the field replaces the lanes; background, HUD and countdown stay. */
+  private circleField: CircleField | null = null
 
   constructor(canvas: HTMLCanvasElement, settings: RenderSettings = DEFAULT_RENDER_SETTINGS, options: { preview?: boolean } = {}) {
     const ctx = canvas.getContext('2d', { alpha: false })
@@ -288,6 +293,7 @@ export class PlayfieldRenderer {
     this.explosion = [null, null, null, null]
     this.lastCombo = 0
     this.missFx = []
+    this.circleField?.reset()
     this.notesById.clear()
     this.columnColors =
       this.settings.arrowColors === 'random' ? shuffledColors() : validColors(this.settings.columnColors)
@@ -320,6 +326,25 @@ export class PlayfieldRenderer {
     }
     this.glowSprite('#ffffff', Math.round(noteH))
     this.spritesWarm = true
+  }
+
+  /** Switch to circle mode with this map, or back to arrows with null. */
+  setCircles(map: CircleMap | null): void {
+    this.circleField = map ? new CircleField(map) : null
+    this.layoutCache = null
+    this.layoutKey = ''
+  }
+
+  /** Screen position (CSS pixels from the canvas corner) to circle field units. */
+  toField(x: number, y: number): { x: number; y: number } | null {
+    if (!this.circleField) return null
+    this.layout()
+    return this.circleField.toField(x, y)
+  }
+
+  /** Where the mouse cursor is drawn; touch hides it. */
+  setPointer(x: number, y: number, visible: boolean): void {
+    this.circleField?.setPointer(x, y, visible)
   }
 
   /** Which column a screen x position (CSS pixels from the canvas's left edge) falls in. */
@@ -367,6 +392,14 @@ export class PlayfieldRenderer {
   notify(event: HitEvent, combo: number): void {
     void combo
     const { lane, judgment } = event
+    if (this.circleField) {
+      const color = judgment === 'miss' ? this.missColor() : this.columnColor(lane)
+      const at = this.circleField.notify(event, color, performance.now())
+      if (!at || judgment === 'miss' || this.settings.reducedMotion || event.noteId.endsWith('#tail')) return
+      const density = this.quality === 2 ? 1 : this.quality === 1 ? 0.6 : 0
+      if (density > 0) this.particles.burst(at.x, at.y, color, { count: Math.round((judgment === 'marvelous' ? 10 : 6) * density), strength: 0.9 })
+      return
+    }
     this.flash = { judgment, lane, deltaMs: event.deltaMs, ageMs: 0, ...(event.holdDrop ? { holdDrop: true } : {}) }
     if (judgment === 'miss') {
       // A miss turns red and fades out where it happened instead of scrolling away (Amro's pick).
@@ -435,7 +468,7 @@ export class PlayfieldRenderer {
 
   private layout(): PlayfieldLayout {
     // Leave room for touch thumbs and for wide monitors: the playfield is a centred column.
-    const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}:${this.settings.noteShape}`
+    const key = `${this.width}x${this.height}:${this.dpr}:${this.settings.scrollSpeed}:${this.settings.noteScale}:${this.settings.scrollDirection}:${this.settings.noteShape}:${this.circleField ? 'c' : 'a'}`
     const cached = this.layoutCache
     if (cached && this.layoutKey === key) return cached
     // Phones use nearly the full width: thumbs need big targets more than they need margins.
@@ -474,6 +507,12 @@ export class PlayfieldRenderer {
       travelSeconds: (travelDistance + noteH) / Math.max(1, pxPerSec),
       direction,
     }
+    if (this.circleField) {
+      // The HUD hugs the circle field the way it hugs the lanes.
+      const rect = this.circleField.layout(this.width, this.height, this.dpr)
+      layout.laneAreaX = rect.x
+      layout.laneAreaW = rect.w
+    }
     this.tileHx = Math.round(((TILE_BASE_HX * fullNote) / Math.max(1, noteH)) * 20) / 20
     this.tileHy = 2 * this.tileHx
     this.layoutCache = layout
@@ -483,7 +522,7 @@ export class PlayfieldRenderer {
 
   /* ------------------------------------------------------------------ frame */
 
-  render(session: GameSession, songTimeMs: number, hud: HudState): void {
+  render(session: GameSession | CircleSession, songTimeMs: number, hud: HudState): void {
     const ctx = this.ctx
     // The backing store is devicePixelRatio-scaled; draw in logical pixels. Setting the transform
     // every frame is a no-op for canvas cost and guarantees correctness after a resize (which
@@ -523,6 +562,21 @@ export class PlayfieldRenderer {
     const beatFrac = beat - Math.floor(beat)
 
     this.drawBackground(songSeconds)
+    if (this.circleField && session instanceof CircleSession) {
+      this.layout()
+      this.circleField.draw(this.circleEnv(), session, songTimeMs, hud.countdownMs === null || hud.countdownMs <= 0 || session.isAutoPlay)
+      if (!reduced && this.quality > 0) this.particles.draw(ctx)
+      this.drawCircleCombo(hud)
+      this.drawHud(hud)
+      this.drawCountdown(hud)
+      return
+    }
+    if (!(session instanceof CircleSession)) this.renderLanes(session, songTimeMs, hud)
+  }
+
+  private renderLanes(session: GameSession, songTimeMs: number, hud: HudState): void {
+    const ctx = this.ctx
+    const reduced = this.settings.reducedMotion
     this.drawLanes()
     this.drawReceptors()
     this.drawNotes(session, songTimeMs)
@@ -1282,7 +1336,40 @@ export class PlayfieldRenderer {
 
   /** How long an arrow takes to travel up to its target: the run-up after the countdown. */
   leadInMs(): number {
+    if (this.circleField) return this.circleField.map.preemptMs
     return this.layout().travelSeconds * 1000
+  }
+
+  private circleEnv() {
+    return {
+      ctx: this.ctx,
+      dpr: this.dpr,
+      nowMs: this.nowMs,
+      mono: this.settings.theme === 'mono',
+      reduced: this.settings.reducedMotion,
+      quality: this.quality,
+      color: (slot: number) => this.columnColor(slot % 4),
+      missColor: this.missColor(),
+      judgeStyle: (judgment: Judgment) => this.judgeStyle(judgment),
+      drawText: (text: string, x: number, y: number, size: number, style: JudgeStyle, glow: boolean) => this.drawText(this.ctx, text, x, y, size, style, glow && this.quality > 0),
+    }
+  }
+
+  /** Circle mode keeps the combo in the bottom-left corner, off the field. */
+  private drawCircleCombo(hud: HudState): void {
+    if (hud.combo < 2) return
+    const sinceBump = this.nowMs - this.comboBumpAt
+    const zoom = this.settings.reducedMotion ? 1 : 1 + (sinceBump < 120 ? 0.12 * (1 - sinceBump / 120) : 0)
+    const style = this.settings.theme === 'mono' ? MONO_JUDGE : comboTier(hud.combo)
+    const text = `${hud.combo}x`
+    const size = this.width < 600 ? 26 : 34
+    const x = 18 + text.length * size * 0.42
+    const y = this.height - size * 0.9
+    this.ctx.save()
+    this.ctx.translate(x, y)
+    this.ctx.scale(zoom, zoom)
+    this.drawText(this.ctx, text, 0, 0, size, style, this.quality > 0, 0.4)
+    this.ctx.restore()
   }
 
   private drawCountdown(hud: HudState): void {
