@@ -144,6 +144,11 @@ function reanalyze(songId: string, buffer: AudioBuffer): Promise<AnalysisResult>
   return job
 }
 
+/** The beat grid charts are built on: the player's correction if there is one, else the analysis. */
+export function beatOf(meta: Pick<SongMeta, 'beatFix' | 'analysis'>): { bpm: number; offset: number } {
+  return meta.beatFix ?? { bpm: meta.analysis.bpm, offset: meta.analysis.offset }
+}
+
 /** Everything the app persists about the analysis (the full result stays in memory only). */
 export function summarizeAnalysis(analysis: AnalysisResult): SongMeta['analysis'] {
   return {
@@ -214,7 +219,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   // Stable id derived from the file identity instead of a clock/random pair. Two different files
   // colliding on all three fields is not realistic; the same file always lands on the same row.
   const songId = existing?.id ?? `song_${hashString(`${file.name}|${file.size}|${file.lastModified}`).toString(36)}`
-  const timing = TimingMap.single(analysis.bpm, analysis.offset)
+  const timing = existing?.beatFix ? TimingMap.single(existing.beatFix.bpm, existing.beatFix.offset) : TimingMap.single(analysis.bpm, analysis.offset)
   const existingCharts = existing && canSave ? await listCharts(existing.id) : []
   const remember = options.rememberAudio ?? true
   const meta = buildSongMeta({ songId, title, artist, file, buffer, analysis, audioCached: remember })
@@ -231,6 +236,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     if (existing.trimEnd !== undefined) meta.trimEnd = existing.trimEnd
     if (existing.trimCuts !== undefined) meta.trimCuts = existing.trimCuts
     if (existing.trimManual) meta.trimManual = true
+    if (existing.beatFix) meta.beatFix = existing.beatFix
   } else {
     // Trim conservatively on the first import: only waveform-verified near-silence at the edges.
     // A quiet intro is never cut just because it is quiet.
@@ -437,7 +443,7 @@ async function loadSongBundleNow(songId: string, options: { requireAudio?: boole
     if (difficulties.length > 0) {
       const regenerated = generateAllDifficulties({
         analysis,
-        timing: TimingMap.single(analysis.bpm, analysis.offset),
+        timing: TimingMap.single(beatOf(meta).bpm, beatOf(meta).offset),
         duration: meta.duration,
         songId: meta.id,
         title: meta.title,

@@ -170,6 +170,8 @@ export interface SongMeta {
    * at bar boundaries and holds/charts are generated to avoid them; the clock jumps the cut.
    */
   trimCuts?: { start: number; end: number }[]
+  /** A tempo or beat line the player corrected on the song screen; wins over the analysis. */
+  beatFix?: { bpm: number; offset: number }
   /** The player set the trim by hand: never replace it with the automatic edge trim. */
   trimManual?: boolean
   analysis: AnalysisSummary

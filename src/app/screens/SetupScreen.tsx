@@ -13,6 +13,7 @@ import type { SongBundle } from '../../store/library'
 import {
   importSongFromFile,
   loadSongBundle,
+  beatOf,
   regenerateCharts,
   setSongTrim,
   titleFromFileName,
@@ -102,6 +103,7 @@ export function SetupScreen({
   const [trimming, setTrimming] = useState(false)
   const [trimHistory, setTrimHistory] = useState<TrimPlan[]>([])
   const [variationBusy, setVariationBusy] = useState(false)
+  const [beatBusy, setBeatBusy] = useState(false)
   const [attaching, setAttaching] = useState(false)
   const analysisClientRef = useRef<AnalysisClient | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -281,8 +283,8 @@ export function SetupScreen({
           duration: updated.duration,
           songId: updated.id,
           title: updated.title,
-          bpm: updated.analysis.bpm,
-          offset: updated.analysis.offset,
+          bpm: beatOf(updated).bpm,
+          offset: beatOf(updated).offset,
           edit: planForMeta(updated),
           existing: bundle.charts,
         })
@@ -296,6 +298,55 @@ export function SetupScreen({
       }
     },
     [adopt, analysis, bundle, onToast, rangeBusy],
+  )
+
+  /** The player's beat fix: half or double tempo, or the beat moved by half a beat. Rebuilds unedited charts. */
+  const fixBeat = useCallback(
+    async (kind: 'half' | 'double' | 'shift' | 'reset') => {
+      if (!bundle || beatBusy) return
+      if (!analysis) {
+        onToast('Re-attach the audio file to change the beat.', 'error')
+        return
+      }
+      const current = beatOf(bundle.meta)
+      const beatFix =
+        kind === 'half'
+          ? { bpm: current.bpm / 2, offset: current.offset }
+          : kind === 'double'
+            ? { bpm: current.bpm * 2, offset: current.offset }
+            : kind === 'shift'
+              ? { bpm: current.bpm, offset: current.offset + 30 / current.bpm }
+              : undefined
+      if (beatFix && (beatFix.bpm < 40 || beatFix.bpm > 320)) {
+        onToast('That tempo is out of range.', 'error')
+        return
+      }
+      setBeatBusy(true)
+      try {
+        const updated = await updateSong(bundle.meta.id, { beatFix })
+        if (!updated) throw new Error('The song is no longer in the library.')
+        const beat = beatOf(updated)
+        const regenerated = await regenerateCharts({
+          analysis,
+          duration: updated.duration,
+          songId: updated.id,
+          title: updated.title,
+          bpm: beat.bpm,
+          offset: beat.offset,
+          edit: planForMeta(updated),
+          salt: updated.chartVariant ?? 0,
+          existing: bundle.charts,
+        })
+        adopt({ ...bundle, meta: updated, charts: regenerated })
+        const kept = bundle.charts.some((chart) => chart.edited) ? ' Charts you edited by hand were kept.' : ''
+        onToast(`${things === 'circles' ? 'Circles' : 'Arrows'} rebuilt at ${Math.round(beat.bpm * 10) / 10} BPM.${kept}`, 'success')
+      } catch (caught) {
+        onToast(caught instanceof Error ? caught.message : String(caught), 'error')
+      } finally {
+        setBeatBusy(false)
+      }
+    },
+    [adopt, analysis, beatBusy, bundle, onToast, things],
   )
 
   const newVariation = useCallback(async (replaceEdited: boolean) => {
@@ -315,8 +366,8 @@ export function SetupScreen({
         duration: updated.duration,
         songId: updated.id,
         title: updated.title,
-        bpm: updated.analysis.bpm,
-        offset: updated.analysis.offset,
+        bpm: beatOf(updated).bpm,
+        offset: beatOf(updated).offset,
         edit: planForMeta(updated),
         salt,
         existing: bundle.charts,
@@ -629,6 +680,33 @@ export function SetupScreen({
             >
               {trimming ? 'Done' : 'Trim'}
             </Button>
+          </div>
+        </div>
+        <div className="row-between wrap gap-12 mt-16">
+          <div>
+            <strong>Beat</strong>
+            <p className="muted small">
+              {Math.round(beatOf(meta).bpm * 10) / 10} BPM{meta.beatFix ? ' (your fix)' : ''}
+              {!meta.beatFix && (meta.analysis.bpmConfidence < 0.45 || meta.analysis.phaseConfidence < 0.45)
+                ? ' - this beat was hard to read. If the arrows feel off the music, try these.'
+                : ''}
+            </p>
+          </div>
+          <div className="row gap-8 wrap">
+            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('half')} title="The arrows run twice as fast as the music">
+              Half
+            </Button>
+            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('double')} title="The arrows run half as fast as the music">
+              Double
+            </Button>
+            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('shift')} title="The arrows sit between the beats">
+              Shift
+            </Button>
+            {meta.beatFix && (
+              <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('reset')} title="Back to the detected beat">
+                Reset
+              </Button>
+            )}
           </div>
         </div>
         {trimming && (
