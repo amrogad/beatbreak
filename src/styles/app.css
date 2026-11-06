@@ -982,3 +982,6 @@ ul.bullets, ol.bullets { margin: 0; padding-left: 18px; display: flex; flex-dire
 .trim-panel { display: flex; flex-direction: column; gap: 10px; }
 .trim-tools { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .trim-tools > .btn { min-width: 72px; }
+
+.calibrate-pad { text-align: center; padding: 24px 0; user-select: none; }
+.calibrate-count { font-family: var(--display); font-size: 56px; line-height: 1; margin: 0 0 8px; }

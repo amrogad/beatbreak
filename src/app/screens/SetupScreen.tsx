@@ -661,8 +661,8 @@ export function SetupScreen({
           <Slider
             label="Audio sync"
             value={settings.audioOffsetMs}
-            min={-150}
-            max={150}
+            min={-250}
+            max={250}
             step={5}
             onChange={(value) => onUpdateSettings({ audioOffsetMs: value })}
             format={formatSync}

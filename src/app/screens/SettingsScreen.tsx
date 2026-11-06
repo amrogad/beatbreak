@@ -14,6 +14,7 @@ import { storageSummary, clearScores, idbAudioClearAndFlag, wipeEverything } fro
 import type { StorageSummary } from '../../store/maintenance'
 import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle } from '../components'
 import { SYNC_HINT, formatBytes, formatPercent, formatSync } from '../format'
+import { CalibrateDialog } from '../Calibrate'
 
 export interface SettingsScreenProps {
   settings: Settings
@@ -70,6 +71,7 @@ export function SettingsScreen({
   // Phones and tablets have no keys to set, so the key panel only shows where there is a keyboard.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 
+  const [calibrating, setCalibrating] = useState(false)
   /** Ask first, then run a destructive storage action and report a failure instead of dropping it. */
   const guarded = async (question: string, action: () => Promise<void>): Promise<void> => {
     if (!window.confirm(question)) return
@@ -325,13 +327,20 @@ export function SettingsScreen({
           <Slider
             label="Audio sync"
             value={settings.audioOffsetMs}
-            min={-150}
-            max={150}
+            min={-250}
+            max={250}
             step={5}
             onChange={(value) => onUpdate({ audioOffsetMs: value })}
             format={formatSync}
             hint={SYNC_HINT}
           />
+          <div>
+            <Button size="sm" onClick={() => setCalibrating(true)}>
+              Calibrate
+            </Button>
+            <p className="muted tiny mt-8">Tap along with a click to set Audio sync for your speakers or headphones.</p>
+          </div>
+          {calibrating && <CalibrateDialog onApply={(value) => onUpdate({ audioOffsetMs: value })} onClose={() => setCalibrating(false)} />}
           <Toggle
             label="Menu music"
             checked={settings.menuMusic}
