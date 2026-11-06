@@ -28,7 +28,7 @@ import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
-import { BackButton, Button, Panel, ProgressBar, Slider, Spinner } from '../components'
+import { BackButton, Button, Modal, Panel, ProgressBar, Slider, Spinner } from '../components'
 import { TrimEditor } from '../TrimEditor'
 import { SYNC_HINT, formatDuration, formatPercent, formatSync } from '../format'
 import type { BestScores } from './bestScores'
@@ -87,7 +87,8 @@ export function SetupScreen({
   const [bundle, setBundle] = useState<SongBundle | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('normal')
   const [title, setTitle] = useState('')
-  const [titleDirty, setTitleDirty] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [askRegenerate, setAskRegenerate] = useState(false)
   const [rangeBusy, setRangeBusy] = useState(false)
   const [selection, setSelection] = useState<TrimRange | null>(null)
   const [trimming, setTrimming] = useState(false)
@@ -226,19 +227,21 @@ export function SetupScreen({
     [bundle],
   )
 
-  const saveDetails = useCallback(async () => {
+  const saveTitle = useCallback(async () => {
+    setRenaming(false)
     if (!bundle) return
-    const updated = await updateSong(bundle.meta.id, {
-      title: title.trim() || bundle.meta.title,
-    })
+    const next = title.trim()
+    if (!next || next === bundle.meta.title) {
+      setTitle(bundle.meta.title)
+      return
+    }
+    const updated = await updateSong(bundle.meta.id, { title: next })
     if (!updated) {
       onToast('Could not save: the song is no longer in the library.', 'error')
       return
     }
     setBundle((current) => (current ? { ...current, meta: updated } : current))
     setTitle(updated.title)
-    setTitleDirty(false)
-    onToast('Song details saved.', 'success')
   }, [bundle, onToast, title])
 
   const applyTrim = useCallback(
@@ -274,7 +277,8 @@ export function SetupScreen({
     [adopt, analysis, bundle, onToast, rangeBusy],
   )
 
-  const newVariation = useCallback(async () => {
+  const newVariation = useCallback(async (replaceEdited: boolean) => {
+    setAskRegenerate(false)
     if (!bundle || variationBusy) return
     if (!analysis) {
       onToast('Re-attach the audio file to build a new arrow variation.', 'error')
@@ -295,12 +299,13 @@ export function SetupScreen({
         edit: planForMeta(updated),
         salt,
         existing: bundle.charts,
+        replaceEdited,
       })
       adopt({ ...bundle, meta: updated, charts: regenerated })
       onToast(
-        bundle.charts.some((chart) => chart.edited)
+        !replaceEdited && bundle.charts.some((chart) => chart.edited)
           ? 'New arrows built. Charts you edited by hand were kept.'
-          : 'New arrows built. Your old high scores stay on the song.',
+          : 'New arrows built.',
         'success',
       )
     } catch (caught) {
@@ -434,6 +439,11 @@ export function SetupScreen({
     setTrimHistory((history) => history.slice(0, -1))
     void applyTrim(previous, 'Undone. Arrows rebuilt.')
   }
+  const editedCharts = charts.filter((chart) => chart.edited)
+  const regenerate = (): void => {
+    if (editedCharts.length > 0) setAskRegenerate(true)
+    else void newVariation(false)
+  }
   const restoreWholeSong = (): void => {
     setTrimHistory((history) => [...history, trim])
     void applyTrim({ start: 0, end: meta.duration, cuts: [] }, 'The whole song plays again. Arrows rebuilt.')
@@ -445,7 +455,31 @@ export function SetupScreen({
         <div>
           <div className="title-row">
             <BackButton onClick={onBack} />
-            <h1>{meta.title}</h1>
+            {renaming ? (
+              <input
+                className="title-input"
+                type="text"
+                value={title}
+                aria-label="Song title"
+                autoFocus
+                onFocus={(event) => event.target.select()}
+                onChange={(event) => setTitle(event.target.value)}
+                onBlur={() => void saveTitle()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur()
+                  if (event.key === 'Escape') {
+                    setTitle(meta.title)
+                    setRenaming(false)
+                  }
+                }}
+              />
+            ) : (
+              <h1>
+                <button type="button" className="title-button" onClick={() => setRenaming(true)} title="Tap to rename">
+                  {meta.title}
+                </button>
+              </h1>
+            )}
           </div>
           {meta.artist && <p className="muted small">{meta.artist}</p>}
         </div>
@@ -533,24 +567,35 @@ export function SetupScreen({
         )}
       </Panel>
 
-      <Panel title="Song options" subtitle="Defaults are already set.">
+      <Panel title="Song options">
         <div className="row-between wrap gap-12">
           <div>
             <strong>Song range</strong>
             <p className="muted small">{rangeLabel}</p>
           </div>
-          <Button
-            size="sm"
-            variant={trimming ? 'ghost' : 'primary'}
-            disabled={!analysis}
-            onClick={() => {
-              setTrimming((current) => !current)
-              setSelection(null)
-            }}
-            title={analysis ? undefined : 'Re-attach the audio to change this'}
-          >
-            {trimming ? 'Done' : 'Trim'}
-          </Button>
+          <div className="row gap-8 wrap">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={variationBusy || rangeBusy || !analysis}
+              onClick={regenerate}
+              title={analysis ? 'Build all four charts again with a new pattern' : 'Re-attach the audio first'}
+            >
+              {variationBusy ? 'Building…' : 'Regenerate arrows'}
+            </Button>
+            <Button
+              size="sm"
+              variant={trimming ? 'ghost' : 'primary'}
+              disabled={!analysis}
+              onClick={() => {
+                setTrimming((current) => !current)
+                setSelection(null)
+              }}
+              title={analysis ? undefined : 'Re-attach the audio to change this'}
+            >
+              {trimming ? 'Done' : 'Trim'}
+            </Button>
+          </div>
         </div>
         {trimming && (
           <div className="trim-panel mt-12">
@@ -591,60 +636,6 @@ export function SetupScreen({
           />
         </div>
 
-        <details className="disclosure mt-20">
-          <summary>More options</summary>
-          <div className="grid cols-2 mt-16">
-            <label className="field">
-              <span className="field-label">Title</span>
-              <input
-                type="text"
-                value={title}
-                onChange={(event) => {
-                  setTitle(event.target.value)
-                  setTitleDirty(true)
-                }}
-              />
-            </label>
-          </div>
-          {titleDirty && (
-            <div className="mt-12">
-              <Button size="sm" onClick={() => void saveDetails()}>
-                Save song details
-              </Button>
-            </div>
-          )}
-
-          <div className="option-row mt-20">
-            <div>
-              <strong>Want different arrows?</strong>
-              <p className="muted small">
-                Your chart stays exactly the same every time you play. Build a new variation when
-                you want a fresh pattern.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={variationBusy || !analysis}
-              onClick={() => void newVariation()}
-              title={analysis ? 'Rebuild all four charts with a new pattern' : 'Re-attach the audio first'}
-            >
-              {variationBusy ? 'Building…' : 'New arrows'}
-            </Button>
-          </div>
-
-          <p className="muted tiny mt-20">
-            Detected tempo {meta.analysis.bpm.toFixed(1)} BPM - {formatDuration(meta.duration)} - Audio
-            {meta.audioCached ? ' saved' : ' not saved'}
-          </p>
-
-          {bundle.buffer && (
-            <div className="mt-12">
-              <Button size="sm" variant="ghost" onClick={() => fileInputRef.current?.click()}>
-                {attaching ? 'Reading…' : 'Replace audio file'}
-              </Button>
-            </div>
-          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -656,8 +647,24 @@ export function SetupScreen({
               if (chosen) void attachFile(chosen)
             }}
           />
-        </details>
       </Panel>
+
+      {askRegenerate && (
+        <Modal title="Regenerate arrows" onClose={() => setAskRegenerate(false)}>
+          <p>
+            You edited {editedCharts.map((chart) => DIFFICULTY_LABEL[chart.difficulty]).join(', ')} by hand.
+            Rebuild {editedCharts.length === 1 ? 'it' : 'them'} too?
+          </p>
+          <div className="row gap-8 wrap mt-16">
+            <Button variant="primary" onClick={() => void newVariation(false)}>
+              Keep my edits
+            </Button>
+            <Button variant="danger" onClick={() => void newVariation(true)}>
+              Rebuild all
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

@@ -264,11 +264,12 @@ export async function regenerateCharts(input: {
   edit?: EditPlan | null
   /** Increment for a new arrow variation; omit to reproduce the current chart exactly. */
   salt?: number
-  /** The song's current charts. Hand-edited ones are kept as they are, never regenerated. */
+  /** The song's current charts. Hand-edited ones are kept as they are, unless `replaceEdited`. */
   existing?: Chart[]
+  replaceEdited?: boolean
 }): Promise<Chart[]> {
   const timing = TimingMap.single(input.bpm, input.offset)
-  const edited = (input.existing ?? []).filter((chart) => chart.edited)
+  const edited = input.replaceEdited ? [] : (input.existing ?? []).filter((chart) => chart.edited)
   const generated = generateAllDifficulties({
     analysis: input.analysis,
     timing,
