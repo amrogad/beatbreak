@@ -117,6 +117,7 @@ export function SetupScreen({
 
   const charts = bundle?.charts ?? []
   const circleMode = settings.playMode === 'circles'
+  const things = circleMode ? 'circles' : 'arrows'
   // Circle counts come from the real placement: chords become one circle, some pairs one slider.
   const circleCounts = useMemo(() => {
     if (!circleMode) return null
@@ -300,7 +301,7 @@ export function SetupScreen({
     setAskRegenerate(false)
     if (!bundle || variationBusy) return
     if (!analysis) {
-      onToast('Re-attach the audio file to build a new arrow variation.', 'error')
+      onToast(`Re-attach the audio file to build new ${things}.`, 'error')
       return
     }
     setVariationBusy(true)
@@ -323,8 +324,8 @@ export function SetupScreen({
       adopt({ ...bundle, meta: updated, charts: regenerated })
       onToast(
         !replaceEdited && bundle.charts.some((chart) => chart.edited)
-          ? 'New arrows built. Charts you edited by hand were kept.'
-          : 'New arrows built.',
+          ? `New ${things} built. Charts you edited by hand were kept.`
+          : `New ${things} built.`,
         'success',
       )
     } catch (caught) {
@@ -450,13 +451,13 @@ export function SetupScreen({
       return
     }
     setTrimHistory((history) => [...history, trim])
-    void applyTrim(next, 'Part removed. Arrows rebuilt.')
+    void applyTrim(next, `Part removed. ${circleMode ? 'Circles' : 'Arrows'} rebuilt.`)
   }
   const undoTrim = (): void => {
     const previous = trimHistory[trimHistory.length - 1]
     if (!previous) return
     setTrimHistory((history) => history.slice(0, -1))
-    void applyTrim(previous, 'Undone. Arrows rebuilt.')
+    void applyTrim(previous, `Undone. ${circleMode ? 'Circles' : 'Arrows'} rebuilt.`)
   }
   const editedCharts = charts.filter((chart) => chart.edited)
   const regenerate = (): void => {
@@ -465,7 +466,7 @@ export function SetupScreen({
   }
   const restoreWholeSong = (): void => {
     setTrimHistory((history) => [...history, trim])
-    void applyTrim({ start: 0, end: meta.duration, cuts: [] }, 'The whole song plays again. Arrows rebuilt.')
+    void applyTrim({ start: 0, end: meta.duration, cuts: [] }, `The whole song plays again. ${circleMode ? 'Circles' : 'Arrows'} rebuilt.`)
   }
 
   return (
@@ -581,7 +582,7 @@ export function SetupScreen({
               disabled={!selectedChart}
               onClick={() => selectedChart && onOpenEditor(meta.id, selectedChart.id)}
             >
-              Edit arrows
+              {circleMode ? 'Edit rhythm' : 'Edit arrows'}
             </Button>
             <Button
               size="lg"
@@ -613,7 +614,7 @@ export function SetupScreen({
               onClick={regenerate}
               title={analysis ? 'Build all four charts again with a new pattern' : 'Re-attach the audio first'}
             >
-              {variationBusy ? 'Building…' : 'Regenerate arrows'}
+              {variationBusy ? 'Building…' : circleMode ? 'Regenerate circles' : 'Regenerate arrows'}
             </Button>
             <Button
               size="sm"
@@ -682,7 +683,7 @@ export function SetupScreen({
       </Panel>
 
       {askRegenerate && (
-        <Modal title="Regenerate arrows" onClose={() => setAskRegenerate(false)}>
+        <Modal title={circleMode ? 'Regenerate circles' : 'Regenerate arrows'} onClose={() => setAskRegenerate(false)}>
           <p>
             You edited {editedCharts.map((chart) => DIFFICULTY_LABEL[chart.difficulty]).join(', ')} by hand.
             Rebuild {editedCharts.length === 1 ? 'it' : 'them'} too?

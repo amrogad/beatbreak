@@ -42,6 +42,7 @@ export function ResultsScreen({
   // StepMania recognition, from the tested helper: a full combo is every note judged with no
   // miss and no dropped hold; an all-marvelous run earns its own title. Auto-play never qualifies.
   const combo = comboRecognition(results)
+  const things = results.mode === 'circles' ? 'circles' : 'arrows'
   const fullCombo = combo !== null
   const marvelousFullCombo = combo === 'marvelous-full-combo'
 
@@ -51,7 +52,7 @@ export function ResultsScreen({
         <div>
           <Chip color={DIFFICULTY_COLOR[chart.difficulty]}>{DIFFICULTY_LABEL[chart.difficulty]}</Chip>
           <h1 className="mt-8">{song.title}</h1>
-          <p className="muted small">{results.totalNotes} arrows in this chart</p>
+          <p className="muted small">{results.totalNotes} {things} in this chart</p>
         </div>
         {results.autoPlay && <Chip color="#ff7a3d">Auto-play — not counted as a score</Chip>}
       </div>
@@ -71,17 +72,17 @@ export function ResultsScreen({
               <Stat label="Accuracy" value={formatPercent(results.accuracy, 2)} color={grade.color}
                 hint={
                   results.failed && notPlayed > 0
-                    ? 'counts only the arrows you reached before the run ended'
+                    ? `counts only the ${things} you reached before the run ended`
                     : undefined
                 }
               />
               <Stat label="Best combo" value={results.bestCombo} />
               {(results.droppedHolds ?? 0) > 0 && (
                 <Stat
-                  label="Long arrows dropped"
+                  label={results.mode === 'circles' ? 'Sliders dropped' : 'Long arrows dropped'}
                   value={results.droppedHolds ?? 0}
                   color="#ff7a3d"
-                  hint="released before the tail ended; each one counts as a miss"
+                  hint={`released before the ${results.mode === 'circles' ? 'slider' : 'tail'} ended; each one counts as a miss`}
                 />
               )}
             </div>
@@ -89,7 +90,7 @@ export function ResultsScreen({
           <div className="col gap-12">
             {results.failed && (
               <Chip color="#ff4f9a">
-                Run ended after {judged.toLocaleString('en-US')} of {results.totalNotes.toLocaleString('en-US')} arrows
+                Run ended after {judged.toLocaleString('en-US')} of {results.totalNotes.toLocaleString('en-US')} {things}
               </Chip>
             )}
             {isNewBest && !results.autoPlay && <Chip color="#ffc93d">New personal best</Chip>}
