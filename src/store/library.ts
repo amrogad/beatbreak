@@ -93,14 +93,12 @@ export function buildSongMeta(input: {
   artist: string
   file: File
   buffer: AudioBuffer
+  /** Waveform peaks, taken from the mono mix before it went to the analyser. */
+  peaks: Uint8Array
   analysis: AnalysisResult
   audioCached: boolean
 }): SongMeta {
-  const { songId, title, artist, file, buffer, analysis, audioCached } = input
-  const mono = downmixMono(
-    Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)),
-    buffer.length,
-  )
+  const { songId, title, artist, file, buffer, peaks, analysis, audioCached } = input
   return {
     id: songId,
     title,
@@ -111,7 +109,7 @@ export function buildSongMeta(input: {
     duration: buffer.duration,
     sampleRate: buffer.sampleRate,
     channels: buffer.numberOfChannels,
-    peaks: toPeakBytes(mono, 1400),
+    peaks,
     envelope: downsample(normalize(analysis.envelope), 700),
     analysis: summarizeAnalysis(analysis),
     createdAt: Date.now(),
@@ -197,6 +195,8 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   // `downmixMono` returns a fresh array for multi-channel input; for a mono file it returns the
   // AudioBuffer's own channel data, which must not be transferred away.
   const owned = buffer.numberOfChannels > 1
+  // Taken now: an owned mix is handed to the worker and gone afterwards.
+  const peaks = toPeakBytes(mono, 1400)
 
   const analysis = await analysisClient.analyze(mono, buffer.sampleRate, {
     owned,
@@ -222,7 +222,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   const timing = existing?.beatFix ? TimingMap.single(existing.beatFix.bpm, existing.beatFix.offset) : TimingMap.single(analysis.bpm, analysis.offset)
   const existingCharts = existing && canSave ? await listCharts(existing.id) : []
   const remember = options.rememberAudio ?? true
-  const meta = buildSongMeta({ songId, title, artist, file, buffer, analysis, audioCached: remember })
+  const meta = buildSongMeta({ songId, title, artist, file, buffer, peaks, analysis, audioCached: remember })
   const auto = autoTrimWindow(analysis, buffer.duration, meta.peaks)
   if (existing) {
     // Preserve everything the player chose that is not part of a fresh analysis.

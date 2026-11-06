@@ -71,9 +71,7 @@ export interface StftOptions {
   bands: number
 }
 
-export interface StftResult {
-  /** frames × bins magnitude spectra, frame-major. */
-  magnitude: Float32Array
+export interface StftLayout {
   frames: number
   bins: number
   frameRate: number
@@ -82,35 +80,10 @@ export interface StftResult {
   bandCount: number
 }
 
-export function computeStft(
-  samples: Float32Array,
-  sampleRate: number,
-  options: StftOptions,
-  onProgress?: (fraction: number) => void,
-): StftResult {
+export function stftLayout(sampleCount: number, sampleRate: number, options: StftOptions): StftLayout {
   const { frameSize, hopSize, bands } = options
   const bins = frameSize / 2 + 1
-  const frames = Math.max(1, Math.floor((samples.length - frameSize) / hopSize) + 1)
-  const magnitude = new Float32Array(frames * bins)
-  const window = hannWindow(frameSize)
-  const re = new Float32Array(frameSize)
-  const im = new Float32Array(frameSize)
-
-  for (let f = 0; f < frames; f++) {
-    const offset = f * hopSize
-    for (let i = 0; i < frameSize; i++) {
-      const s = offset + i
-      re[i] = (s < samples.length ? samples[s] : 0) * window[i]
-      im[i] = 0
-    }
-    fft(re, im)
-    const base = f * bins
-    for (let k = 0; k < bins; k++) {
-      magnitude[base + k] = Math.hypot(re[k], im[k])
-    }
-    if (onProgress && (f & 127) === 0) onProgress(f / frames)
-  }
-  onProgress?.(1)
+  const frames = Math.max(1, Math.floor((sampleCount - frameSize) / hopSize) + 1)
 
   // Log-spaced bands from ~40 Hz to Nyquist.
   const nyquist = sampleRate / 2
@@ -128,7 +101,71 @@ export function computeStft(
     bandOfBin[k] = band
   }
 
-  return { magnitude, frames, bins, frameRate: sampleRate / hopSize, bandOfBin, bandCount: bands }
+  return { frames, bins, frameRate: sampleRate / hopSize, bandOfBin, bandCount: bands }
+}
+
+/**
+ * Walks the magnitude spectrum frame by frame. The row passed to `onFrame` is reused, so callers
+ * take what they need before returning; the whole spectrogram is never held (a 10 minute song
+ * would need over 200 MB).
+ */
+export function forEachSpectrum(
+  samples: Float32Array,
+  layout: StftLayout,
+  options: StftOptions,
+  onFrame: (frame: number, magnitude: Float32Array) => void,
+  onProgress?: (fraction: number) => void,
+): void {
+  const { frameSize, hopSize } = options
+  const { frames, bins } = layout
+  const window = hannWindow(frameSize)
+  const re = new Float32Array(frameSize)
+  const im = new Float32Array(frameSize)
+  const magnitude = new Float32Array(bins)
+
+  for (let f = 0; f < frames; f++) {
+    const offset = f * hopSize
+    for (let i = 0; i < frameSize; i++) {
+      const s = offset + i
+      re[i] = (s < samples.length ? samples[s] : 0) * window[i]
+      im[i] = 0
+    }
+    fft(re, im)
+    for (let k = 0; k < bins; k++) magnitude[k] = Math.hypot(re[k], im[k])
+    onFrame(f, magnitude)
+    if (onProgress && (f & 127) === 0) onProgress(f / frames)
+  }
+  onProgress?.(1)
+}
+
+export interface SpectralFlux {
+  /** Summed positive change of the log-compressed spectrum per frame. */
+  flux: Float32Array
+  bandFlux: Float32Array[]
+  add: (frame: number, magnitude: Float32Array) => void
+}
+
+/** Spectral flux, fed one spectrum frame at a time by `forEachSpectrum`. */
+export function spectralFlux(layout: StftLayout, compression = 900): SpectralFlux {
+  const { frames, bins, bandOfBin, bandCount } = layout
+  const flux = new Float32Array(frames)
+  const bandFlux: Float32Array[] = []
+  for (let b = 0; b < bandCount; b++) bandFlux.push(new Float32Array(frames))
+  const prev = new Float32Array(bins)
+  const add = (f: number, magnitude: Float32Array): void => {
+    let total = 0
+    for (let k = 0; k < bins; k++) {
+      const cur = Math.log1p(compression * magnitude[k])
+      const diff = cur - prev[k]
+      if (diff > 0) {
+        total += diff
+        bandFlux[bandOfBin[k]][f] += diff
+      }
+      prev[k] = cur
+    }
+    flux[f] = total
+  }
+  return { flux, bandFlux, add }
 }
 
 export interface OnsetEnvelopes {
@@ -153,35 +190,12 @@ export interface OnsetEnvelopes {
  */
 export function computeOnsetEnvelopes(
   samples: Float32Array,
-  sampleRate: number,
-  stft: StftResult,
-  options: { frameSize: number; hopSize: number; bands: number; compression?: number },
+  layout: StftLayout,
+  spectral: Pick<SpectralFlux, 'flux' | 'bandFlux'>,
+  options: { frameSize: number; hopSize: number },
 ): OnsetEnvelopes {
-  const { magnitude, frames, bins, bandOfBin, bandCount } = stft
-  const compression = options.compression ?? 900
-  const logScale = (v: number): number => Math.log1p(compression * v)
-
-  const flux = new Float32Array(frames)
-  const bandFlux: Float32Array[] = []
-  for (let b = 0; b < bandCount; b++) bandFlux.push(new Float32Array(frames))
-
-  let prev = new Float32Array(bins)
-  for (let f = 0; f < frames; f++) {
-    const base = f * bins
-    let total = 0
-    for (let k = 0; k < bins; k++) {
-      const cur = logScale(magnitude[base + k])
-      const diff = cur - prev[k]
-      if (diff > 0) {
-        total += diff
-        bandFlux[bandOfBin[k]][f] += diff
-      }
-    }
-    flux[f] = total
-    // Re-read magnitudes for the next frame's previous vector (log compressed).
-    for (let k = 0; k < bins; k++) prev[k] = logScale(magnitude[base + k])
-  }
-  prev = new Float32Array(bins) // release
+  const { frames } = layout
+  const { flux, bandFlux } = spectral
 
   // RMS per frame from the time-domain signal.
   const { frameSize, hopSize } = options
@@ -207,7 +221,7 @@ export function computeOnsetEnvelopes(
   }
 
   // Adaptive normalization: subtract a ~0.4 s moving average and rectify, then scale to 0..1.
-  const radius = Math.max(2, Math.round(0.4 * stft.frameRate))
+  const radius = Math.max(2, Math.round(0.4 * layout.frameRate))
   const shape = (signal: Float32Array): Float32Array => {
     const smoothed = localMean(signal, radius)
     const out = new Float32Array(signal.length)
@@ -249,7 +263,7 @@ export function computeOnsetEnvelopes(
     rms: normalizeRms(rms),
     energyFlux: shapedEnergy,
     frames,
-    frameRate: stft.frameRate,
+    frameRate: layout.frameRate,
   }
 }
 

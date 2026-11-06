@@ -9,7 +9,17 @@
  */
 import type { AnalysisResult, OnsetEvent, Section, SongTexture } from '../core/types'
 import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
-import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
+import {
+  computeEnergyEnvelope,
+  computeOnsetEnvelopes,
+  forEachSpectrum,
+  nextPow2,
+  pickPeaks,
+  refineOnsetTime,
+  spectralFlux,
+  stftLayout,
+  type StftLayout,
+} from './dsp'
 import { detectTempoStability, estimateBeatsPerBar, estimateTempo, polishTempo, settleBeatLine } from './tempo'
 import { tempoFromRepeats } from '../chart/structure'
 
@@ -83,25 +93,27 @@ function estimateHeldSeconds(
   return clampSeconds((end + 1 - attackFrame) / frameRate)
 }
 
-/** Energy per band per frame, lightly smoothed, from the magnitude spectrogram. */
-function computeBandEnergy(stft: ReturnType<typeof computeStft>): Float32Array[] {
-  const { magnitude, frames, bins, bandOfBin, bandCount } = stft
+/** Energy per band per frame, fed one spectrum frame at a time; `finish` smooths it lightly. */
+function bandEnergyByFrame(layout: StftLayout): { add: (f: number, magnitude: Float32Array) => void; finish: () => Float32Array[] } {
+  const { frames, bins, bandOfBin, bandCount } = layout
   const energy = Array.from({ length: bandCount }, () => new Float32Array(frames))
-  for (let f = 0; f < frames; f++) {
-    const base = f * bins
+  const add = (f: number, magnitude: Float32Array): void => {
     for (let k = 0; k < bins; k++) {
-      const m = magnitude[base + k]
+      const m = magnitude[k]
       energy[bandOfBin[k]][f] += m * m
     }
   }
-  for (const band of energy) {
-    let previous = band[0]
-    for (let f = 1; f < frames; f++) {
-      previous = previous * 0.5 + band[f] * 0.5
-      band[f] = previous
+  const finish = (): Float32Array[] => {
+    for (const band of energy) {
+      let previous = band[0]
+      for (let f = 1; f < frames; f++) {
+        previous = previous * 0.5 + band[f] * 0.5
+        band[f] = previous
+      }
     }
+    return energy
   }
-  return energy
+  return { add, finish }
 }
 
 const PEAK_OPTIONS = { delta: 0.06, windowSeconds: 0.28, minGapSeconds: 0.055 }
@@ -141,37 +153,46 @@ const TEXTURE_MAX_HZ = 10000
 const TEXTURE_RANGE_DB = 60
 
 /** Log-band loudness at half the analysis frame rate, kept with the song for bar matching. */
-function computeTexture(stft: ReturnType<typeof computeStft>, sampleRate: number, frameSize: number): SongTexture {
-  const { magnitude, frames, bins, frameRate } = stft
+function songTexture(
+  layout: StftLayout,
+  sampleRate: number,
+  frameSize: number,
+): { add: (f: number, magnitude: Float32Array) => void; finish: () => SongTexture } {
+  const { frames, bins, frameRate } = layout
   const bandOfBin = new Int32Array(bins).fill(-1)
   for (let k = 1; k < bins; k++) {
     const hz = (k * sampleRate) / frameSize
     if (hz < TEXTURE_MIN_HZ || hz >= TEXTURE_MAX_HZ) continue
     bandOfBin[k] = Math.floor((Math.log(hz / TEXTURE_MIN_HZ) / Math.log(TEXTURE_MAX_HZ / TEXTURE_MIN_HZ)) * TEXTURE_BANDS)
   }
+  // Two spectrum frames make one texture step; an odd last frame is left out.
   const count = Math.max(1, frames >> 1)
   const decibels = new Float32Array(count * TEXTURE_BANDS)
+  const power = new Float64Array(TEXTURE_BANDS)
   let loudest = -Infinity
-  for (let i = 0; i < count; i++) {
-    const power = new Float64Array(TEXTURE_BANDS)
-    for (let f = i * 2; f < Math.min(frames, i * 2 + 2); f++) {
-      const base = f * bins
-      for (let k = 0; k < bins; k++) {
-        const band = bandOfBin[k]
-        if (band >= 0) power[band] += magnitude[base + k] * magnitude[base + k]
-      }
+  const add = (f: number, magnitude: Float32Array): void => {
+    const i = f >> 1
+    if (i >= count) return
+    for (let k = 0; k < bins; k++) {
+      const band = bandOfBin[k]
+      if (band >= 0) power[band] += magnitude[k] * magnitude[k]
     }
+    if ((f & 1) === 0 && f !== frames - 1) return
     for (let band = 0; band < TEXTURE_BANDS; band++) {
       const value = 10 * Math.log10(power[band] + 1e-9)
       decibels[i * TEXTURE_BANDS + band] = value
       if (value > loudest) loudest = value
     }
+    power.fill(0)
   }
-  const data = new Uint8Array(decibels.length)
-  for (let i = 0; i < decibels.length; i++) {
-    data[i] = Math.round(255 * Math.max(0, Math.min(1, 1 + (decibels[i] - loudest) / TEXTURE_RANGE_DB)))
+  const finish = (): SongTexture => {
+    const data = new Uint8Array(decibels.length)
+    for (let i = 0; i < decibels.length; i++) {
+      data[i] = Math.round(255 * Math.max(0, Math.min(1, 1 + (decibels[i] - loudest) / TEXTURE_RANGE_DB)))
+    }
+    return { rate: frameRate / 2, bands: TEXTURE_BANDS, data }
   }
-  return { rate: frameRate / 2, bands: TEXTURE_BANDS, data }
+  return { add, finish }
 }
 
 export interface AnalyzeOptions {
@@ -209,19 +230,32 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
   const fluxDelaySeconds = frameSize / (2 * sampleRate) + hopSize / sampleRate
 
   progress('Computing spectrum', 0.05)
-  const stft = computeStft(mono, sampleRate, { frameSize, hopSize, bands }, (f) =>
-    progress('Computing spectrum', 0.05 + f * 0.35),
+  const stftOptions = { frameSize, hopSize, bands }
+  const layout = stftLayout(mono.length, sampleRate, stftOptions)
+  const spectral = spectralFlux(layout)
+  const energy = bandEnergyByFrame(layout)
+  const textureSteps = songTexture(layout, sampleRate, frameSize)
+  forEachSpectrum(
+    mono,
+    layout,
+    stftOptions,
+    (f, magnitude) => {
+      spectral.add(f, magnitude)
+      energy.add(f, magnitude)
+      textureSteps.add(f, magnitude)
+    },
+    (f) => progress('Computing spectrum', 0.05 + f * 0.35),
   )
 
   progress('Detecting onsets', 0.45)
-  const envelopes = computeOnsetEnvelopes(mono, sampleRate, stft, { frameSize, hopSize, bands })
+  const envelopes = computeOnsetEnvelopes(mono, layout, spectral, { frameSize, hopSize })
   const frameRate = envelopes.frameRate
   const peaks = withQuietPeaks(pickPeaks(envelopes.flux, frameRate, PEAK_OPTIONS), envelopes.flux, frameRate)
 
   // Fine energy envelope used to snap every onset onto its real attack (removes the analysis
   // window's group delay, which would otherwise bias notes late by tens of milliseconds).
   const fine = computeEnergyEnvelope(mono, sampleRate, { blockMs: 1, smoothMs: 10 })
-  const bandEnergy = computeBandEnergy(stft)
+  const bandEnergies = energy.finish()
 
   const strengths = peaks.map((p) => p.strength)
   const strengthMean = mean(strengths)
@@ -250,7 +284,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
       heldSeconds: estimateHeldSeconds(
         Math.round(time * frameRate),
         peak.strength,
-        bandEnergy[dominant],
+        bandEnergies[dominant],
         envelopes.bandFlux[dominant],
         frameRate,
         peaks,
@@ -260,7 +294,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
   }
 
   progress('Estimating tempo', 0.7)
-  const texture = computeTexture(stft, sampleRate, frameSize)
+  const texture = textureSteps.finish()
   const polished = (result: ReturnType<typeof estimateTempo>): ReturnType<typeof estimateTempo> => {
     const fixedBpm = polishTempo(onsets, result.bpm)
     return fixedBpm === null ? result : estimateTempo(envelopes.flux, frameRate, onsets, { fixedBpm, keepBpm: true })
