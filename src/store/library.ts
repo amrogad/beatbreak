@@ -39,6 +39,14 @@ export interface SongBundle {
   analysis: AnalysisResult | null
   /** Decoded audio for playback. Not persisted; null when the file must be re-selected. */
   buffer: AudioBuffer | null
+  /** The import could not keep a copy of the audio (storage full): the file is needed next time. */
+  audioNotSaved?: boolean
+}
+
+/** Storage full: the browser refused to write more. */
+export function isQuotaError(error: unknown): boolean {
+  const name = (error as { name?: string } | null)?.name
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED'
 }
 
 export function titleFromFileName(fileName: string): string {
@@ -180,27 +188,18 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   const remember = options.rememberAudio ?? true
   const meta = buildSongMeta({ songId, title, artist, file, buffer, analysis, audioCached: remember })
   const auto = autoTrimWindow(analysis, buffer.duration, meta.peaks)
-  let trimChanged = false
   if (existing) {
     // Preserve everything the player chose that is not part of a fresh analysis.
     meta.createdAt = existing.createdAt
     meta.lastPlayedAt = existing.lastPlayedAt
     if (existing.preferredDifficulty !== undefined) meta.preferredDifficulty = existing.preferredDifficulty
     if (existing.chartVariant !== undefined) meta.chartVariant = existing.chartVariant
-    if ((existing.trimCuts?.length ?? 0) > 0) {
-      // Keep deliberate splices; only the edge window is auto-managed.
-      if (existing.trimStart !== undefined) meta.trimStart = existing.trimStart
-      if (existing.trimEnd !== undefined) meta.trimEnd = existing.trimEnd
-      if (existing.trimCuts !== undefined) meta.trimCuts = existing.trimCuts
-    } else if (existing.trimStart !== undefined || existing.trimEnd !== undefined) {
-      // Older versions selected quiet regions from an energy estimate. Re-run the current,
-      // waveform-verified edge trim once so an old "random cut" does not survive an update.
-      trimChanged = !sameTrim(trimDraftFor(existing), { start: auto.window.start, end: auto.window.end, cuts: [] })
-      if (auto.window.start > 0.05) meta.trimStart = auto.window.start
-      else delete meta.trimStart
-      if (auto.window.end < buffer.duration - 0.05) meta.trimEnd = auto.window.end
-      else delete meta.trimEnd
-    }
+    // The trim on record is the player's (or an earlier automatic one they have played with):
+    // re-importing the same file never moves it.
+    if (existing.trimStart !== undefined) meta.trimStart = existing.trimStart
+    if (existing.trimEnd !== undefined) meta.trimEnd = existing.trimEnd
+    if (existing.trimCuts !== undefined) meta.trimCuts = existing.trimCuts
+    if (existing.trimManual) meta.trimManual = true
   } else {
     // Trim conservatively on the first import: only waveform-verified near-silence at the edges.
     // A quiet intro is never cut just because it is quiet.
@@ -217,7 +216,6 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     const chart = existingCharts.find((c) => c.difficulty === difficulty)
     if (!chart) regenerate.add(difficulty)
     else if (!chart.edited && chart.generator.version !== GENERATOR_VERSION) regenerate.add(difficulty)
-    else if (!chart.edited && trimChanged) regenerate.add(difficulty)
   }
   let charts = existingCharts.filter((chart) => requested.includes(chart.difficulty))
   if (regenerate.size > 0) {
@@ -240,13 +238,24 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
       .filter((chart): chart is Chart => chart !== undefined)
   }
 
-  await saveSong(meta)
+  // The song row goes last, so a failure part way never leaves a song in the library that has no
+  // analysis or charts. A full disk only costs the stored copy of the audio, not the song.
+  let audioNotSaved = false
+  if (remember) {
+    try {
+      await saveAudio(songId, file)
+    } catch (error) {
+      if (!isQuotaError(error)) throw error
+      audioNotSaved = true
+      meta.audioCached = false
+    }
+  }
   await saveAnalysis(songId, analysis)
   await saveCharts(charts)
-  if (remember) await saveAudio(songId, file)
+  await saveSong(meta)
 
   onProgress?.({ stage: 'Done', fraction: 1 })
-  return { meta, charts, analysis, buffer }
+  return { meta, charts, analysis, buffer, ...(audioNotSaved ? { audioNotSaved } : {}) }
 }
 
 /**
@@ -299,7 +308,7 @@ export async function setSongTrim(songId: string, trim: TrimDraft | null): Promi
   const songs = await listSongs()
   const meta = songs.find((song) => song.id === songId)
   if (!meta) return null
-  const next: SongMeta = { ...meta }
+  const next: SongMeta = { ...meta, trimManual: true }
   const coversAll = !trim || (trim.start <= 0.001 && trim.end >= meta.duration - 0.001 && trim.cuts.length === 0)
   if (coversAll) {
     delete next.trimStart
@@ -369,34 +378,15 @@ export async function loadSongBundle(songId: string, options: { requireAudio?: b
     meta = nextMeta
   }
   if (analysis) {
-    let trimChanged = false
-    // One-time migration for libraries made before waveform-verified trim: the old energy-based
-    // auto trim could start or stop in the middle of real music. If the song has an edge trim on
-    // record (the UI has no manual trim handle), re-run the safe detector once.
-    if (
-      (meta.trimStart !== undefined || meta.trimEnd !== undefined) &&
-      (meta.trimCuts?.length ?? 0) === 0
-    ) {
-      const auto = autoTrimWindow(analysis, meta.duration, meta.peaks)
-      const nextTrim = { start: auto.window.start, end: auto.window.end, cuts: [] }
-      if (!sameTrim(trimDraftFor(meta), nextTrim)) {
-        const nextMeta: SongMeta = { ...meta }
-        if (nextTrim.start > 0.05) nextMeta.trimStart = nextTrim.start
-        else delete nextMeta.trimStart
-        if (nextTrim.end < meta.duration - 0.05) nextMeta.trimEnd = nextTrim.end
-        else delete nextMeta.trimEnd
-        await saveSong(nextMeta)
-        meta = nextMeta
-        trimChanged = true
-      }
-    }
+    // A saved trim is never re-run here: it may be the player's own (the trim tool on the song
+    // screen), and an automatic trim was already checked when the song was imported.
     // A generator update is the one time we replace generated arrows without the player pressing
     // "New arrows". Edited charts are never overwritten.
     const stale = charts
       .filter((chart) => !chart.edited && chart.generator.version !== GENERATOR_VERSION)
       .map((chart) => chart.difficulty)
     const difficulties =
-      trimChanged || reanalysed ? charts.filter((chart) => !chart.edited).map((chart) => chart.difficulty) : stale
+      reanalysed ? charts.filter((chart) => !chart.edited).map((chart) => chart.difficulty) : stale
     if (difficulties.length > 0) {
       const regenerated = generateAllDifficulties({
         analysis,
