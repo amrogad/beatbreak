@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { removeFromTrim, removedParts, snapTrimRange } from './trim'
 import { analyzeSamples } from './analyze'
 import { renderTestRhythm } from './synth'
 import { analyzeTrimSuggestions, applyTrimSuggestion, autoTrimWindow, normalizeTrimWindow } from './trim'
@@ -193,5 +194,43 @@ describe('normalizeTrimWindow', () => {
     expect(normalizeTrimWindow({ start: 60, end: 60 }, 100)).toEqual({ start: 0, end: 100 })
     expect(normalizeTrimWindow({ start: -5, end: 120 }, 100)).toEqual({ start: 0, end: 100 })
     expect(normalizeTrimWindow({ start: 10, end: 90 }, 100)).toEqual({ start: 10, end: 90 })
+  })
+})
+
+describe('manual trim', () => {
+  const whole = { start: 0, end: 120, cuts: [] }
+  const grid = { bpm: 120, offset: 0.5 }
+
+  it('snaps a highlight in the middle onto whole bars', () => {
+    const range = snapTrimRange(whole, { start: 20.3, end: 26.1 }, grid)!
+    expect((range.start - 0.5) % 2).toBeCloseTo(0, 6)
+    expect(range.end - range.start).toBeCloseTo(6, 6)
+  })
+
+  it('keeps a highlight at the edge as drawn and moves the window', () => {
+    const range = snapTrimRange(whole, { start: 0.2, end: 13.3 }, grid)!
+    expect(range).toEqual({ start: 0, end: 13.3 })
+    expect(removeFromTrim(whole, range)).toEqual({ start: 13.3, end: 120, cuts: [] })
+  })
+
+  it('merges parts that nearly touch and absorbs one that reaches the edge', () => {
+    const once = removeFromTrim(whole, { start: 20, end: 30 })!
+    const twice = removeFromTrim(once, { start: 30.4, end: 40 })!
+    expect(twice.cuts).toEqual([{ start: 20, end: 40 }])
+    const edge = removeFromTrim(twice, { start: 0, end: 19.8 })!
+    expect(edge).toEqual({ start: 40, end: 120, cuts: [] })
+  })
+
+  it('refuses to remove nearly everything, and refuses a highlight of the whole song', () => {
+    expect(removeFromTrim(whole, { start: 0, end: 118 })).toBeNull()
+    expect(snapTrimRange(whole, { start: 0.1, end: 119.9 }, grid)).toBeNull()
+  })
+
+  it('lists what no longer plays', () => {
+    expect(removedParts({ start: 5, end: 100, cuts: [{ start: 20, end: 30 }] }, 120)).toEqual([
+      { start: 0, end: 5 },
+      { start: 20, end: 30 },
+      { start: 100, end: 120 },
+    ])
   })
 })

@@ -14,8 +14,8 @@ import {
   importSongFromFile,
   loadSongBundle,
   regenerateCharts,
-  sameTrim,
   setSongTrim,
+  titleFromFileName,
   trimDraftFor,
 } from '../../store/library'
 import { runtime } from '../runtime'
@@ -23,12 +23,14 @@ import { saveAnalysis, saveAudio, updateSong } from '../../store/repository'
 import type { Settings } from '../../store/settings'
 import { decodeAudioFile } from '../../audio/engine'
 import { downmixMono } from '../../audio/analyze'
-import { autoTrimWindow } from '../../audio/trim'
+import { removeFromTrim, removedParts, snapTrimRange, type TrimPlan, type TrimRange } from '../../audio/trim'
+import { playSelection, stopMenuMusic } from '../../audio/menuMusic'
 import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
 import { BackButton, Button, Panel, ProgressBar, Slider, Spinner } from '../components'
+import { TrimEditor } from '../TrimEditor'
 import { SYNC_HINT, formatDuration, formatPercent, formatSync } from '../format'
 import type { BestScores } from './bestScores'
 
@@ -76,9 +78,10 @@ export function SetupScreen({
   const [bundle, setBundle] = useState<SongBundle | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('normal')
   const [title, setTitle] = useState('')
-  const [artist, setArtist] = useState('')
   const [titleDirty, setTitleDirty] = useState(false)
   const [rangeBusy, setRangeBusy] = useState(false)
+  const [selection, setSelection] = useState<TrimRange | null>(null)
+  const [listening, setListening] = useState(false)
   const [variationBusy, setVariationBusy] = useState(false)
   const [attaching, setAttaching] = useState(false)
   const analysisClientRef = useRef<AnalysisClient | null>(null)
@@ -101,7 +104,6 @@ export function SetupScreen({
     runtime.put(next)
     setBundle(next)
     setTitle(next.meta.title)
-    setArtist(next.meta.artist)
     setPhase('ready')
     bundleReadyRef.current(next)
   }, [])
@@ -159,7 +161,6 @@ export function SetupScreen({
     if (existing) {
       setBundle(existing)
       setTitle(existing.meta.title)
-      setArtist(existing.meta.artist)
       setPhase('ready')
       return
     }
@@ -176,7 +177,6 @@ export function SetupScreen({
         runtime.put(loaded)
         setBundle(loaded)
         setTitle(loaded.meta.title)
-        setArtist(loaded.meta.artist)
         setPhase('ready')
       })
       .catch((caught: unknown) => {
@@ -216,11 +216,17 @@ export function SetupScreen({
     [bundle],
   )
 
+  const stopListening = useCallback(() => {
+    setListening((current) => {
+      if (current) stopMenuMusic()
+      return false
+    })
+  }, [])
+
   const saveDetails = useCallback(async () => {
     if (!bundle) return
     const updated = await updateSong(bundle.meta.id, {
       title: title.trim() || bundle.meta.title,
-      artist: artist.trim(),
     })
     if (!updated) {
       onToast('Could not save: the song is no longer in the library.', 'error')
@@ -228,27 +234,20 @@ export function SetupScreen({
     }
     setBundle((current) => (current ? { ...current, meta: updated } : current))
     setTitle(updated.title)
-    setArtist(updated.artist)
     setTitleDirty(false)
     onToast('Song details saved.', 'success')
-  }, [artist, bundle, onToast, title])
+  }, [bundle, onToast, title])
 
-  const applyRange = useCallback(
-    async (mode: 'auto' | 'full') => {
+  const applyTrim = useCallback(
+    async (trim: TrimPlan, done: string) => {
       if (!bundle || rangeBusy) return
       if (!analysis) {
         onToast('Re-attach the audio file to change the song range.', 'error')
         return
       }
       setRangeBusy(true)
+      stopListening()
       try {
-        const trim =
-          mode === 'full'
-            ? { start: 0, end: bundle.meta.duration, cuts: [] }
-            : (() => {
-                const auto = autoTrimWindow(analysis, bundle.meta.duration, bundle.meta.peaks)
-                return { start: auto.window.start, end: auto.window.end, cuts: [] }
-              })()
         const updated = await setSongTrim(bundle.meta.id, trim)
         if (!updated) throw new Error('The song is no longer in the library.')
         const regenerated = await regenerateCharts({
@@ -262,23 +261,15 @@ export function SetupScreen({
           existing: bundle.charts,
         })
         adopt({ ...bundle, meta: updated, charts: regenerated })
-        const trimmedStart = trim.start > 0.05
-        const trimmedEnd = trim.end < updated.duration - 0.05
-        onToast(
-          mode === 'full'
-            ? 'The whole song now plays. Arrows rebuilt for the full length.'
-            : trimmedStart || trimmedEnd
-              ? 'Silent edges skipped. Arrows rebuilt, with the song’s ending kept.'
-              : 'No silent edges found — the whole song plays. Arrows rebuilt.',
-          'success',
-        )
+        setSelection(null)
+        onToast(done, 'success')
       } catch (caught) {
         onToast(caught instanceof Error ? caught.message : String(caught), 'error')
       } finally {
         setRangeBusy(false)
       }
     },
-    [adopt, analysis, bundle, onToast, rangeBusy],
+    [adopt, analysis, bundle, onToast, rangeBusy, stopListening],
   )
 
   const newVariation = useCallback(async () => {
@@ -389,7 +380,7 @@ export function SetupScreen({
   if (phase === 'importing' || !bundle) {
     return (
       <div className="page narrow">
-        <Panel title={file ? (file.name === DEMO_FILE_NAME ? 'Generating audio track' : `Building charts for ${file.name}`) : 'Loading song'}>
+        <Panel title={file ? (file.name === DEMO_FILE_NAME ? 'Generating audio track' : `Building charts for ${titleFromFileName(file.name)}`) : 'Loading song'}>
           <div className="row-between gap-16">
             <Spinner label={progress.stage} />
             <span className="mono small">{Math.round(progress.fraction * 100)}%</span>
@@ -415,18 +406,20 @@ export function SetupScreen({
   const scores = bestScores[meta.id]
   const trim = trimDraftFor(meta)
   const wholeSong = trim.cuts.length === 0 && trim.start <= 0.01 && trim.end >= meta.duration - 0.01
-  const autoTrim = analysis ? autoTrimWindow(analysis, meta.duration, meta.peaks).window : null
-  const isAutoRange =
-    !wholeSong &&
-    trim.cuts.length === 0 &&
-    autoTrim !== null &&
-    sameTrim(trim, { start: autoTrim.start, end: autoTrim.end, cuts: [] })
+  const playLength = planForMeta(meta).duration
   const rangeLabel = wholeSong
     ? `Whole song - ${formatDuration(meta.duration)}`
-    : isAutoRange
-      ? `${formatDuration(trim.start)}–${formatDuration(trim.end)} - silent edges skipped`
-      : `${formatDuration(trim.start)}–${formatDuration(trim.end)} - custom range`
-  const playLength = Math.max(0, trim.end - trim.start)
+    : `${formatDuration(playLength)} of ${formatDuration(meta.duration)} plays`
+  const chooseSelection = (range: TrimRange | null): void => {
+    stopListening()
+    setSelection(range && (snapTrimRange(trim, range, meta.analysis) ?? range))
+  }
+  const trimSelection = (): void => {
+    if (!selection) return
+    const next = removeFromTrim(trim, selection)
+    if (next) void applyTrim(next, 'Part removed. Arrows rebuilt.')
+    else onToast('That would leave too little of the song to play.', 'error')
+  }
 
   return (
     <div className="page narrow">
@@ -535,26 +528,45 @@ export function SetupScreen({
           <div className="row gap-8 wrap">
             <Button
               size="sm"
-              variant={isAutoRange ? 'primary' : 'ghost'}
-              disabled={rangeBusy || !analysis}
-              onClick={() => void applyRange('auto')}
-              title={analysis ? 'Skip near-silent edges; the song ending is kept' : 'Re-attach the audio to change this'}
+              variant="ghost"
+              disabled={!selection || !bundle.buffer}
+              onClick={() => {
+                if (listening) stopListening()
+                else if (selection && bundle.buffer) {
+                  playSelection(bundle.buffer, selection.start, selection.end)
+                  setListening(true)
+                }
+              }}
             >
-              Trim silence
+              {listening ? 'Stop' : 'Listen'}
+            </Button>
+            <Button size="sm" variant="primary" disabled={!selection || rangeBusy || !analysis} onClick={trimSelection}>
+              Trim
             </Button>
             <Button
               size="sm"
-              variant={wholeSong ? 'primary' : 'ghost'}
-              disabled={rangeBusy || !analysis}
-              onClick={() => void applyRange('full')}
-              title={analysis ? 'Play the file from start to finish' : 'Re-attach the audio to change this'}
+              variant="ghost"
+              disabled={wholeSong || rangeBusy || !analysis}
+              onClick={() => void applyTrim({ start: 0, end: meta.duration, cuts: [] }, 'The whole song plays again. Arrows rebuilt.')}
+              title={analysis ? 'Bring back everything that was removed' : 'Re-attach the audio to change this'}
             >
               Whole song
             </Button>
           </div>
         </div>
+        <div className="mt-12">
+          <TrimEditor
+            peaks={meta.peaks}
+            duration={meta.duration}
+            removed={removedParts(trim, meta.duration)}
+            selection={selection}
+            disabled={rangeBusy || !analysis}
+            onSelect={chooseSelection}
+          />
+        </div>
         <p className="muted tiny mt-8">
-          Trim silence only skips near-silent lead-in and lead-out. The song’s ending always plays.
+          Drag across the song to highlight a part, then press Trim to remove it. Parts in the middle
+          snap to whole bars so the beat carries on.
         </p>
         <div className="mt-20">
           <Slider
@@ -579,18 +591,6 @@ export function SetupScreen({
                 value={title}
                 onChange={(event) => {
                   setTitle(event.target.value)
-                  setTitleDirty(true)
-                }}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Artist</span>
-              <input
-                type="text"
-                value={artist}
-                placeholder="unknown"
-                onChange={(event) => {
-                  setArtist(event.target.value)
                   setTitleDirty(true)
                 }}
               />

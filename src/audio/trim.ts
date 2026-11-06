@@ -540,3 +540,68 @@ function resample(envelope: Float32Array, rate: number, start: number, end: numb
   }
   return out
 }
+
+export interface TrimRange {
+  start: number
+  end: number
+}
+
+/** What is left to play: a window with parts spliced out of it. */
+export interface TrimPlan extends TrimRange {
+  cuts: TrimRange[]
+}
+
+/** A highlight this close to the end of what plays counts as reaching it. */
+const TRIM_EDGE_SECONDS = 0.4
+/** Pieces shorter than this between two removed parts go too: the player skips over them anyway. */
+const TRIM_MIN_PIECE_SECONDS = 0.6
+/** At least this much of the song has to keep playing. */
+const TRIM_MIN_LEFT_SECONDS = 5
+const TRIM_BAR_BEATS = 4
+
+/**
+ * The part of the song a highlight really removes. At the start or end of what plays it stays as
+ * drawn. In the middle it moves onto whole bars, so the music and the arrows stay on the beat
+ * across the join. Null when the highlight covers everything that plays.
+ */
+export function snapTrimRange(
+  plan: TrimPlan,
+  range: TrimRange,
+  grid: Pick<AnalysisResult, 'bpm' | 'offset'>,
+): TrimRange | null {
+  const atStart = range.start <= plan.start + TRIM_EDGE_SECONDS
+  const atEnd = range.end >= plan.end - TRIM_EDGE_SECONDS
+  if (atStart && atEnd) return null
+  if (atStart) return { start: plan.start, end: range.end }
+  if (atEnd) return { start: range.start, end: plan.end }
+  const bar = (60 / grid.bpm) * TRIM_BAR_BEATS
+  if (!(bar > 0.05)) return range
+  const start = grid.offset + Math.round((range.start - grid.offset) / bar) * bar
+  const bars = Math.max(1, Math.round((range.end - range.start) / bar))
+  return { start: Math.max(plan.start, start), end: Math.min(plan.end, start + bars * bar) }
+}
+
+/** The plan after removing a part, or null when too little of the song would be left. */
+export function removeFromTrim(plan: TrimPlan, range: TrimRange): TrimPlan | null {
+  let start = plan.start
+  let end = plan.end
+  const pieces = [...plan.cuts, range].sort((a, b) => a.start - b.start)
+  const merged: TrimRange[] = []
+  for (const piece of pieces) {
+    const last = merged[merged.length - 1]
+    if (last && piece.start <= last.end + TRIM_MIN_PIECE_SECONDS) last.end = Math.max(last.end, piece.end)
+    else merged.push({ ...piece })
+  }
+  while (merged.length > 0 && merged[0].start <= start + TRIM_MIN_PIECE_SECONDS) start = Math.max(start, merged.shift()!.end)
+  while (merged.length > 0 && merged[merged.length - 1].end >= end - TRIM_MIN_PIECE_SECONDS) end = Math.min(end, merged.pop()!.start)
+  const left = end - start - merged.reduce((sum, cut) => sum + cut.end - cut.start, 0)
+  return left >= TRIM_MIN_LEFT_SECONDS ? { start, end, cuts: merged } : null
+}
+
+/** Everything in the file that no longer plays, for drawing. */
+export function removedParts(plan: TrimPlan, duration: number): TrimRange[] {
+  const parts = [...plan.cuts]
+  if (plan.start > 0.01) parts.unshift({ start: 0, end: plan.start })
+  if (plan.end < duration - 0.01) parts.push({ start: plan.end, end: duration })
+  return parts
+}
