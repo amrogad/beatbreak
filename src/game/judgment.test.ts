@@ -141,9 +141,11 @@ describe('compensateInputLatency', () => {
     expect(compensateInputLatency(1000, 5000, 1015)).toBeCloseTo(4985, 9)
   })
 
-  it('clamps implausible lag and never moves the tap forward', () => {
-    // 200 ms of lag means a stalled main thread: trust the audio clock instead.
-    expect(compensateInputLatency(1000, 5000, 1200)).toBeCloseTo(4975, 9)
+  it('ignores implausible lag and never moves the tap forward', () => {
+    // A 60 ms long task: the clock was read 60 ms after the tap.
+    expect(compensateInputLatency(1000, 5000, 1060)).toBeCloseTo(4940, 9)
+    // 200 ms is not a believable event delay: the timestamp is on another clock.
+    expect(compensateInputLatency(1000, 5000, 1200)).toBeCloseTo(5000, 9)
     // A timestamp "in the future" (clock skew) must not push the tap forward.
     expect(compensateInputLatency(1100, 5000, 1000)).toBeCloseTo(5000, 9)
   })

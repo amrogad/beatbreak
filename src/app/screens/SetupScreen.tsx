@@ -435,6 +435,10 @@ export function SetupScreen({
       onToast('No chart for this difficulty.', 'error')
       return
     }
+    if (chart.notes.length === 0) {
+      onToast('This chart has no arrows. Add some in the editor or build new arrows.', 'error')
+      return
+    }
     onPlay({ songId: bundle.meta.id, chartId: chart.id, difficulty: chart.difficulty, autoPlay: settings.autoPlay })
   }, [bundle, difficulty, onPlay, onToast, settings.autoPlay])
 

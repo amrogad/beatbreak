@@ -166,8 +166,8 @@ export function compensateInputLatency(
   latencyMs = 0,
 ): number {
   const lag = nowMs - eventTimeMs
-  // Only compensate for lag that is plausible; a huge gap means the event was delayed by a
-  // stalled main thread and the audio clock reading is the better estimate.
-  const clampedLag = Math.max(0, Math.min(lag, 25))
-  return audioSongTimeMs - clampedLag - latencyMs
+  // The audio clock is read when the handler runs, so a busy main thread makes it late by the
+  // whole lag. Only a negative or absurd lag (a timestamp on another clock) is ignored.
+  const trustedLag = lag >= 0 && lag <= 150 ? lag : 0
+  return audioSongTimeMs - trustedLag - latencyMs
 }

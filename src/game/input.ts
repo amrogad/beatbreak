@@ -125,6 +125,8 @@ export interface InputRouterOptions {
   controls?: ControlMap
   /** When true, lane keys are ignored (menus, pause overlay). */
   enabled?: () => boolean
+  /** Restart key allowed (defaults to `enabled`; the pause menu offers restart too). */
+  canRestart?: () => boolean
 }
 
 /**
@@ -191,7 +193,7 @@ export class InputRouter {
       return
     }
     if (controls.restart.includes(code) && !laneFirst) {
-      if (!enabled) return
+      if (!(this.options.canRestart?.() ?? enabled)) return
       event.preventDefault()
       this.handlers.onRestart?.()
       return

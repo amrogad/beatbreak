@@ -122,6 +122,7 @@ export function GameScreen({
   const onFinishRef = useRef(onFinish)
 
   const [paused, setPaused] = useState(false)
+  const [crashed, setCrashed] = useState(false)
   // The mode is fixed for the run; changing it in Settings applies to the next one.
   const [circleMode] = useState(() => settings.playMode === 'circles')
   const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart, circleRhythm ?? sourceChart) : null), [circleMode, sourceChart, circleRhythm])
@@ -440,7 +441,27 @@ export function GameScreen({
     // Phones run at 60 frames a second at most: a 120 Hz screen would double the work for nothing.
     const frameStep = window.matchMedia('(pointer: coarse)').matches ? 1000 / 60 : 0
     let nextFrameAt = 0
+    // A frame that throws (a lost canvas, a broken imported chart) would end the loop with a
+    // frozen picture and the song still playing: stop everything and say so instead.
+    const crash = (error: unknown): void => {
+      if (disposed) return
+      // eslint-disable-next-line no-console
+      console.error(error)
+      cancelAnimationFrame(rafRef.current)
+      engineRef.current?.pause()
+      judgingRef.current = false
+      pausedRef.current = true
+      finishedRef.current = true
+      setCrashed(true)
+    }
     const loop = (now: number = performance.now()): void => {
+      try {
+        frame(now)
+      } catch (error) {
+        crash(error)
+      }
+    }
+    const frame = (now: number): void => {
       if (disposed) return
       if (frameStep > 0) {
         if (now < nextFrameAt - 1) {
@@ -477,7 +498,7 @@ export function GameScreen({
         // audio starts on the exact frame the number reaches zero.
         if (!disposed && !pausedRef.current && !engagingRef.current && remaining <= 0) {
           engagingRef.current = true
-          void engage()
+          engage().catch(crash)
         }
         rafRef.current = requestAnimationFrame(loop)
         return
@@ -610,6 +631,7 @@ export function GameScreen({
         keyMap: settingsRef.current.keyMap,
         controls: settingsRef.current.controls,
         enabled: () => !finishedRef.current && !pausedRef.current,
+        canRestart: () => !finishedRef.current,
       },
     )
 
@@ -738,7 +760,21 @@ export function GameScreen({
         </Button>
       </div>
 
-      {paused && (
+      {crashed && (
+        <div className="game-overlay">
+          <div className="panel">
+            <h2>The run stopped</h2>
+            <p className="muted small mt-8">Something went wrong while drawing the song. Your songs and scores are safe.</p>
+            <div className="col gap-12 mt-16">
+              <Button variant="primary" onClick={onExit}>
+                Back to song setup
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {paused && !crashed && (
         <div className="game-overlay">
           <div className="panel">
             <h2>Paused</h2>
