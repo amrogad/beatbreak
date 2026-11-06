@@ -15,6 +15,7 @@ import type { StorageSummary } from '../../store/maintenance'
 import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle } from '../components'
 import { SYNC_HINT, formatBytes, formatPercent, formatSync } from '../format'
 import { CalibrateDialog } from '../Calibrate'
+import { buildBackup, parseBackup, restoreBackup } from '../../store/backup'
 
 export interface SettingsScreenProps {
   settings: Settings
@@ -72,6 +73,38 @@ export function SettingsScreen({
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 
   const [calibrating, setCalibrating] = useState(false)
+  const backupInputRef = useRef<HTMLInputElement | null>(null)
+  const saveBackupFile = async (): Promise<void> => {
+    try {
+      const text = await buildBackup(settings)
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `beatbreak-backup-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 10000)
+      onToast('Backup saved to your downloads.', 'success')
+    } catch (error) {
+      onToast(`Could not save a backup: ${error instanceof Error ? error.message : String(error)}`, 'error')
+    }
+  }
+  const restoreBackupFile = async (file: File): Promise<void> => {
+    try {
+      const { backup, skipped } = parseBackup(await file.text())
+      const when = backup.savedAt ? ` from ${backup.savedAt.slice(0, 10)}` : ''
+      if (!window.confirm(`Restore ${backup.songs.length} song(s), their charts and ${backup.scores.length} score(s)${when}? A song that is already here is replaced by the backup's copy, and your settings are replaced.`)) return
+      const done = await restoreBackup(backup)
+      if (backup.settings) onUpdate(backup.settings)
+      onLibraryChanged()
+      await refreshStorage()
+      onToast(`Restored ${done.songs} song(s) and ${done.scores} score(s).${skipped > 0 ? ` ${skipped} broken entr${skipped === 1 ? 'y was' : 'ies were'} skipped.` : ''} Songs whose file is not on this device ask for it the first time you play them.`, 'success')
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
+
   /** Ask first, then run a destructive storage action and report a failure instead of dropping it. */
   const guarded = async (question: string, action: () => Promise<void>): Promise<void> => {
     if (!window.confirm(question)) return
@@ -457,6 +490,34 @@ export function SettingsScreen({
           />
         </div>
       </details>
+
+      <div className="settings-stack mt-16">
+        <div className="row-between wrap gap-12">
+          <div>
+            <strong>Backup</strong>
+            <p className="muted tiny">Songs, charts, scores and settings in one file. Browsers can clear saved data, so keep one. Song files are not included.</p>
+          </div>
+          <div className="row gap-8 wrap">
+            <Button size="sm" onClick={() => void saveBackupFile()}>
+              Save a backup
+            </Button>
+            <Button size="sm" onClick={() => backupInputRef.current?.click()}>
+              Restore
+            </Button>
+            <input
+              ref={backupInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void restoreBackupFile(file)
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
       <details className="disclosure">
         <summary>
