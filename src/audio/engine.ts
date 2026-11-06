@@ -60,6 +60,29 @@ export async function resumeAudioContext(): Promise<void> {
   await Promise.race([ctx.resume().catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 2500))])
 }
 
+/** Every song is decoded at this rate, whatever the device's output rate. */
+export const ANALYSIS_RATE = 44100
+
+let decoder: BaseAudioContext | null = null
+/**
+ * Decode at one fixed rate on every device. The analysis windows were tuned at 44.1 kHz; decoding at
+ * a phone's or PC's 48 kHz moved the detected beat line by up to ~11 ms on real songs (measured),
+ * so the same song charted differently per device. Playback resamples on its own.
+ */
+function decodingContext(): BaseAudioContext {
+  if (decoder) return decoder
+  const Offline: typeof OfflineAudioContext | undefined =
+    typeof window !== 'undefined'
+      ? (window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext)
+      : undefined
+  try {
+    if (Offline) decoder = new Offline(2, 1, ANALYSIS_RATE)
+  } catch {
+    decoder = null
+  }
+  return decoder ?? getAudioContext()
+}
+
 /** Longest song Beatbreak takes: decoding and analysing more risks running a phone's tab out of memory. */
 export const MAX_SONG_SECONDS = 20 * 60
 
@@ -118,10 +141,9 @@ export async function decodeAudioFile(file: File, options: { maxBytes?: number }
   // length first (it reads only the header), and refuse before the decode can take the tab down.
   const seconds = await probeDuration(file)
   if (seconds > MAX_SONG_SECONDS) throw tooLong(file, seconds)
-  const ctx = getAudioContext()
   const arrayBuffer = await file.arrayBuffer()
   try {
-    const buffer = await ctx.decodeAudioData(arrayBuffer)
+    const buffer = await decodingContext().decodeAudioData(arrayBuffer)
     if (buffer && buffer.duration > MAX_SONG_SECONDS) throw tooLong(file, buffer.duration)
     if (!buffer || buffer.duration <= 0 || buffer.length === 0) {
       throw new DecodeError(
