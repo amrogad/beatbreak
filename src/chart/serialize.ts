@@ -39,7 +39,9 @@ export interface ExportContext {
   duration: number
 }
 
-export function serializeChart(chart: Chart, context: ExportContext): string {
+export function serializeChart(fullChart: Chart, context: ExportContext): string {
+  // The kept previous version is this device's undo, not part of the chart.
+  const { previous: _previous, ...chart } = fullChart
   const file: ChartFile = {
     kind: CHART_FILE_KIND,
     version: CHART_FILE_VERSION,

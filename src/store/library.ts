@@ -321,6 +321,8 @@ export async function regenerateCharts(input: {
 }): Promise<Chart[]> {
   const timing = TimingMap.single(input.bpm, input.offset)
   const edited = input.replaceEdited ? [] : (input.existing ?? []).filter((chart) => chart.edited)
+  // A hand-edited chart that gets rebuilt is kept as the new chart's previous version.
+  const replaced = new Map((input.replaceEdited ? (input.existing ?? []).filter((chart) => chart.edited) : []).map((chart) => [chart.difficulty, chart]))
   const generated = generateAllDifficulties({
     analysis: input.analysis,
     timing,
@@ -332,6 +334,11 @@ export async function regenerateCharts(input: {
     ),
     edit: input.edit ?? null,
     options: { salt: input.salt ?? 0 },
+  }).map((chart) => {
+    const old = replaced.get(chart.difficulty)
+    if (!old) return chart
+    const { previous: _drop, ...rest } = old
+    return { ...chart, previous: rest }
   })
   await saveCharts(generated)
   return [...generated, ...edited].sort(

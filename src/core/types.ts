@@ -133,6 +133,8 @@ export interface Chart {
   generator: GeneratorInfo
   /** True when a human edited the chart after generation. */
   edited: boolean
+  /** The version this one replaced (a save in the editor, or "Rebuild all"), for one step back. */
+  previous?: Omit<Chart, 'previous'>
   createdAt: number
   updatedAt: number
 }

@@ -19,7 +19,7 @@ import { exportSm, parseChartFile, serializeChart } from '../../chart/serialize'
 import { computeStats } from '../../chart/generate'
 import { createId } from '../../core/rng'
 import { editorUnsaved, runtime } from '../runtime'
-import { saveChart } from '../../store/repository'
+import { getChart, saveChart } from '../../store/repository'
 import { loadSongBundle } from '../../store/library'
 import { isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { isOccupied, noteEnd, placeNote, regridNotes, stepTime, withEnd } from '../../chart/editNotes'
@@ -544,8 +544,15 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     const playability = validatePlayability(chart, duration)
     // Clean as of this copy: an edit made while the write runs marks it dirty again.
     setDirty(false)
+    let saved: Chart = chart
     try {
-      await saveChart(chart)
+      // The stored version becomes this one's previous, so a save can be taken back once.
+      const stored = await getChart(chart.id)
+      if (stored) {
+        const { previous: _older, ...rest } = stored
+        saved = { ...chart, previous: rest }
+      }
+      await saveChart(saved)
     } catch (error) {
       setDirty(true)
       onToast(`Could not save the chart: ${error instanceof Error ? error.message : String(error)}`, 'error')
@@ -554,7 +561,8 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     if (!playability.ok) {
       onToast(`Saved, but ${playability.errors} playability error(s) remain. Check the report.`, 'info')
     }
-    const charts = (bundle?.charts ?? []).map((candidate) => (candidate.id === chart.id ? chart : candidate))
+    setChart((current) => (current && current.id === saved.id && current.notes === chart.notes ? saved : current))
+    const charts = (bundle?.charts ?? []).map((candidate) => (candidate.id === chart.id ? saved : candidate))
     const updated = { ...(bundle as SongBundle), charts }
     runtime.put(updated)
     setBundle(updated)
@@ -1000,6 +1008,21 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             <Button size="sm" onClick={() => regrid(timing, chart.stepsPerBeat)}>
               Re-snap all notes to grid
             </Button>
+            {chart.previous && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  const older = chart.previous
+                  if (!older) return
+                  pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
+                  setChart({ ...chart, notes: older.notes, timing: older.timing, stepsPerBeat: older.stepsPerBeat, stats: computeStats(older.notes, duration), edited: true })
+                  setDirty(true)
+                  onToast('Back to the version before your last save. Save to keep it, or Undo.', 'info')
+                }}
+              >
+                Go back to the previous version
+              </Button>
+            )}
             <span className="field-hint">
               {chart.stepsPerBeat} steps per beat, {(timing.secondsPerBeat(0) * 1000).toFixed(1)} ms per beat
             </span>
