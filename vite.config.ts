@@ -67,17 +67,33 @@ function serviceWorkerPrecache(): import('vite').Plugin {
 function playLog(): import('vite').Plugin {
   const handler: import('vite').Connect.NextHandleFunction = (req, res, next) => {
     if (req.method !== 'POST' || !req.url?.endsWith('/__playlog')) return next()
+    // Only this app's own pages: JSON from the same local origin, at most a few MB.
+    const origin = req.headers.origin
+    const host = req.headers.host ?? ''
+    if (!String(req.headers['content-type'] ?? '').startsWith('application/json') || (origin && origin !== `http://${host}`)) {
+      res.statusCode = 403
+      res.end()
+      return
+    }
+    const LIMIT = 4 * 1024 * 1024
     let body = ''
-    req.on('data', (chunk) => (body += chunk))
+    let tooBig = false
+    req.on('data', (chunk) => {
+      if (tooBig) return
+      body += chunk
+      if (body.length > LIMIT) tooBig = true
+    })
     req.on('end', async () => {
       const fs = await import('node:fs')
       const path = await import('node:path')
       try {
+        if (tooBig) throw new Error('too big')
         const log = JSON.parse(body)
         const dir = path.resolve(process.cwd(), '..', 'pulsegrid-testdata', 'playlogs')
         fs.mkdirSync(dir, { recursive: true })
-        const name = `${String(log.at).replace(/[:.]/g, '-')}-${String(log.song).replace(/[^\w-]+/g, '_').slice(0, 40)}-${log.difficulty}.json`
-        fs.writeFileSync(path.join(dir, name), body)
+        const clean = (value: unknown, max: number): string => String(value ?? '').replace(/[^\w-]+/g, '_').slice(0, max)
+        const name = `${new Date().toISOString().replace(/[:.]/g, '-')}-${clean(log.song, 40)}-${clean(log.mode, 8)}-${clean(log.difficulty, 8)}.json`
+        fs.writeFileSync(path.join(dir, path.basename(name)), body)
         res.statusCode = 204
       } catch {
         res.statusCode = 400

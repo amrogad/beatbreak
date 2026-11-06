@@ -335,12 +335,28 @@ export function loadSettings(): Settings {
     if ((parsed.schema ?? 1) < SETTINGS_SCHEMA) saveSettings(migrated)
     return migrated
   } catch {
-    return { ...DEFAULT_SETTINGS }
+    // Blocked or unreadable storage: still a phone's defaults on a phone.
+    return { ...DEFAULT_SETTINGS, ...touchDefaults() }
+  }
+}
+
+/** Schema of what is stored now, or 0 when nothing readable is there. */
+function storedSchema(): number {
+  try {
+    const text = localStorage.getItem(STORAGE_KEY)
+    if (!text) return 0
+    const schema = (JSON.parse(text) as { schema?: unknown } | null)?.schema
+    return typeof schema === 'number' ? schema : 1
+  } catch {
+    return 0
   }
 }
 
 export function saveSettings(settings: Settings): void {
   try {
+    // A tab still running an older build must not stamp its older schema over settings a newer
+    // build already migrated: the next load would run those migrations a second time.
+    if (storedSchema() > SETTINGS_SCHEMA) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, schema: SETTINGS_SCHEMA }))
   } catch {
     // Storage full or blocked: the in-memory settings still apply for this session.
@@ -357,6 +373,14 @@ export class SettingsStore {
 
   constructor(initial: Settings = loadSettings()) {
     this.value = initial
+    // Another tab changed a setting: take it, so this tab does not write its stale copy back over it.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (event) => {
+        if (event.key !== STORAGE_KEY || event.newValue === null) return
+        this.value = loadSettings()
+        for (const listener of this.listeners) listener()
+      })
+    }
   }
 
   /**
@@ -383,7 +407,7 @@ export class SettingsStore {
   }
 
   reset(): Settings {
-    this.value = { ...DEFAULT_SETTINGS }
+    this.value = { ...DEFAULT_SETTINGS, ...touchDefaults() }
     saveSettings(this.value)
     for (const listener of this.listeners) listener()
     return this.value

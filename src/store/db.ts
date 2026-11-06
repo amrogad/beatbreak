@@ -49,11 +49,27 @@ export function isIndexedDbAvailable(): boolean {
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
+/** Set once a newer build upgraded the database from another tab: this tab's code is now out of date. */
+let outdated = false
+/** How long an upgrade may wait on another tab before this call gives up (the open keeps going). */
+const BLOCKED_GIVE_UP_MS = 8000
+
+const RELOAD_MESSAGE = 'Beatbreak was updated in another tab. Reload this page to keep saving.'
+
+/** Fired on window when this tab can no longer save because a newer build took over the database. */
+export const DB_OUTDATED_EVENT = 'beatbreak:db-outdated'
+
+function markOutdated(): void {
+  if (outdated) return
+  outdated = true
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(DB_OUTDATED_EVENT))
+}
 
 export function openDb(): Promise<IDBDatabase> {
   if (!isIndexedDbAvailable()) {
     return Promise.reject(new Error('This browser has IndexedDB disabled (private browsing can do this).'))
   }
+  if (outdated) return Promise.reject(new Error(RELOAD_MESSAGE))
   if (dbPromise) return dbPromise
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
@@ -96,21 +112,40 @@ export function openDb(): Promise<IDBDatabase> {
         }
       }
     }
+    let blockedTimer: ReturnType<typeof setTimeout> | null = null
     request.onsuccess = () => {
+      if (blockedTimer) clearTimeout(blockedTimer)
       const db = request.result
       db.onversionchange = () => {
-        // Another tab is upgrading the schema; close so it can proceed.
+        // A newer build in another tab is upgrading the schema: close so it can proceed. This tab
+        // runs the old code and would open at the old version, so it stops saving and asks for a reload.
         db.close()
+        dbPromise = null
+        markOutdated()
+      }
+      // The browser can close the connection itself (site data cleared, storage evicted).
+      db.onclose = () => {
         dbPromise = null
       }
       resolve(db)
     }
     request.onerror = () => {
+      if (blockedTimer) clearTimeout(blockedTimer)
       dbPromise = null
+      if (request.error?.name === 'VersionError') {
+        markOutdated()
+        reject(new Error(RELOAD_MESSAGE))
+        return
+      }
       reject(request.error ?? new Error('Could not open the local database.'))
     }
     request.onblocked = () => {
-      reject(new Error('Another Beatbreak tab is holding the database open. Close it and retry.'))
+      // Another tab still holds the old version. Its onversionchange closes it, so this usually
+      // clears at once; if it does not, give up on this call but let the open finish later.
+      blockedTimer = setTimeout(() => {
+        dbPromise = null
+        reject(new Error('Another Beatbreak tab is holding the database open. Close it and retry.'))
+      }, BLOCKED_GIVE_UP_MS)
     }
   })
   return dbPromise
