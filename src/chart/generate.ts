@@ -33,7 +33,10 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-4.0'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.1'
+
+/** Hits this close to an eighth snap to it instead of the nearest 16th (Hard and Expert). */
+const COARSE_SNAP_MS = 55
 
 /**
  * Per-difficulty behaviour. `stepsPerBeat` is the grid resolution the difficulty snaps to
@@ -310,7 +313,16 @@ export function selectCandidates(
       droppedSilence++
       continue
     }
-    const step = Math.round(timing.timeToBeat(onset.time) * settings.stepsPerBeat)
+    let step = Math.round(timing.timeToBeat(onset.time) * settings.stepsPerBeat)
+    // A hit close to an eighth goes on the eighth: attacks are often detected a little early, and
+    // snapping those to the 16th before put arrows where human charts never do. Against the human
+    // StepMania and osu! charts of the same songs this raised Hard/Expert arrows that both humans
+    // also chart from 62-66% to 66-72%.
+    if (fineGrid && step % (settings.stepsPerBeat / 2) !== 0) {
+      const half = settings.stepsPerBeat / 2
+      const eighth = Math.round(timing.timeToBeat(onset.time) * 2) * half
+      if (Math.abs(timing.stepToTime(eighth, settings.stepsPerBeat) - onset.time) * 1000 <= COARSE_SNAP_MS) step = eighth
+    }
     if (step < 0) {
       droppedOffGrid++
       continue
