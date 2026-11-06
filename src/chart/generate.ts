@@ -15,7 +15,7 @@
  * Every stage is deterministic given a seed, so regenerating with the same settings reproduces
  * the same chart exactly.
  */
-import { applyChartRules } from './rules'
+import { ANCHOR_LIMIT, anchorWindow, applyChartRules } from './rules'
 import { BAR_BEATS, groupBars, type BarGroups } from './structure'
 import type {
   AnalysisResult,
@@ -33,7 +33,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-4.1'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.2'
 
 /** Hits this close to an eighth snap to it instead of the nearest 16th (Hard and Expert). */
 const COARSE_SNAP_MS = 55
@@ -73,6 +73,10 @@ export interface DifficultyProfile {
  *   hard    eighth-note flow with occasional two-arrow jumps
  *   expert  the full 1:1 chart, with rare three- and four-arrow accents
  *
+ * Densities were raised on 2026-11-07 toward human charts of the same songs (StepMania and
+ * osu!mania): on 15 songs Easy/Normal/Hard now play 27/45/58% of a human chart's moments (was
+ * 22/36/54%) with the same share of our arrows landing on theirs (84/83/79%).
+ *
  * Chords are gated by genuine simultaneous multi-band hits, a strong grid position, a strength
  * threshold and a long recovery gap. Hard never asks for more than two arrows at once; Expert
  * earns a hand only on a real downbeat accent, at most once every few bars.
@@ -81,32 +85,32 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, DifficultyProfile> = {
   easy: {
     stepsPerBeat: 1,
     snapToleranceMs: 70,
-    keepRatio: 0.52,
-    targetNps: 1.4,
+    keepRatio: 0.9,
+    targetNps: 2.2,
     maxChord: 1,
     minJackGap: 0.4,
     minGap: 0.3,
-    strengthFloor: 0.38,
+    strengthFloor: 0.28,
     accent: 1.35,
     onBeatBonus: 0.55,
   },
   normal: {
     stepsPerBeat: 2,
     snapToleranceMs: 65,
-    keepRatio: 0.72,
-    targetNps: 2.3,
+    keepRatio: 0.9,
+    targetNps: 3.2,
     maxChord: 1,
     minJackGap: 0.28,
     minGap: 0.2,
-    strengthFloor: 0.24,
+    strengthFloor: 0.12,
     accent: 1.2,
     onBeatBonus: 0.38,
   },
   hard: {
     stepsPerBeat: 4,
     snapToleranceMs: 55,
-    keepRatio: 0.85,
-    targetNps: 3.3,
+    keepRatio: 1,
+    targetNps: 4.5,
     maxChord: 2,
     minJackGap: 0.18,
     minGap: 0.12,
@@ -648,6 +652,20 @@ export function assignLanes(
   const rng = createRng(seed ^ 0x27d4eb2f)
   const notes: ChartNote[] = []
   const laneUse = [0, 0, 0, 0]
+  /** Recent single arrows, to keep a run from hammering one column (the anchor rule). */
+  const singles: { time: number; lane: Lane }[] = []
+  const anchorLimit = ANCHOR_LIMIT[difficulty] ?? Infinity
+  const runVisits = (lane: Lane, time: number): number => {
+    const halfBeat = timing.secondsPerBeat(timing.timeToBeat(time)) * 0.5 + 1e-3
+    let count = 0
+    let previous = time
+    const stop = Math.max(0, singles.length - anchorWindow(anchorLimit) + 1)
+    for (let k = singles.length - 1; k >= stop && previous - singles[k].time <= halfBeat; k--) {
+      if (singles[k].lane === lane) count++
+      previous = singles[k].time
+    }
+    return count
+  }
   const laneLastTime: number[] = [-Infinity, -Infinity, -Infinity, -Infinity]
   const handOf = (lane: Lane): 0 | 1 => (lane <= 1 ? 0 : 1)
   const strengthValues = candidates.map((c) => c.strength)
@@ -695,6 +713,8 @@ export function assignLanes(
     lastNoteTime = candidate.time
     previousLane = lastLane
     lastLane = lanes.length === 1 ? lanes[0] : null
+    if (lanes.length === 1) singles.push({ time: candidate.time, lane: lanes[0] })
+    else singles.length = 0
   }
 
   const chooseShape = (size: 2 | 3 | 4, candidate: Candidate, free: (lane: Lane) => boolean): Lane[] | null => {
@@ -833,8 +853,14 @@ export function assignLanes(
       const balance = -(laneUse[lane] - Math.min(...laneUse)) * 0.22
       const anchor = onStrongBeat && (lane === 0 || lane === 3) ? 0.25 : 0
       const motifBonus = preferredLane === lane ? 0.42 : 0
+      // Choosing a column the run already keeps returning to would only be moved again by the
+      // anchor rule, differently on every repeat of the bar; avoid it here instead.
+      // One short of the limit is penalised too, so a bar that will repeat in a stream leaves room
+      // for its repeat.
+      const visits = runVisits(lane, candidate.time) + 1
+      const hammer = visits >= anchorLimit ? -2.2 : visits >= anchorLimit - 1 ? -0.6 : 0
       const score =
-        gravity + flow + sameHand + repeat + repeatTwo + balance + anchor + motifBonus + rng.range(-0.08, 0.08)
+        gravity + flow + sameHand + repeat + repeatTwo + balance + anchor + motifBonus + hammer + rng.range(-0.08, 0.08)
       if (score > bestScore) {
         bestScore = score
         bestLane = lane

@@ -14,7 +14,8 @@
  *  4. Hold releases end together or are spaced apart (1 beat Easy, 1/2 Normal, 1/4 Hard, Expert).
  *  5. Easy: at most five arrows in a row at half-beat spacing before a rest.
  *  6. Normal and Hard: no chords in the middle of a fast run.
- *  7. Normal and Hard: no anchors, the same column hammered in a run (3 on Normal, 5 on Hard).
+ *  7. Normal and Hard: no anchors, the same column hammered in a run (3 times in 5 arrows on
+ *     Normal, 5 in 9 on Hard: every other arrow on one column).
  *  8. No stray arrow at the very start or end: an arrow two bars or more away from the rest of the
  *     chart (a quiet intro sound, a last ring after the song) is dropped, so the chart starts
  *     when the music does.
@@ -34,7 +35,9 @@ export interface RuleSettings {
 
 const MIN_HOLD_BEATS: Record<Difficulty, number> = { easy: 1, normal: 0.5, hard: 0.25, expert: 0.25 }
 const RELEASE_GAP_BEATS: Record<Difficulty, number> = { easy: 1, normal: 0.5, hard: 0.25, expert: 0.25 }
-const ANCHOR_LIMIT: Partial<Record<Difficulty, number>> = { normal: 3, hard: 5 }
+export const ANCHOR_LIMIT: Partial<Record<Difficulty, number>> = { normal: 3, hard: 5 }
+/** How many arrows of a run, counting the current one, an anchor is counted over. */
+export const anchorWindow = (limit: number): number => limit * 2 - 1
 const SAME_TIME = 0.002
 
 const end = (note: ChartNote): number => note.time + (note.kind === 'hold' ? note.duration ?? 0 : 0)
@@ -226,7 +229,8 @@ function breakAnchors(notes: ChartNote[], beatAt: (t: number) => number, limit: 
     // Walk back through the run (half-beat gaps or less) counting this column's visits.
     let count = 1
     let k = i
-    while (k > 0 && singles[k].time - singles[k - 1].time <= beatAt(note.time) * 0.5 + 1e-3) {
+    const stop = Math.max(0, i - anchorWindow(limit) + 1)
+    while (k > stop && singles[k].time - singles[k - 1].time <= beatAt(note.time) * 0.5 + 1e-3) {
       k--
       if (singles[k].lane === note.lane) count++
     }
