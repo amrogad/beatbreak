@@ -24,7 +24,6 @@ import type { Settings } from '../../store/settings'
 import { decodeAudioFile } from '../../audio/engine'
 import { downmixMono } from '../../audio/analyze'
 import { removeFromTrim, removedParts, snapTrimRange, type TrimPlan, type TrimRange } from '../../audio/trim'
-import { playSelection, stopMenuMusic } from '../../audio/menuMusic'
 import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
@@ -35,6 +34,16 @@ import { SYNC_HINT, formatDuration, formatPercent, formatSync } from '../format'
 import type { BestScores } from './bestScores'
 
 type Phase = 'idle' | 'importing' | 'ready' | 'error'
+
+function ScissorsIcon(): React.JSX.Element {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M8.2 8.2 20 20M8.2 15.8 20 4" />
+    </svg>
+  )
+}
 
 export interface SetupScreenProps {
   file: File | null
@@ -81,7 +90,8 @@ export function SetupScreen({
   const [titleDirty, setTitleDirty] = useState(false)
   const [rangeBusy, setRangeBusy] = useState(false)
   const [selection, setSelection] = useState<TrimRange | null>(null)
-  const [listening, setListening] = useState(false)
+  const [trimming, setTrimming] = useState(false)
+  const [trimHistory, setTrimHistory] = useState<TrimPlan[]>([])
   const [variationBusy, setVariationBusy] = useState(false)
   const [attaching, setAttaching] = useState(false)
   const analysisClientRef = useRef<AnalysisClient | null>(null)
@@ -216,13 +226,6 @@ export function SetupScreen({
     [bundle],
   )
 
-  const stopListening = useCallback(() => {
-    setListening((current) => {
-      if (current) stopMenuMusic()
-      return false
-    })
-  }, [])
-
   const saveDetails = useCallback(async () => {
     if (!bundle) return
     const updated = await updateSong(bundle.meta.id, {
@@ -246,7 +249,6 @@ export function SetupScreen({
         return
       }
       setRangeBusy(true)
-      stopListening()
       try {
         const updated = await setSongTrim(bundle.meta.id, trim)
         if (!updated) throw new Error('The song is no longer in the library.')
@@ -269,7 +271,7 @@ export function SetupScreen({
         setRangeBusy(false)
       }
     },
-    [adopt, analysis, bundle, onToast, rangeBusy, stopListening],
+    [adopt, analysis, bundle, onToast, rangeBusy],
   )
 
   const newVariation = useCallback(async () => {
@@ -411,14 +413,30 @@ export function SetupScreen({
     ? `Whole song - ${formatDuration(meta.duration)}`
     : `${formatDuration(playLength)} of ${formatDuration(meta.duration)} plays`
   const chooseSelection = (range: TrimRange | null): void => {
-    stopListening()
     setSelection(range && (snapTrimRange(trim, range, meta.analysis) ?? range))
   }
-  const trimSelection = (): void => {
-    if (!selection) return
+  const cutSelection = (): void => {
+    if (!selection) {
+      onToast('Highlight a part of the song first.', 'info')
+      return
+    }
     const next = removeFromTrim(trim, selection)
-    if (next) void applyTrim(next, 'Part removed. Arrows rebuilt.')
-    else onToast('That would leave too little of the song to play.', 'error')
+    if (!next) {
+      onToast('That would leave too little of the song to play.', 'error')
+      return
+    }
+    setTrimHistory((history) => [...history, trim])
+    void applyTrim(next, 'Part removed. Arrows rebuilt.')
+  }
+  const undoTrim = (): void => {
+    const previous = trimHistory[trimHistory.length - 1]
+    if (!previous) return
+    setTrimHistory((history) => history.slice(0, -1))
+    void applyTrim(previous, 'Undone. Arrows rebuilt.')
+  }
+  const restoreWholeSong = (): void => {
+    setTrimHistory((history) => [...history, trim])
+    void applyTrim({ start: 0, end: meta.duration, cuts: [] }, 'The whole song plays again. Arrows rebuilt.')
   }
 
   return (
@@ -490,10 +508,6 @@ export function SetupScreen({
         </div>
 
         <div className="setup-play mt-24">
-          <div>
-            <strong>{selectedChart ? `${selectedChart.stats.noteCount.toLocaleString('en-US')} arrows` : 'No chart'}</strong>
-            <span className="muted small"> - {formatDuration(playLength)} of play</span>
-          </div>
           <div className="row gap-8 wrap">
             <Button
               size="lg"
@@ -525,49 +539,45 @@ export function SetupScreen({
             <strong>Song range</strong>
             <p className="muted small">{rangeLabel}</p>
           </div>
-          <div className="row gap-8 wrap">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!selection || !bundle.buffer}
-              onClick={() => {
-                if (listening) stopListening()
-                else if (selection && bundle.buffer) {
-                  playSelection(bundle.buffer, selection.start, selection.end)
-                  setListening(true)
-                }
-              }}
-            >
-              {listening ? 'Stop' : 'Listen'}
-            </Button>
-            <Button size="sm" variant="primary" disabled={!selection || rangeBusy || !analysis} onClick={trimSelection}>
-              Trim
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={wholeSong || rangeBusy || !analysis}
-              onClick={() => void applyTrim({ start: 0, end: meta.duration, cuts: [] }, 'The whole song plays again. Arrows rebuilt.')}
-              title={analysis ? 'Bring back everything that was removed' : 'Re-attach the audio to change this'}
-            >
-              Whole song
-            </Button>
+          <Button
+            size="sm"
+            variant={trimming ? 'ghost' : 'primary'}
+            disabled={!analysis}
+            onClick={() => {
+              setTrimming((current) => !current)
+              setSelection(null)
+            }}
+            title={analysis ? undefined : 'Re-attach the audio to change this'}
+          >
+            {trimming ? 'Done' : 'Trim'}
+          </Button>
+        </div>
+        {trimming && (
+          <div className="trim-panel mt-12">
+            <TrimEditor
+              peaks={meta.peaks}
+              duration={meta.duration}
+              removed={removedParts(trim, meta.duration)}
+              selection={selection}
+              disabled={rangeBusy}
+              onSelect={chooseSelection}
+            />
+            <p className="muted tiny">Drag across the song to highlight a part, then press the scissors to cut it out.</p>
+            <div className="trim-tools">
+              <Button variant="primary" disabled={rangeBusy} onClick={cutSelection} title="Cut the highlighted part">
+                <ScissorsIcon />
+              </Button>
+              <div className="row gap-8 wrap">
+                <Button size="sm" variant="ghost" disabled={trimHistory.length === 0 || rangeBusy} onClick={undoTrim}>
+                  Undo
+                </Button>
+                <Button size="sm" variant="ghost" disabled={wholeSong || rangeBusy} onClick={restoreWholeSong}>
+                  Restore whole song
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="mt-12">
-          <TrimEditor
-            peaks={meta.peaks}
-            duration={meta.duration}
-            removed={removedParts(trim, meta.duration)}
-            selection={selection}
-            disabled={rangeBusy || !analysis}
-            onSelect={chooseSelection}
-          />
-        </div>
-        <p className="muted tiny mt-8">
-          Drag across the song to highlight a part, then press Trim to remove it. Parts in the middle
-          snap to whole bars so the beat carries on.
-        </p>
+        )}
         <div className="mt-20">
           <Slider
             label="Audio sync"

@@ -35,18 +35,10 @@ export function configureMenuMusic(options: { enabled: boolean; volume: number }
 export function playMenuMusic(key: string, buffer: AudioBuffer, startSeconds: number, wholeTrack = false): void {
   if (!enabled) return
   if (current?.key === key) return
-  const start = Math.max(0, Math.min(startSeconds, Math.max(0, buffer.duration - 4)))
-  startLoop(key, buffer, start, wholeTrack ? buffer.duration : Math.min(buffer.duration, start + PREVIEW_SECONDS))
-}
-
-/** Loop a highlighted part so the player can hear what they picked, even with menu music off. */
-export function playSelection(buffer: AudioBuffer, start: number, end: number): void {
-  startLoop(`selection-${start}-${end}`, buffer, start, end)
-}
-
-function startLoop(key: string, buffer: AudioBuffer, start: number, end: number): void {
   stopMenuMusic()
   const ctx = getAudioContext()
+  const start = Math.max(0, Math.min(startSeconds, Math.max(0, buffer.duration - 4)))
+  const end = wholeTrack ? buffer.duration : Math.min(buffer.duration, start + PREVIEW_SECONDS)
   const source = ctx.createBufferSource()
   source.buffer = buffer
   source.loop = true
