@@ -251,6 +251,9 @@ export class PlayfieldRenderer {
   private titleCache = { key: '', text: '' }
   private spritesWarm = false
   private textCache = new Map<string, { canvas: HTMLCanvasElement; w: number; h: number }>()
+  /** Advance width of each character at a size, for numbers drawn one cached digit at a time. */
+  private digitWidths = new Map<string, number>()
+  private renderFailures = 0
 
   /* ------------------------------------------------------------- self-tuning
    * The renderer watches its own frame time and sheds decoration when the machine cannot hold a
@@ -529,7 +532,30 @@ export class PlayfieldRenderer {
 
   /* ------------------------------------------------------------------ frame */
 
+  /**
+   * Draw one frame. A failure (a canvas the browser refused under memory pressure, a bad value)
+   * must never stop the game loop: the frame is skipped, the caches are dropped to free memory,
+   * and the next frame tries again.
+   */
   render(session: GameSession | CircleSession, songTimeMs: number, hud: HudState): void {
+    try {
+      this.renderFrame(session, songTimeMs, hud)
+    } catch (error) {
+      this.renderFailures++
+      if (this.renderFailures === 1) console.error('[beatbreak] frame failed', error)
+      this.textCache.clear()
+      this.digitWidths.clear()
+      this.invalidateCaches()
+      this.spritesWarm = false
+      try {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+      } catch {
+        /* the next frame resets it */
+      }
+    }
+  }
+
+  private renderFrame(session: GameSession | CircleSession, songTimeMs: number, hud: HudState): void {
     const ctx = this.ctx
     // The backing store is devicePixelRatio-scaled; draw in logical pixels. Setting the transform
     // every frame is a no-op for canvas cost and guarantees correctness after a resize (which
@@ -1179,7 +1205,7 @@ export class PlayfieldRenderer {
     ctx.save()
     ctx.translate(x, y)
     ctx.scale(zoom, zoom)
-    this.drawText(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), style, this.quality > 0, Math.round(glow * 20) / 20)
+    this.drawNumber(ctx, String(hud.combo), 0, 0, 38 * this.textScale(), style, this.quality > 0, glow)
     ctx.restore()
     this.drawText(ctx, 'COMBO', x, y + 28 * this.textScale(), 15, style, this.quality > 0, 0.6)
   }
@@ -1201,7 +1227,11 @@ export class PlayfieldRenderer {
     const px = Math.round(size)
     const key = `${text}|${px}|${style.fill}|${style.burst}|${glow ? glowScale : 'flat'}`
     let entry = this.textCache.get(key)
-    if (!entry) {
+    if (entry) {
+      // Least recently used goes first: the judgement words stay while numbers come and go.
+      this.textCache.delete(key)
+      this.textCache.set(key, entry)
+    } else {
       const measure = this.ctx
       measure.save()
       measure.font = `${px}px ${DISPLAY}`
@@ -1213,7 +1243,8 @@ export class PlayfieldRenderer {
       const canvas = document.createElement('canvas')
       canvas.width = Math.ceil(w * this.dpr)
       canvas.height = Math.ceil(h * this.dpr)
-      const c = canvas.getContext('2d')!
+      const c = canvas.getContext('2d')
+      if (!c) return
       c.scale(this.dpr, this.dpr)
       paintStyledText(c, text, w / 2, h / 2, px, style, glow, glowScale)
       entry = { canvas, w, h }
@@ -1221,6 +1252,47 @@ export class PlayfieldRenderer {
       this.textCache.set(key, entry)
     }
     ctx.drawImage(entry.canvas, x - entry.w / 2, y - entry.h / 2, entry.w, entry.h)
+  }
+
+  /**
+   * A number that changes every hit (the combo), drawn from one cached sprite per character, so a
+   * long streak reuses ten digits instead of painting and keeping a new blurred canvas per value.
+   */
+  private drawNumber(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    style: JudgeStyle,
+    glow: boolean,
+    glowScale = 0.5,
+  ): void {
+    const px = Math.round(size)
+    const widths: number[] = []
+    let total = 0
+    for (const ch of text) {
+      const key = `${ch}|${px}`
+      let width = this.digitWidths.get(key)
+      if (width === undefined) {
+        this.ctx.save()
+        this.ctx.font = `${px}px ${DISPLAY}`
+        width = this.ctx.measureText(ch).width
+        this.ctx.restore()
+        this.digitWidths.set(key, width)
+      }
+      widths.push(width)
+      total += width
+    }
+    // Glow in a few steps, not twenty: each step is another set of digit sprites.
+    const bucket = Math.round(glowScale * 5) / 5
+    let left = x - total / 2
+    let i = 0
+    for (const ch of text) {
+      this.drawText(ctx, ch, left + widths[i] / 2, y, px, style, glow, bucket)
+      left += widths[i]
+      i++
+    }
   }
 
   /** Cut text with an ellipsis so it fits `maxWidth` at the current font. Cached by input. */
@@ -1376,7 +1448,7 @@ export class PlayfieldRenderer {
     this.ctx.save()
     this.ctx.translate(x, y)
     this.ctx.scale(zoom, zoom)
-    this.drawText(this.ctx, text, 0, 0, size, style, this.quality > 0, 0.4)
+    this.drawNumber(this.ctx, text, 0, 0, size, style, this.quality > 0, 0.4)
     this.ctx.restore()
   }
 

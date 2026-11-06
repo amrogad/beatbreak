@@ -25,6 +25,9 @@ export class AnalysisCancelledError extends Error {
 }
 
 /** The worker crashed or stopped responding; the import can be retried from the decoded file. */
+/** The browser would not start a worker at all: the one case the main thread may analyse instead. */
+class WorkerUnavailableError extends Error {}
+
 export class AnalysisWorkerError extends Error {
   constructor(message: string) {
     super(message)
@@ -69,19 +72,16 @@ export class AnalysisClient {
     if (this.pending) throw new Error('The analyser is already running; cancel the current job first.')
     if (options.signal?.aborted) throw new AnalysisCancelledError()
     if (!this.useWorker) return this.runInline(mono, sampleRate, options)
-    let transferred = false
     try {
-      return await this.runInWorker(mono, sampleRate, options, () => {
-        transferred = true
-      })
+      return await this.runInWorker(mono, sampleRate, options, () => undefined)
     } catch (error) {
       this.terminateWorker()
       this.pending = null
       if (error instanceof AnalysisCancelledError) throw error
-      // Fall back to the main thread only while the samples are still ours — e.g. the browser
-      // refused to construct a Worker at all. After a transfer the array is detached, so the
-      // fallback would analyse nothing: fail loudly and let the UI offer Retry instead.
-      if (!transferred) return this.runInline(mono, sampleRate, options)
+      // Fall back to the main thread only when the browser refused to construct a Worker at all.
+      // Any later failure (out of memory, a stall, a bug) would only repeat on the main thread and
+      // freeze the page, so it fails loudly and the UI offers Retry instead.
+      if (error instanceof WorkerUnavailableError) return this.runInline(mono, sampleRate, options)
       throw error instanceof AnalysisWorkerError
         ? error
         : new AnalysisWorkerError(error instanceof Error ? error.message : String(error))
@@ -140,11 +140,17 @@ export class AnalysisClient {
       try {
         worker = new Worker(new URL('./analysis.worker.ts', import.meta.url), { type: 'module' })
       } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)))
+        reject(new WorkerUnavailableError(error instanceof Error ? error.message : String(error)))
         return
       }
       const jobId = this.nextJobId++
       let watchdog: ReturnType<typeof setTimeout> | null = null
+      // A page that was in the background resumes with an expired timer; the worker was only
+      // throttled with it, so coming back gives it a fresh window instead of a false stall.
+      const onVisible = (): void => {
+        if (document.visibilityState === 'visible' && watchdog) armWatchdog()
+      }
+      if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
       const armWatchdog = (): void => {
         if (watchdog) clearTimeout(watchdog)
         watchdog = setTimeout(() => {
@@ -189,6 +195,14 @@ export class AnalysisClient {
         worker.removeEventListener('message', onMessage)
         worker.removeEventListener('error', onError)
         options.signal?.removeEventListener('abort', abort)
+        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+        // Every way out ends the thread: a cancelled or stalled job must not keep a core and
+        // hundreds of MB busy, and an idle worker is never reused (each job makes its own).
+        try {
+          worker.terminate()
+        } catch {
+          /* already gone */
+        }
         if (this.worker === worker) this.worker = null
         this.pending = null
       }
