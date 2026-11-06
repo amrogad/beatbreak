@@ -19,7 +19,6 @@ import { bestRunFor, listCharts } from '../store/repository'
 import { settingsStore } from '../store/settings'
 import type { Settings } from '../store/settings'
 import { runtime } from './runtime'
-import { formatSync } from './format'
 import { HomeScreen } from './screens/HomeScreen'
 import { SetupScreen } from './screens/SetupScreen'
 import { GameScreen } from './screens/GameScreen'
@@ -395,11 +394,6 @@ function AppShell(): React.JSX.Element {
             onRetry={() => void startGame({ songId: route.songId, chartId: route.chartId, difficulty: chart.difficulty, autoPlay: route.results.autoPlay ?? false })}
             onSetup={() => setRoute({ name: 'setup', file: null, songId: route.songId, attempt: 0 })}
             onHome={backHome}
-            audioOffsetMs={settings.audioOffsetMs}
-            onApplyOffset={(offsetMs) => {
-              updateSettings({ audioOffsetMs: offsetMs })
-              toast(`Audio sync set to ${formatSync(offsetMs)}.`, 'success')
-            }}
             onExportChart={() => {
               void (async () => {
                 const { serializeChart } = await import('../chart/serialize')

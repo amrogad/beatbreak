@@ -10,10 +10,10 @@
 import type { AnalysisResult, OnsetEvent, Section, SongTexture } from '../core/types'
 import { downsample, mean, normalize, sampleAt, stdDev } from '../core/math'
 import { computeEnergyEnvelope, computeOnsetEnvelopes, computeStft, nextPow2, pickPeaks, refineOnsetTime } from './dsp'
-import { detectTempoStability, estimateBeatsPerBar, estimateTempo, settleBeatLine } from './tempo'
+import { detectTempoStability, estimateBeatsPerBar, estimateTempo, polishTempo, settleBeatLine } from './tempo'
 import { tempoFromRepeats } from '../chart/structure'
 
-export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.4'
+export const ANALYSIS_VERSION = 'pulsegrid-analysis-2.5'
 
 /**
  * Players place a beat a little before the energy peak our detector locks onto. Compared with
@@ -104,6 +104,37 @@ function computeBandEnergy(stft: ReturnType<typeof computeStft>): Float32Array[]
   return energy
 }
 
+const PEAK_OPTIONS = { delta: 0.06, windowSeconds: 0.28, minGapSeconds: 0.055 }
+/** A stretch this long with no hits gets a second listen at its own volume. */
+const QUIET_STRETCH_SECONDS = 6
+/** Share of its own scale a quiet hit keeps as strength, so it never outranks the loud parts. */
+const QUIET_STRENGTH = 0.5
+
+/**
+ * Peak picking works against the loudest part of the song, so a soft intro can come back empty:
+ * After Dark's first 30 seconds gave two hits. Stretches with no hits are picked again against
+ * their own loudest moment. Real silence is still removed later by the silent regions.
+ */
+function withQuietPeaks(peaks: ReturnType<typeof pickPeaks>, flux: Float32Array, frameRate: number): ReturnType<typeof pickPeaks> {
+  const stretch = Math.round(QUIET_STRETCH_SECONDS * frameRate)
+  const edges = [0, ...peaks.map((peak) => peak.index), flux.length]
+  const found: ReturnType<typeof pickPeaks> = []
+  for (let i = 1; i < edges.length; i++) {
+    const from = edges[i - 1] + 1
+    const to = edges[i] - 1
+    if (to - from < stretch) continue
+    const slice = flux.slice(from, to)
+    let loudest = 0
+    for (const value of slice) if (value > loudest) loudest = value
+    if (loudest <= 1e-6) continue
+    for (let f = 0; f < slice.length; f++) slice[f] /= loudest
+    for (const peak of pickPeaks(slice, frameRate, PEAK_OPTIONS)) {
+      found.push({ index: peak.index + from, position: peak.position + from, strength: peak.strength * QUIET_STRENGTH })
+    }
+  }
+  return found.length === 0 ? peaks : [...peaks, ...found].sort((a, b) => a.index - b.index)
+}
+
 const TEXTURE_BANDS = 12
 const TEXTURE_MIN_HZ = 60
 const TEXTURE_MAX_HZ = 10000
@@ -185,7 +216,7 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
   progress('Detecting onsets', 0.45)
   const envelopes = computeOnsetEnvelopes(mono, sampleRate, stft, { frameSize, hopSize, bands })
   const frameRate = envelopes.frameRate
-  const peaks = pickPeaks(envelopes.flux, frameRate, { delta: 0.06, windowSeconds: 0.28, minGapSeconds: 0.055 })
+  const peaks = withQuietPeaks(pickPeaks(envelopes.flux, frameRate, PEAK_OPTIONS), envelopes.flux, frameRate)
 
   // Fine energy envelope used to snap every onset onto its real attack (removes the analysis
   // window's group delay, which would otherwise bias notes late by tens of milliseconds).
@@ -230,9 +261,13 @@ export function analyzeSamples(mono: Float32Array, sampleRate: number, options: 
 
   progress('Estimating tempo', 0.7)
   const texture = computeTexture(stft, sampleRate, frameSize)
-  let tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, {})
+  const polished = (result: ReturnType<typeof estimateTempo>): ReturnType<typeof estimateTempo> => {
+    const fixedBpm = polishTempo(onsets, result.bpm)
+    return fixedBpm === null ? result : estimateTempo(envelopes.flux, frameRate, onsets, { fixedBpm, keepBpm: true })
+  }
+  let tempoResult = polished(estimateTempo(envelopes.flux, frameRate, onsets, {}))
   const repeatingBpm = tempoFromRepeats(onsets, texture, duration, tempoResult.bpm, tempoResult.phase)
-  if (repeatingBpm !== null) tempoResult = estimateTempo(envelopes.flux, frameRate, onsets, { fixedBpm: repeatingBpm })
+  if (repeatingBpm !== null) tempoResult = polished(estimateTempo(envelopes.flux, frameRate, onsets, { fixedBpm: repeatingBpm }))
   tempoResult = { ...tempoResult, phase: settleBeatLine(texture, onsets, tempoResult.bpm, tempoResult.phase, duration) }
   const periodSeconds = 60 / tempoResult.bpm
   const { beatsPerBar } = estimateBeatsPerBar(onsets, periodSeconds, tempoResult.phase)

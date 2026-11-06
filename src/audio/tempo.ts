@@ -46,6 +46,8 @@ export interface TempoEstimate {
 export interface TempoOptions {
   /** Skip tempo picking and fit the grid to this tempo. */
   fixedBpm?: number
+  /** Keep `fixedBpm` exactly instead of letting the onset fit nudge it. */
+  keepBpm?: boolean
   minBpm?: number
   maxBpm?: number
   /** Tempo prior centre in BPM. */
@@ -558,6 +560,43 @@ export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, ph
   return phase + beat * sixteenth
 }
 
+/** A nearby tempo has to fit the whole song this much better to replace the estimate. */
+const POLISH_GAIN = 1.25
+const POLISH_RANGE_BPM = 1
+const POLISH_STEP_BPM = 0.02
+/** A round tempo this close in fit beats a fractional one: music is mostly made at round tempos. */
+const ROUND_TIE = 0.97
+
+/**
+ * The exact tempo, from every strong hit in the song. Over four minutes the right tempo stands out
+ * sharply: After Dark fits 140.00 three times better than the 140.31 the onset fit settled on, and
+ * 0.3 BPM of drift is enough to push most of a song off the grid. Returns null when the estimate
+ * is already the best fit.
+ */
+export function polishTempo(onsets: OnsetEvent[], bpm: number): number | null {
+  const strong = onsets.filter((onset) => onset.strength >= 0.3)
+  if (strong.length < 24) return null
+  const current = gridLift(bpm, strong)
+  let best = bpm
+  let bestLift = current
+  for (let candidate = bpm - POLISH_RANGE_BPM; candidate <= bpm + POLISH_RANGE_BPM; candidate += POLISH_STEP_BPM) {
+    const lift = gridLift(candidate, strong)
+    if (lift > bestLift) {
+      bestLift = lift
+      best = candidate
+    }
+  }
+  for (const round of [Math.round(bpm), Math.round(best * 2) / 2]) {
+    const lift = gridLift(round, strong)
+    if (Math.abs(round - bpm) <= POLISH_RANGE_BPM && lift >= bestLift * ROUND_TIE) {
+      bestLift = Math.max(bestLift, lift)
+      best = round
+      break
+    }
+  }
+  return bestLift >= current * POLISH_GAIN ? best : null
+}
+
 /** How much more the sub-bass must rise on the offbeat line before it takes over (0-255 scale, about 1 dB). */
 const LOW_RISE_GAP = 5
 /** A snare-band lead this large keeps the current line unless the low end is overwhelming. */
@@ -784,9 +823,10 @@ export function estimateTempo(
   // Least-squares refinement against real onset times: removes the lag-quantization BPM error
   // (≈0.2%, which drifts a full beat over three minutes) and the phase bias it causes.
   const refinement = refineTempoFromOnsets(onsets, bpm, coarsePhase)
-  const refinedBpm = refinement.used >= 8 ? refinement.bpm : bpm
+  const refined = refinement.used >= 8 && !options.keepBpm
+  const refinedBpm = refined ? refinement.bpm : bpm
   const refinedPeriod = 60 / refinedBpm
-  const beatPhase = chooseBeatMarker(onsets, refinedPeriod, refinement.used >= 8 ? refinement.phase : coarsePhase)
+  const beatPhase = chooseBeatMarker(onsets, refinedPeriod, refined ? refinement.phase : coarsePhase)
 
   const beatCoverage =
     onsets.length > 0 ? measureGridCoverage(onsets, refinedPeriod, beatPhase, { subdivision: 1 }) : 0
