@@ -14,15 +14,29 @@ export const BACK_EVENT = 'beatbreak:back'
 /** True while the chart editor holds edits that are not saved; the app shell asks before leaving. */
 export const editorUnsaved = { current: false }
 
+/**
+ * Decoded songs kept at once: the one open now and the one just left. A decoded 4-minute song is
+ * about 90 MB, so keeping every song opened in a session would crash a phone's tab.
+ */
+const KEEP_BUNDLES = 2
+
 class RuntimeStore {
   private bundles = new Map<string, SongBundle>()
 
   put(bundle: SongBundle): void {
+    this.bundles.delete(bundle.meta.id)
     this.bundles.set(bundle.meta.id, bundle)
+    while (this.bundles.size > KEEP_BUNDLES) this.bundles.delete(this.bundles.keys().next().value as string)
   }
 
   get(songId: string): SongBundle | undefined {
-    return this.bundles.get(songId)
+    const bundle = this.bundles.get(songId)
+    if (bundle) {
+      // Most recently used stays.
+      this.bundles.delete(songId)
+      this.bundles.set(songId, bundle)
+    }
+    return bundle
   }
 
   getMeta(songId: string): SongMeta | undefined {

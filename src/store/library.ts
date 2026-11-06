@@ -43,6 +43,19 @@ export interface SongBundle {
   audioNotSaved?: boolean
 }
 
+/**
+ * Ask the browser not to clear the library under storage pressure (and Safari's 7-day rule for
+ * sites). Asked once there is something worth keeping; Chrome decides silently, Firefox may ask.
+ */
+async function keepStorage(): Promise<void> {
+  try {
+    if (!navigator.storage?.persist || (await navigator.storage.persisted())) return
+    await navigator.storage.persist()
+  } catch {
+    /* not supported or refused: nothing to do */
+  }
+}
+
 /** Storage full: the browser refused to write more. */
 export function isQuotaError(error: unknown): boolean {
   const name = (error as { name?: string } | null)?.name
@@ -255,6 +268,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   await saveSong(meta)
 
   onProgress?.({ stage: 'Done', fraction: 1 })
+  void keepStorage()
   return { meta, charts, analysis, buffer, ...(audioNotSaved ? { audioNotSaved } : {}) }
 }
 
@@ -351,7 +365,18 @@ export function sameTrim(a: TrimDraft, b: TrimDraft): boolean {
 }
 
 /** Everything the library needs for one song: metadata, charts, and audio if it can be obtained. */
-export async function loadSongBundle(songId: string, options: { requireAudio?: boolean } = {}): Promise<SongBundle | null> {
+/** One load per song at a time: the menu music and the song screen asked at the same moment and decoded twice. */
+const bundleLoads = new Map<string, Promise<SongBundle | null>>()
+
+export function loadSongBundle(songId: string, options: { requireAudio?: boolean } = {}): Promise<SongBundle | null> {
+  const running = bundleLoads.get(songId)
+  if (running) return running
+  const load = loadSongBundleNow(songId, options).finally(() => bundleLoads.delete(songId))
+  bundleLoads.set(songId, load)
+  return load
+}
+
+async function loadSongBundleNow(songId: string, options: { requireAudio?: boolean } = {}): Promise<SongBundle | null> {
   const songs = await listSongs()
   let meta = songs.find((song) => song.id === songId)
   if (!meta) return null
