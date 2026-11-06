@@ -83,8 +83,12 @@ function decodingContext(): BaseAudioContext {
   return decoder ?? getAudioContext()
 }
 
-/** Longest song Beatbreak takes: decoding and analysing more risks running a phone's tab out of memory. */
-export const MAX_SONG_SECONDS = 20 * 60
+/**
+ * Longest song Beatbreak takes. The analysis holds the whole spectrum (about 21 MB a minute at
+ * 44.1 kHz) next to the decoded song, so phones, which kill tabs far sooner, get a lower limit.
+ */
+export const MAX_SONG_SECONDS =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches ? 12 * 60 : 20 * 60
 
 function tooLong(file: File, seconds: number): DecodeError {
   return new DecodeError(
