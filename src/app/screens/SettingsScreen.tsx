@@ -132,6 +132,16 @@ export function SettingsScreen({
       <Panel title="Gameplay">
         <div className="settings-stack">
           <Choice
+            label="Mode"
+            value={settings.playMode}
+            options={[
+              { value: 'arrows', label: 'Arrows' },
+              { value: 'circles', label: 'Circles' },
+            ]}
+            onChange={(value) => onUpdate({ playMode: value })}
+            hint="Arrows: hit the lane keys. Circles: click or tap each circle as its ring closes. Same rhythm, own high scores."
+          />
+          <Choice
             label="Default difficulty"
             value={settings.defaultDifficulty}
             options={[

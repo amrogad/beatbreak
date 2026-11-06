@@ -33,6 +33,8 @@ export interface EditorScreenProps {
   onBack: () => void
   onToast: (message: string, tone?: 'info' | 'error' | 'success') => void
   onChartsChanged: (songId: string, charts: Chart[]) => void
+  /** Circle mode is on: the editor says the circles follow these arrows. */
+  circleMode?: boolean
 }
 
 const UNDO_LIMIT = 40
@@ -40,7 +42,7 @@ const UNDO_LIMIT = 40
 /** Undo restores the grid along with the notes, so a BPM or resolution change can be taken back. */
 type UndoEntry = Pick<Chart, 'notes' | 'timing' | 'stepsPerBeat'>
 
-export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged }: EditorScreenProps): React.JSX.Element {
+export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged, circleMode = false }: EditorScreenProps): React.JSX.Element {
   const [bundle, setBundle] = useState<SongBundle | null>(() => runtime.get(songId) ?? null)
   const [chart, setChart] = useState<Chart | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -625,6 +627,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             Chart editor - {chart.notes.length} notes - {formatDuration(duration)} -{' '}
             {dirty ? <span className="warn">unsaved changes</span> : <span className="good">saved</span>}
           </p>
+          {circleMode && (
+            <p className="muted small">Circle mode places its circles from these arrows: edit the rhythm here and the circles follow it.</p>
+          )}
         </div>
         <div className="row gap-8 wrap">
           <Button variant="primary" onClick={() => void save()} disabled={!dirty}>

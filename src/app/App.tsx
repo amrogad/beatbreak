@@ -444,6 +444,7 @@ function AppShell(): React.JSX.Element {
               onBack={() => setRoute({ name: 'setup', file: null, songId: route.songId, attempt: 0 })}
               onToast={toast}
               onChartsChanged={handleChartsChanged}
+              circleMode={settings.playMode === 'circles'}
             />
           </Suspense>
         )

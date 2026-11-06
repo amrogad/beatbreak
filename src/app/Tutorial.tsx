@@ -31,6 +31,12 @@ const STEPS = [
       ? 'Press when it reaches the target and keep your finger down until its end passes. Letting go early misses it.'
       : 'Press when the arrow reaches the target and keep holding until its end passes. Letting go early misses it. Want to let go on an end arrow instead? Change Long arrows in Settings.',
   },
+  {
+    title: 'Or play circles',
+    body: TOUCH
+      ? 'Switch Mode to Circles on the song screen. Tap each circle as its ring closes on it, and slide your finger along with the ball on the long ones.'
+      : 'Switch Mode to Circles on the song screen. Aim with the mouse and click, or press Z or X, as each ring closes on its circle. On the long ones, keep the button down and follow the ball.',
+  },
 ] as const
 
 function LaneArt(): React.JSX.Element {
