@@ -7,6 +7,7 @@
  * (and therefore the component) actually changes.
  */
 import React, { useCallback, useEffect, lazy, useMemo, useRef, useState, Suspense, useSyncExternalStore } from 'react'
+import { circleRhythm } from '../chart/circles'
 import type { Chart, Difficulty, RunResults, SongMeta } from '../core/types'
 import { createTestSongFile } from '../audio/synth'
 import { getAudioContext, resumeAudioContext } from '../audio/engine'
@@ -355,6 +356,7 @@ function AppShell(): React.JSX.Element {
             key={`game-${route.runKey}`}
             song={bundle.meta}
             chart={chart}
+            circleRhythm={circleRhythm(bundle.charts, chart)}
             buffer={bundle.buffer}
             settings={settings}
             autoPlay={route.autoPlay}

@@ -29,6 +29,8 @@ import { formatPercent } from '../format'
 export interface GameScreenProps {
   song: SongMeta
   chart: Chart
+  /** Circle mode places its circles on this chart's rhythm (one tier easier, see CIRCLE_RHYTHM). */
+  circleRhythm?: Chart
   buffer: AudioBuffer
   settings: Settings
   autoPlay: boolean
@@ -48,12 +50,13 @@ const leadInRef = { current: 900 }
  * On a local build (127.0.0.1) every run's presses, judgements (and in circle mode the pointer
  * path) go to the dev server, which saves them next to the test data. Never sent anywhere else.
  */
-function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart: Chart, settings: Settings, engine: AudioEngine | null): void {
+function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart: Chart, settings: Settings, engine: AudioEngine | null, quit = false): void {
   if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return
   const circles = session instanceof CircleSession
   const body = {
     at: new Date().toISOString(),
     mode: circles ? 'circles' : 'arrows',
+    quit,
     song: song.title,
     difficulty: chart.difficulty,
     bpms: chart.timing.bpms,
@@ -83,6 +86,7 @@ function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart
 export function GameScreen({
   song,
   chart: sourceChart,
+  circleRhythm,
   buffer,
   settings,
   autoPlay,
@@ -114,7 +118,7 @@ export function GameScreen({
   const [paused, setPaused] = useState(false)
   // The mode is fixed for the run; changing it in Settings applies to the next one.
   const [circleMode] = useState(() => settings.playMode === 'circles')
-  const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart) : null), [circleMode, sourceChart])
+  const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart, circleRhythm ?? sourceChart) : null), [circleMode, sourceChart, circleRhythm])
   const [hud, setHud] = useState({ score: 0, combo: 0, accuracy: 1, judged: 0 })
   // Long arrows off: every hold plays as a plain tap at its start.
   const chart = useMemo(
@@ -721,7 +725,15 @@ export function GameScreen({
                 Resume ({describeKey(settings.controls.pause[0])})
               </Button>
               <Button onClick={restart}>Restart ({describeKey(settings.controls.restart[0])})</Button>
-              <Button variant="ghost" onClick={onExit}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const session = sessionRef.current
+                  // A run quit halfway is often the one worth reading: log what was played.
+                  if (session && !session.isAutoPlay && !finishedRef.current) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current, true)
+                  onExit()
+                }}
+              >
                 Quit to song setup
               </Button>
             </div>

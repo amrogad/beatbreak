@@ -27,7 +27,7 @@ import { removeFromTrim, removedParts, snapTrimRange, type TrimPlan, type TrimRa
 import { DEMO_FILE_NAME } from '../../audio/synth'
 import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
-import { placeCircles } from '../../chart/circles'
+import { circleRhythm, placeCircles } from '../../chart/circles'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
 import { BackButton, Button, Choice, Modal, Panel, ProgressBar, Slider, Spinner } from '../components'
 import { TrimEditor } from '../TrimEditor'
@@ -123,7 +123,7 @@ export function SetupScreen({
     if (!circleMode) return null
     const counts = new Map<string, { circles: number; sliders: number }>()
     for (const chart of bundle?.charts ?? []) {
-      const objects = placeCircles(chart).objects
+      const objects = placeCircles(chart, circleRhythm(bundle?.charts ?? [], chart)).objects
       counts.set(chart.id, { circles: objects.length, sliders: objects.filter((o) => o.kind === 'slider').length })
     }
     return counts

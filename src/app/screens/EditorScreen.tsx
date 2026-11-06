@@ -11,6 +11,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Chart, ChartNote, Difficulty, Lane } from '../../core/types'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL, LANE_INFO } from '../../core/types'
+import { CIRCLE_RHYTHM } from '../../chart/circles'
 import { AudioEngine, getAudioContext, resumeAudioContext } from '../../audio/engine'
 import { TimingMap } from '../../chart/timing'
 import { validatePlayability } from '../../chart/generate'
@@ -628,7 +629,14 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             {dirty ? <span className="warn">unsaved changes</span> : <span className="good">saved</span>}
           </p>
           {circleMode && (
-            <p className="muted small">Circle mode places its circles from these arrows: edit the rhythm here and the circles follow it.</p>
+            <p className="muted small">
+              {(() => {
+                const uses = DIFFICULTIES.filter((d) => CIRCLE_RHYTHM[d] === chart.difficulty).map((d) => DIFFICULTY_LABEL[d])
+                return uses.length > 0
+                  ? `Circles on ${uses.join(' and ')} are placed on this chart's rhythm: edit it here and they follow.`
+                  : 'No circle difficulty uses this chart: circles take their rhythm from the chart one step easier.'
+              })()}
+            </p>
           )}
         </div>
         <div className="row gap-8 wrap">

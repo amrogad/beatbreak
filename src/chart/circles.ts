@@ -125,6 +125,17 @@ function toEvents(notes: ChartNote[], timing: TimingMap): Event[] {
   return events
 }
 
+/** Drop objects that start sooner than `beats` after the previous one ends (the first stays, so repeated bars stay alike). */
+function spaceOut(events: Event[], beats: number, timing: TimingMap): Event[] {
+  const out: Event[] = []
+  for (const e of events) {
+    const last = out[out.length - 1]
+    const lastEnd = last ? timing.timeToBeat(last.time + last.hold) : -Infinity
+    if (!last || e.beat - lastEnd >= beats - 0.02) out.push(e)
+  }
+  return out
+}
+
 /**
  * Human maps turn many note pairs into one slider: the first note is clicked, the second is where
  * the slider ends. Only a pair whose second note is no louder than the first, with room after it.
@@ -233,13 +244,34 @@ function barSignature(events: Event[], timing: TimingMap): string {
   return events.map((e) => `${Math.round((((e.beat % 4) + 4) % 4) * 12)}:${e.hold > 0 ? Math.round((timing.timeToBeat(e.time + e.hold) - e.beat) * 4) : 0}`).join(',')
 }
 
-export function placeCircles(chart: Pick<Chart, 'id' | 'difficulty' | 'notes' | 'timing'>): CircleMap {
+/**
+ * Which arrow chart a circle difficulty takes its rhythm from. Every circle needs aim as well as
+ * timing, so human osu! maps play far fewer objects than arrow charts of the same name: measured
+ * on 24 songs, our arrow Easy/Normal/Hard as circles came to 1.0/1.9/3.1 objects a second against
+ * human 0.8/1.2/1.9/2.8 for Easy to Insane. One tier down lands on the human numbers.
+ */
+export const CIRCLE_RHYTHM: Record<Difficulty, Difficulty> = { easy: 'easy', normal: 'easy', hard: 'normal', expert: 'hard' }
+
+/** The arrow chart circles of this chart's difficulty are placed from (the chart itself if missing). */
+export function circleRhythm<T extends Pick<Chart, 'difficulty'>>(charts: readonly T[], chart: T): T {
+  return charts.find((candidate) => candidate.difficulty === CIRCLE_RHYTHM[chart.difficulty]) ?? chart
+}
+
+/** Easy circles keep at least this many beats between objects (human Easy maps: never under 1/2). */
+const EASY_MIN_GAP_BEATS = 1
+
+export function placeCircles(
+  chart: Pick<Chart, 'id' | 'difficulty' | 'notes' | 'timing'>,
+  rhythm: Pick<Chart, 'notes' | 'timing'> = chart,
+): CircleMap {
   const profile = PROFILES[chart.difficulty] ?? PROFILES.normal
   const radius = circleRadius(profile.cs)
   const preemptMs = preemptForAr(profile.ar)
-  const timing = new TimingMap(chart.timing)
+  const timing = new TimingMap(rhythm.timing)
   const rng = createRng(hashString(`${chart.id}|circles`))
-  const events = pairSliders(toEvents(chart.notes, timing), profile, timing, rng)
+  let raw = toEvents(rhythm.notes, timing)
+  if (chart.difficulty === 'easy') raw = spaceOut(raw, EASY_MIN_GAP_BEATS, timing)
+  const events = pairSliders(raw, profile, timing, rng)
   const objects: CircleObject[] = []
   const placed: Placed[] = []
 

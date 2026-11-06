@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartNote, Difficulty, Lane } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
-import { FIELD_H, FIELD_W, placeCircles, sliderBall, sliderExit } from './circles'
+import { FIELD_H, FIELD_W, circleRhythm, placeCircles, sliderBall, sliderExit } from './circles'
 
 // 120 BPM: one beat = 0.5 s.
 const timing = { offset: 0, bpms: [{ beat: 0, bpm: 120 }] }
@@ -31,6 +31,19 @@ function song(): ChartNote[] {
 const place = (difficulty: Difficulty, notes = song()) => placeCircles({ id: `test-${difficulty}`, difficulty, notes, timing })
 
 describe('circle placement', () => {
+  it('takes each difficulty rhythm from the arrow chart one step easier', () => {
+    const charts = DIFFICULTIES.map((difficulty) => ({ difficulty }))
+    expect(DIFFICULTIES.map((d) => circleRhythm(charts, charts.find((c) => c.difficulty === d)!).difficulty)).toEqual(['easy', 'easy', 'normal', 'hard'])
+    expect(circleRhythm([{ difficulty: 'hard' as Difficulty }], { difficulty: 'hard' as Difficulty }).difficulty).toBe('hard')
+  })
+
+  it('keeps a beat between easy circles', () => {
+    const map = place('easy')
+    for (let i = 1; i < map.objects.length; i++) {
+      expect((map.objects[i].time - map.objects[i - 1].endTime) * 2).toBeGreaterThanOrEqual(0.98)
+    }
+  })
+
   it('keeps every circle and slider path inside the field', () => {
     for (const difficulty of DIFFICULTIES) {
       const map = place(difficulty)
