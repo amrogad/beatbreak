@@ -161,7 +161,7 @@ export function SetupScreen({
       .then((result) => {
         if (cancelled) return
         adopt(result)
-        if (result.audioNotSaved) onToast('Your browser is out of space, so the song file was not kept. Pick it again next time you play it.', 'info')
+        if (result.audioNotSaved) onToast('Your browser is not keeping files for Beatbreak right now (storage full or blocked), so pick this song again next time.', 'info')
       })
       .catch((caught: unknown) => {
         if (cancelled) return

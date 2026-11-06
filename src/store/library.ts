@@ -17,6 +17,7 @@ import { createId, hashString } from '../core/rng'
 import { GENERATOR_VERSION, generateAllDifficulties } from '../chart/generate'
 import { TimingMap } from '../chart/timing'
 import { AnalysisClient } from '../workers/analysisClient'
+import { openDb } from './db'
 import {
   listCharts,
   listSongs,
@@ -54,6 +55,22 @@ async function keepStorage(): Promise<void> {
   } catch {
     /* not supported or refused: nothing to do */
   }
+}
+
+let storageProbe: Promise<boolean> | null = null
+/**
+ * Whether the local database opens at all. A blocked one (private windows, a portal iframe with
+ * third-party storage off) must not stop play: the song then lives in memory for this visit.
+ */
+export function storageWorks(): Promise<boolean> {
+  storageProbe ??= openDb().then(
+    () => true,
+    () => {
+      storageProbe = null
+      return false
+    },
+  )
+  return storageProbe
 }
 
 /** Storage full: the browser refused to write more. */
@@ -185,7 +202,8 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
 
   onStage?.('Generating charts')
   onProgress?.({ stage: 'Generating charts', fraction: 0.97 })
-  const existing = (await listSongs()).find(
+  const canSave = await storageWorks()
+  const existing = (canSave ? await listSongs() : []).find(
     (song) => song.fileName === file.name && song.fileSize === file.size && song.lastModified === file.lastModified,
   )
   // Re-attaching the same file keeps a title or artist the player typed in.
@@ -197,7 +215,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   // colliding on all three fields is not realistic; the same file always lands on the same row.
   const songId = existing?.id ?? `song_${hashString(`${file.name}|${file.size}|${file.lastModified}`).toString(36)}`
   const timing = TimingMap.single(analysis.bpm, analysis.offset)
-  const existingCharts = existing ? await listCharts(existing.id) : []
+  const existingCharts = existing && canSave ? await listCharts(existing.id) : []
   const remember = options.rememberAudio ?? true
   const meta = buildSongMeta({ songId, title, artist, file, buffer, analysis, audioCached: remember })
   const auto = autoTrimWindow(analysis, buffer.duration, meta.peaks)
@@ -254,6 +272,10 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
   // The song row goes last, so a failure part way never leaves a song in the library that has no
   // analysis or charts. A full disk only costs the stored copy of the audio, not the song.
   let audioNotSaved = false
+  if (!canSave) {
+    onProgress?.({ stage: 'Done', fraction: 1 })
+    return { meta: { ...meta, audioCached: false }, charts, analysis, buffer, audioNotSaved: true }
+  }
   if (remember) {
     try {
       await saveAudio(songId, file)
