@@ -1,6 +1,6 @@
-# PULSEGRID
+# Beatbreak
 
-PULSEGRID is a browser-based rhythm game that turns owned audio files into playable four-lane charts.
+Beatbreak is a browser-based rhythm game that turns owned audio files into playable four-lane charts.
 
 ## Key facts
 - Runs entirely in the browser

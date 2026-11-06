@@ -1,6 +1,6 @@
 {
-  "name": "PULSEGRID — Rhythm Engine",
-  "short_name": "PULSEGRID",
+  "name": "Beatbreak - Rhythm Engine",
+  "short_name": "Beatbreak",
   "description": "Load your own song, get auto-generated arrow charts, and play a four-lane rhythm game. Runs fully offline.",
   "id": "pulsegrid-rhythm-engine",
   "start_url": "./index.html",

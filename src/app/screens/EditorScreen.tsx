@@ -522,7 +522,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       fileName: bundle.meta.fileName,
       duration: bundle.meta.duration,
     })
-    downloadText(`${bundle.meta.title.replace(/[^\w\- ]+/g, '')}-${chart.difficulty}.pulsegrid.json`, text)
+    downloadText(`${bundle.meta.title.replace(/[^\w\- ]+/g, '')}-${chart.difficulty}.beatbreak.json`, text)
     onToast('Chart exported as JSON.', 'success')
   }, [bundle, chart, onToast])
 

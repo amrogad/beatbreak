@@ -1,5 +1,5 @@
 /**
- * PULSEGRID service worker.
+ * Beatbreak service worker.
  *
  * Offline strategy:
  *  - On install the full build output (JS/CSS/icons/manifest) is precached. The manifest is
@@ -65,7 +65,7 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('message', (event) => {
-  if (event.data === 'PULSEGRID_SKIP_WAITING') self.skipWaiting()
+  if (event.data === 'Beatbreak_SKIP_WAITING') self.skipWaiting()
 })
 
 function isNavigation(request) {
@@ -92,7 +92,7 @@ self.addEventListener('fetch', (event) => {
           const cached = (await caches.match(SHELL)) || (await caches.match(request))
           return (
             cached ||
-            new Response('<h1>PULSEGRID is offline</h1><p>Open the app once while online to cache it.</p>', {
+            new Response('<h1>Beatbreak is offline</h1><p>Open the app once while online to cache it.</p>', {
               headers: { 'Content-Type': 'text/html' },
               status: 200,
             })

@@ -51,7 +51,7 @@ function makeChart(notes: ChartNote[], difficulty: Difficulty = 'normal'): Chart
 
 const context = { title: 'Demo Song', artist: 'Test Artist', fileName: 'demo.wav', duration: 30 }
 
-describe('PULSEGRID JSON export/import', () => {
+describe('Beatbreak JSON export/import', () => {
   it('round-trips a chart without losing anything', () => {
     const chart = makeChart([note(0, 0), note(2, 4), note(3, 7), note(1, 15)])
     const text = serializeChart(chart, context)

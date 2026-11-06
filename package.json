@@ -2,7 +2,7 @@
   "name": "pulsegrid",
   "private": true,
   "version": "1.0.0",
-  "description": "PULSEGRID - browser rhythm game with automatic chart generation from your own audio files",
+  "description": "Beatbreak - browser rhythm game with automatic chart generation from your own audio files",
   "type": "module",
   "scripts": {
     "dev": "vite",

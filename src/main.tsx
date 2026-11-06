@@ -1,5 +1,5 @@
 /**
- * PULSEGRID entry point.
+ * Beatbreak entry point.
  *
  * StrictMode is deliberately not used: the gameplay and import effects own real resources
  * (AudioContext sources, workers, rAF loops) and React's double-invocation of effects in

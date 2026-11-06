@@ -1,4 +1,4 @@
-# PULSEGRID is a fully client-side app: every page is the same shell.
+# Beatbreak is a fully client-side app: every page is the same shell.
 User-agent: *
 Allow: /
 

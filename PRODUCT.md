@@ -10,7 +10,7 @@ People who own audio files and want a playable rhythm-game chart without learnin
 
 ## Product Purpose
 
-PULSEGRID turns an owned audio file into four difficulty charts and a playable four-lane game in the browser. It stores analysis, charts, scores and settings locally, with no account, upload, or server.
+Beatbreak turns an owned audio file into four difficulty charts and a playable four-lane game in the browser. It stores analysis, charts, scores and settings locally, with no account, upload, or server.
 
 ## Brand Personality
 

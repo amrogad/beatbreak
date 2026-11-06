@@ -2,7 +2,7 @@
  * Generates the PWA icons (192/512 + a maskable 512) with zero dependencies.
  *
  * A tiny PNG encoder: RGBA rows → zlib deflate → IHDR/IDAT/IEND chunks with CRC32. The artwork is
- * drawn procedurally: the PULSEGRID mark is four lane bars in the lane colours with a hit line,
+ * drawn procedurally: the Beatbreak mark is four lane bars in the lane colours with a hit line,
  * which is the same identity the game uses in its own UI.
  */
 import { deflateSync } from 'node:zlib'

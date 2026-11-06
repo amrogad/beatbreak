@@ -18,7 +18,7 @@ export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
 
       <Panel title="Your music. Your moves.">
         <p className="muted">
-          PULSEGRID is a four-lane rhythm game built from the music you already own. Add a track
+          Beatbreak is a four-lane rhythm game built from the music you already own. Add a track
           and it listens for the beat, turns the hits into arrows, and builds four difficulties for
           you to play. No chart packs, no accounts, no uploads.
         </p>

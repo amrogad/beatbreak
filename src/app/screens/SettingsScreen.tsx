@@ -487,7 +487,7 @@ export function SettingsScreen({
               await refreshStorage()
               onLibraryChanged()
               onReset()
-              onToast('All PULSEGRID data deleted.', 'success')
+              onToast('All Beatbreak data deleted.', 'success')
             }}
           >
             Delete everything

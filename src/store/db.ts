@@ -110,7 +110,7 @@ export function openDb(): Promise<IDBDatabase> {
       reject(request.error ?? new Error('Could not open the local database.'))
     }
     request.onblocked = () => {
-      reject(new Error('Another PULSEGRID tab is holding the database open. Close it and retry.'))
+      reject(new Error('Another Beatbreak tab is holding the database open. Close it and retry.'))
     }
   })
   return dbPromise
@@ -180,7 +180,7 @@ export async function idbClear(store: StoreName): Promise<void> {
   await txDone(tx)
 }
 
-/** Wipe every PULSEGRID store (settings live in localStorage and are cleared separately). */
+/** Wipe every Beatbreak store (settings live in localStorage and are cleared separately). */
 export async function wipeDatabase(): Promise<void> {
   for (const store of ['songs', 'charts', 'audio', 'scores', 'analyses'] as StoreName[]) {
     await idbClear(store)

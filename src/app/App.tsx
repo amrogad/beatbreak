@@ -407,7 +407,7 @@ function AppShell(): React.JSX.Element {
                 const url = URL.createObjectURL(blob)
                 const link = document.createElement('a')
                 link.href = url
-                link.download = `${song.title.replace(/[^\w\- ]+/g, '')}-${chart.difficulty}.pulsegrid.json`
+                link.download = `${song.title.replace(/[^\w\- ]+/g, '')}-${chart.difficulty}.beatbreak.json`
                 link.click()
                 URL.revokeObjectURL(url)
                 toast('Chart exported as JSON.', 'success')
@@ -459,7 +459,7 @@ function AppShell(): React.JSX.Element {
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {!inGame && (
         <header className="topbar">
-          <button type="button" className="brand" onClick={backHome} aria-label="PULSEGRID - home">
+          <button type="button" className="brand" onClick={backHome} aria-label="Beatbreak - home">
             <span className="brand-mark" aria-hidden="true">
               <svg viewBox="0 0 32 32" focusable="false">
                 <rect x="4" y="12" width="4" height="8" fill="var(--lane-left)" />
@@ -469,7 +469,7 @@ function AppShell(): React.JSX.Element {
               </svg>
             </span>
             <span className="brand-text">
-              <b>PULSEGRID</b>
+              <b>BEATBREAK</b>
               <small>Rhythm Engine</small>
             </span>
           </button>

@@ -20,7 +20,7 @@
  *     when the music does.
  *
  * Rules 2-7 follow the osu!mania ranking criteria for the matching difficulty; rule 1 is
- * PULSEGRID's own. Every rule only removes arrows, shortens holds, moves a release onto another
+ * Beatbreak's own. Every rule only removes arrows, shortens holds, moves a release onto another
  * arrow or moves an arrow to a free column: it never adds an arrow the music did not have.
  */
 import type { ChartNote, Difficulty, Lane } from '../core/types'

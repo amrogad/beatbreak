@@ -396,7 +396,7 @@ export function SetupScreen({
             <ProgressBar fraction={progress.fraction} />
           </div>
           <p className="muted small mt-16">
-            PULSEGRID listens for the beat, builds four difficulty levels, and starts you on the
+            Beatbreak listens for the beat, builds four difficulty levels, and starts you on the
             one that fits the song.
           </p>
           <div className="mt-16">

@@ -1,7 +1,7 @@
 /**
  * Chart serialization.
  *
- *  - PULSEGRID JSON: the full chart, human readable, used for export/import and local storage.
+ *  - Beatbreak JSON: the full chart, human readable, used for export/import and local storage.
  *  - StepMania `.sm`: a real, valid chart file. Only produced when the result would genuinely be
  *    valid (16th-note aligned, sane timing, single or multi BPM segments); otherwise the caller
  *    gets `ok: false` with reasons instead of a broken file.
@@ -44,7 +44,7 @@ export function serializeChart(chart: Chart, context: ExportContext): string {
     kind: CHART_FILE_KIND,
     version: CHART_FILE_VERSION,
     exportedAt: new Date().toISOString(),
-    generator: `PULSEGRID ${chart.generator.version}`,
+    generator: `Beatbreak ${chart.generator.version}`,
     song: {
       id: chart.songId,
       title: context.title,
@@ -73,7 +73,7 @@ export interface ParseFailure {
 const LANE_FROM_LETTER: Record<string, Lane> = { L: 0, D: 1, U: 2, R: 3 }
 const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard', 'expert']
 
-/** Parse and validate a PULSEGRID chart file. Never throws; returns a typed failure instead. */
+/** Parse and validate a Beatbreak chart file. Never throws; returns a typed failure instead. */
 export function parseChartFile(text: string): ParseResult | ParseFailure {
   const warnings: string[] = []
   let raw: unknown
@@ -172,7 +172,7 @@ export function parseChartFile(text: string): ParseResult | ParseFailure {
       version: 'imported',
       source: 'imported',
       seed: 0,
-      notes: ['Imported from a PULSEGRID chart file.'],
+      notes: ['Imported from a Beatbreak chart file.'],
       stepsPerBeat,
       keepRatio: 0,
       targetNps: 0,
@@ -233,7 +233,7 @@ export interface SmExportOptions {
 /**
  * Export a chart as a valid StepMania `.sm` file.
  *
- * Beat 0 in PULSEGRID is the first musical beat; `.sm`'s `#OFFSET` is the *negated* time of
+ * Beat 0 in Beatbreak is the first musical beat; `.sm`'s `#OFFSET` is the *negated* time of
  * beat 0 in the audio file (positive OFFSET = audio starts before beat 0), hence the sign flip.
  * Notes are quantized to the row grid; if any note is not representable at the requested
  * resolution the export reports an error instead of silently emitting a wrong chart.
@@ -248,7 +248,7 @@ export function exportSm(chart: Chart, options: SmExportOptions): SmExportResult
   if (chart.notes.length === 0) errors.push('Chart has no notes.')
 
   // Verify the notes land exactly on the row grid.
-  // PULSEGRID can keep micro-timing inside the app, but StepMania only understands a row grid.
+  // Beatbreak can keep micro-timing inside the app, but StepMania only understands a row grid.
   // Rounding here is a lossy representation step, not a failure: the internal JSON chart keeps
   // the exact timing. Warn when a note has to move so the export is never silently imprecise.
   const rowOf = (note: ChartNote): number => Math.round(timing.timeToBeat(note.time) * rowsPerBeat)
@@ -306,7 +306,7 @@ export function exportSm(chart: Chart, options: SmExportOptions): SmExportResult
 
   const header = [
     `#TITLE:${sanitizeSmField(options.title)};`,
-    `#SUBTITLE:${sanitizeSmField(`PULSEGRID ${chart.difficulty} chart`)};`,
+    `#SUBTITLE:${sanitizeSmField(`Beatbreak ${chart.difficulty} chart`)};`,
     `#ARTIST:${sanitizeSmField(options.artist)};`,
     `#MUSIC:${sanitizeSmField(options.musicFileName)};`,
     `#OFFSET:${trimNumber(offset, 6)};`,

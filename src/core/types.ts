@@ -1,5 +1,5 @@
 /**
- * Core domain types for PULSEGRID.
+ * Core domain types for Beatbreak.
  *
  * Everything the game persists or hands between workers is defined here so that the
  * analysis worker, the chart generator, the engine and the UI all agree on one shape.

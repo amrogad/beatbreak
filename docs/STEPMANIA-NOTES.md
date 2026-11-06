@@ -1,6 +1,6 @@
 # StepMania reference notes
 
-PULSEGRID borrows the *mechanics* of four-lane dance games, not StepMania's code or content. This
+Beatbreak borrows the *mechanics* of four-lane dance games, not StepMania's code or content. This
 note records what was checked in the StepMania source and where this project intentionally differs.
 It is a design reference, not a claim of full compatibility.
 
@@ -18,9 +18,9 @@ Source files consulted (StepMania, MIT):
 - Four columns in the order Left, Down, Up, Right, the same mapping used by the app.
 - Notes are quantized to a beat grid. `.sm` stores one character per column per row, with `1` for a
   tap, `2` for a hold head, `3` for a hold tail, `4` for a roll head, `M` for a mine, `L` for a
-  lift, and `F` for a fake. PULSEGRID only generates taps and holds.
+  lift, and `F` for a fake. Beatbreak only generates taps and holds.
 - Simultaneous notes in different columns are jumps (two) or hands (three or more). StepMania
-  authors use these deliberately; PULSEGRID allows them only when several frequency bands really
+  authors use these deliberately; Beatbreak allows them only when several frequency bands really
   attack together. Hard never asks for more than two arrows. Expert earns rare three-arrow hands on
   downbeats and very rare four-arrow hands on eight-beat accents, with long recovery gaps.
 - A hold occupies its own lane. Taps in *other* lanes can occur on the same row as a hold head,
@@ -28,7 +28,7 @@ Source files consulted (StepMania, MIT):
   and a hold at the same instant.
 - Holds are judged at the head using the tap windows. The tail is a sustained action, and releasing
   early starts StepMania's hold grace window (`TW_Hold` in `Player.cpp`, 250 ms) during which the
-  lane can be pressed again to recover the hold. PULSEGRID uses the same 250 ms release window and
+  lane can be pressed again to recover the hold. Beatbreak uses the same 250 ms release window and
   the same head-then-sustain model.
 
 ### Timing windows
@@ -42,7 +42,7 @@ The default `stepmania` preset is the set StepMania ships for dance mode:
 | Great / W3 | +/-90 ms |
 | Good / W4 | +/-135 ms |
 
-PULSEGRID scales these slightly by chart difficulty (Hard is the unchanged reference, Expert is
+Beatbreak scales these slightly by chart difficulty (Hard is the unchanged reference, Expert is
 about 8% tighter, Easy/Normal slightly wider). Unlike StepMania, there is no manual audio-offset
 setting; input event timestamps and estimated output latency are used instead.
 
@@ -52,7 +52,7 @@ setting; input event timestamps and estimated output latency are used instead.
 
 StepMania charts are authored by a human. The `#NOTES` block stores a difficulty label and a
 numeric meter chosen by the charter; StepMania itself does not calculate a chart's difficulty from
-its notes. PULSEGRID generates charts from audio analysis and computes a recommendation from the
+its notes. Beatbreak generates charts from audio analysis and computes a recommendation from the
 full-density chart's stats. The four labels are product names, not StepMania's exact
 Easy/Medium/Hard/Challenge taxonomy.
 
@@ -72,7 +72,7 @@ Generation rules that have no direct StepMania equivalent:
 
 ### Playback editing
 
-StepMania has no automatic edge-trim feature. PULSEGRID's Trim silence option is a playback
+StepMania has no automatic edge-trim feature. Beatbreak's Trim silence option is a playback
 convenience: it skips only waveform-verified near-silence at the edges, keeps a 150 ms run-up and a
 1.2 s musical tail, and otherwise plays the whole song. It never selects a random section, and it
 falls back to the whole song when no trustworthy edge silence exists. Charts are generated for the
@@ -83,13 +83,13 @@ taps), assumes 4/4 measures and a single BPM/offset, and rounds micro-timing to 
 
 ### Content and systems
 
-PULSEGRID does **not** implement mines, rolls, lifts, fakes, attacks, keysounds, speed changes,
+Beatbreak does **not** implement mines, rolls, lifts, fakes, attacks, keysounds, speed changes,
 stops, warps, time signatures, courses, characters, or online scoring. It has one audio track, one
 timing map and four fixed lanes. Its scoring, grades and fail rules are its own; they are inspired
 by the genre but are not StepMania's scoring engine.
 
 The default fail rule here is **No fail** so a new player can reach the results screen. StepMania's
-fail behavior is a profile setting; PULSEGRID exposes No fail, an accuracy-collapse rule, and fail
+fail behavior is a profile setting; Beatbreak exposes No fail, an accuracy-collapse rule, and fail
 after 1/3/5/10 misses.
 
 ## Why this matters for generated charts

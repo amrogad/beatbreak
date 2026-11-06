@@ -13,7 +13,7 @@ const TOUCH = typeof window !== 'undefined' && window.matchMedia('(pointer: coar
 const STEPS = [
   {
     title: 'Add a song you own',
-    body: 'Pick an MP3, WAV, OGG, M4A, or FLAC file. PULSEGRID listens to the track and finds its beat.',
+    body: 'Pick an MP3, WAV, OGG, M4A, or FLAC file. Beatbreak listens to the track and finds its beat.',
   },
   {
     title: 'We build four charts',

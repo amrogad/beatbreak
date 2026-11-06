@@ -1,4 +1,4 @@
-# PULSEGRID
+# Beatbreak
 
 A local browser rhythm game that turns **your own audio files** into four-lane charts. Add a song,
 pick a difficulty, play. Nothing is uploaded, there is no account, and no music is bundled.
@@ -155,7 +155,7 @@ IndexedDB. Deleting a song removes all of its records.
 The chart editor is an advanced tool behind **Edit arrows** on the setup screen. It shows a
 four-lane grid over the audio, supports add/drag/delete, snapping, BPM/offset correction and preview.
 
-- **Chart JSON** is the round-trippable PULSEGRID format (also available from Results).
+- **Chart JSON** is the round-trippable Beatbreak format (also available from Results).
 - **`.sm`** is a StepMania export from the editor. It assumes 4/4 measures, one BPM/offset and a
   single grid resolution; holds are exported as taps. The editor validates the result and refuses
   to silently write an invalid file. Trim is a playback feature, so exports use the untrimmed song.
