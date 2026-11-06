@@ -18,7 +18,7 @@ import { validatePlayability } from '../../chart/generate'
 import { exportSm, parseChartFile, serializeChart } from '../../chart/serialize'
 import { computeStats } from '../../chart/generate'
 import { createId } from '../../core/rng'
-import { runtime } from '../runtime'
+import { editorUnsaved, runtime } from '../runtime'
 import { saveChart } from '../../store/repository'
 import { loadSongBundle } from '../../store/library'
 import { isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
@@ -47,6 +47,19 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const [bundle, setBundle] = useState<SongBundle | null>(() => runtime.get(songId) ?? null)
   const [chart, setChart] = useState<Chart | null>(null)
   const [dirty, setDirty] = useState(false)
+  useEffect(() => {
+    editorUnsaved.current = dirty
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => {
+      window.removeEventListener('beforeunload', warn)
+      editorUnsaved.current = false
+    }
+  }, [dirty])
   const [selection, setSelection] = useState<string | null>(null)
   const [camera, setCamera] = useState({ start: 0, span: 12 })
   const [playing, setPlaying] = useState(false)
@@ -189,6 +202,21 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     setOffsetDraft(null)
     setDirty(true)
   }, [chart, duration])
+
+  /**
+   * Change how new edits snap. Notes stay exactly where they are: picking a finer grid to place
+   * one triplet must not move the whole chart ("Re-snap all notes" does that, on purpose).
+   */
+  const setGrid = useCallback(
+    (stepsPerBeat: number) => {
+      if (!chart || stepsPerBeat === chart.stepsPerBeat) return
+      pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
+      const notes = chart.notes.map((note) => ({ ...note, step: Math.round(timing.timeToBeat(note.time) * stepsPerBeat) }))
+      setChart({ ...chart, stepsPerBeat, notes, edited: true })
+      setDirty(true)
+    },
+    [chart, pushUndo, timing],
+  )
 
   /** Move the grid and re-snap every note onto it, as one undoable step. */
   const regrid = useCallback(
@@ -491,14 +519,41 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
 
   /* ------------------------------------------------------------ persistence */
 
+  // Wheel scrolls the timeline and Ctrl+wheel (or a trackpad pinch) zooms it. React's onWheel is
+  // passive, so it could not stop the page scrolling and the browser zooming too.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault()
+      const lines = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? 400 : 1
+      if (event.ctrlKey) {
+        const factor = event.deltaY > 0 ? 1.15 : 0.87
+        setCamera((current) => ({ ...current, span: Math.max(1.5, Math.min(120, current.span * factor)) }))
+        return
+      }
+      const delta = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY) * lines
+      setCamera((current) => ({ ...current, start: Math.max(0, current.start + (delta / 400) * current.span) }))
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [chart !== null])
+
   const save = useCallback(async () => {
     if (!chart) return
     const playability = validatePlayability(chart, duration)
+    // Clean as of this copy: an edit made while the write runs marks it dirty again.
+    setDirty(false)
+    try {
+      await saveChart(chart)
+    } catch (error) {
+      setDirty(true)
+      onToast(`Could not save the chart: ${error instanceof Error ? error.message : String(error)}`, 'error')
+      return
+    }
     if (!playability.ok) {
       onToast(`Saved, but ${playability.errors} playability error(s) remain. Check the report.`, 'info')
     }
-    await saveChart(chart)
-    setDirty(false)
     const charts = (bundle?.charts ?? []).map((candidate) => (candidate.id === chart.id ? chart : candidate))
     const updated = { ...(bundle as SongBundle), charts }
     runtime.put(updated)
@@ -842,18 +897,6 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               if (pointersRef.current.size < 2) pinchRef.current = null
               dragRef.current = null
             }}
-            onWheel={(event) => {
-              event.preventDefault()
-              if (event.ctrlKey) {
-                const factor = event.deltaY > 0 ? 1.15 : 0.87
-                setCamera((current) => ({ ...current, span: Math.max(1.5, Math.min(120, current.span * factor)) }))
-                return
-              }
-              setCamera((current) => ({
-                ...current,
-                start: Math.max(0, current.start + (event.deltaY / 400) * current.span),
-              }))
-            }}
           />
         </div>
 
@@ -917,7 +960,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               { value: '6', label: '1/24 notes (6 steps/beat)' },
               { value: '8', label: '1/32 notes (8 steps/beat)' },
             ]}
-            onChange={(value) => regrid(timing, Number(value))}
+            onChange={(value) => setGrid(Number(value))}
           />
         </div>
       </Panel>

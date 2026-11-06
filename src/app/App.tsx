@@ -19,7 +19,7 @@ import type { StoredRun } from '../store/db'
 import { bestRunFor, listCharts } from '../store/repository'
 import { settingsStore } from '../store/settings'
 import type { Settings } from '../store/settings'
-import { runtime } from './runtime'
+import { editorUnsaved, runtime } from './runtime'
 import { HomeScreen } from './screens/HomeScreen'
 import { SetupScreen } from './screens/SetupScreen'
 import { GameScreen } from './screens/GameScreen'
@@ -475,13 +475,18 @@ function AppShell(): React.JSX.Element {
   }
 
   const inGame = route.name === 'game'
+  /** Top bar links leave the editor too: ask first when it holds unsaved edits. */
+  const leave = (next: Route): void => {
+    if (route.name === 'editor' && editorUnsaved.current && !window.confirm('Leave the editor without saving your changes?')) return
+    setRoute(next)
+  }
 
   return (
     <div className="app">
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {!inGame && (
         <header className="topbar">
-          <button type="button" className="brand" onClick={backHome} aria-label="Beatbreak - home">
+          <button type="button" className="brand" onClick={() => leave({ name: 'home' })} aria-label="Beatbreak - home">
             <span className="brand-mark" aria-hidden="true">
               <svg viewBox="0 0 32 32" focusable="false">
                 <rect x="4" y="12" width="4" height="8" fill="var(--lane-left)" />
@@ -505,13 +510,13 @@ function AppShell(): React.JSX.Element {
             >
               <Icon name={settings.menuMusic ? 'sound' : 'muted'} />
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setRoute({ name: 'settings' })}>
+            <Button variant="ghost" size="sm" onClick={() => leave({ name: 'settings' })}>
               Settings
             </Button>
             <Button variant="ghost" size="sm" onClick={showTutorial} title="How to play">
               Help
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setRoute({ name: 'about' })}>
+            <Button variant="ghost" size="sm" onClick={() => leave({ name: 'about' })}>
               About
             </Button>
           </div>

@@ -8,6 +8,9 @@
 import type { AnalysisResult, Chart, SongMeta } from '../core/types'
 import type { SongBundle } from '../store/library'
 
+/** True while the chart editor holds edits that are not saved; the app shell asks before leaving. */
+export const editorUnsaved = { current: false }
+
 class RuntimeStore {
   private bundles = new Map<string, SongBundle>()
 
