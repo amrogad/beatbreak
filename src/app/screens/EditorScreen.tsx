@@ -20,7 +20,8 @@ import { createId } from '../../core/rng'
 import { runtime } from '../runtime'
 import { saveChart } from '../../store/repository'
 import { loadSongBundle } from '../../store/library'
-import { planForMeta, toPlaybackPlan } from '../../core/edit'
+import { isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
+import { isOccupied, noteEnd, placeNote, regridNotes, stepTime, withEnd } from '../../chart/editNotes'
 import type { SongBundle } from '../../store/library'
 import { Icon, BackButton, Button, Chip, Panel, Select, Spinner, Stat, Toggle } from '../components'
 import { hexToRgba } from '../../render/renderer'
@@ -60,7 +61,17 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const rafRef = useRef(0)
   const clickCursorRef = useRef(0)
   const undoRef = useRef<UndoEntry[]>([])
-  const dragRef = useRef<{ noteId: string; grabTime: number; before: ChartNote[]; moved: boolean } | null>(null)
+  const dragRef = useRef<{
+    noteId: string
+    mode: 'move' | 'create' | 'tail'
+    grabTime: number
+    before: ChartNote[]
+    moved: boolean
+  } | null>(null)
+  const pointersRef = useRef(new Map<number, number>())
+  const pinchRef = useRef<{ distance: number; span: number; center: number } | null>(null)
+  const metronomeRef = useRef(metronome)
+  metronomeRef.current = metronome
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const playheadRef = useRef(0)
 
@@ -89,6 +100,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
 
   const timing = useMemo(() => (chart ? new TimingMap(chart.timing) : TimingMap.single(120, 0)), [chart])
   const duration = bundle?.meta.duration ?? 0
+  const plan = useMemo(() => (bundle ? planForMeta(bundle.meta) : null), [bundle])
 
   /* --------------------------------------------------------------- playback */
 
@@ -104,7 +116,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   useEffect(() => stopPlayback, [stopPlayback])
 
   const togglePlayback = useCallback(async () => {
-    if (!bundle?.buffer || !chart) return
+    if (!bundle?.buffer || !chart || !plan) return
     if (engineRef.current) {
       stopPlayback()
       return
@@ -118,10 +130,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     // Audition through the same edit plan the game plays: previewing from inside a removed section
     // snaps forward and cuts splice instead of playing audio that will never be part of a run. A
     // playhead at (or past) the end starts again from the top.
-    const plan = planForMeta(bundle.meta)
     const startAt = Math.max(0, Math.min(playheadRef.current, duration))
     const from = startAt >= plan.windowEnd - 0.05 ? plan.windowStart : Math.max(plan.windowStart, startAt)
-    clickCursorRef.current = Math.ceil((from - timing.offset) / timing.secondsPerBeat(timing.timeToBeat(from)))
+    clickCursorRef.current = Math.ceil(timing.timeToBeat(from) - 1e-6)
     engine.play(from, undefined, toPlaybackPlan(plan))
     setPlaying(true)
     const loop = (): void => {
@@ -130,26 +141,22 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       const time = active.songTime
       playheadRef.current = time
       setPlayhead(time)
-      if (metronome) {
-        const beat = timing.timeToBeat(time)
-        const spb = timing.secondsPerBeat(beat)
-        let index = clickCursorRef.current
-        let beatTime = timing.offset + index * spb
-        while (beatTime < time + 0.02) {
-          index++
-          beatTime = timing.offset + index * spb
-        }
-        while (beatTime <= time + 0.35) {
-          active.scheduleClickAt(beatTime, index % 4 === 0)
-          index++
-          beatTime = timing.offset + index * spb
-        }
-        clickCursorRef.current = index
+      setCamera((current) =>
+        time < current.start || time > current.start + current.span * 0.85
+          ? { ...current, start: Math.max(0, time - current.span * 0.15) }
+          : current,
+      )
+      let index = clickCursorRef.current
+      while (timing.beatToTime(index) < time + 0.02) index++
+      while (timing.beatToTime(index) <= time + 0.35) {
+        if (metronomeRef.current) active.scheduleClickAt(timing.beatToTime(index), index % 4 === 0)
+        index++
       }
+      clickCursorRef.current = index
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
-  }, [bundle, chart, duration, metronome, stopPlayback, timing])
+  }, [bundle, chart, duration, plan, stopPlayback, timing])
 
   /* ------------------------------------------------------------------ edits */
 
@@ -185,14 +192,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     (nextTiming: TimingMap, stepsPerBeat: number) => {
       if (!chart) return
       pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
-      const notes = chart.notes.map((note) => {
-        const time = nextTiming.snapTime(note.time, stepsPerBeat)
-        return { ...note, time, beat: nextTiming.timeToBeat(time), step: nextTiming.timeToStep(time, stepsPerBeat) }
-      })
+      const { notes, dropped } = regridNotes(chart.notes, nextTiming, stepsPerBeat)
       setChart({ ...chart, timing: nextTiming.toJSON(), stepsPerBeat, notes, stats: computeStats(notes, duration), edited: true })
       setDirty(true)
+      if (dropped > 0) onToast(`${dropped} arrow(s) landed on another one and were removed. Undo brings them back.`, 'info')
     },
-    [chart, duration, pushUndo],
+    [chart, duration, onToast, pushUndo],
   )
 
   const applyBpmDraft = (): void => {
@@ -228,17 +233,22 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     [camera.span, camera.start],
   )
 
+  /** The note under the pointer, and whether the grab is on a long arrow's end. */
   const hitTest = useCallback(
-    (time: number, lane: Lane): ChartNote | null => {
+    (time: number, lane: Lane): { note: ChartNote; tail: boolean } | null => {
       if (!chart) return null
       const tolerance = camera.span * 0.012
-      let best: ChartNote | null = null
+      let best: { note: ChartNote; tail: boolean } | null = null
       let bestDistance = Number.POSITIVE_INFINITY
       for (const note of chart.notes) {
         if (note.lane !== lane) continue
-        const distance = Math.abs(note.time - time)
+        const end = noteEnd(note)
+        const headDistance = Math.abs(note.time - time)
+        const tailDistance = end > note.time ? Math.abs(end - time) : Number.POSITIVE_INFINITY
+        const inside = time > note.time && time < end
+        const distance = Math.min(headDistance, tailDistance, inside ? tolerance * 0.99 : Number.POSITIVE_INFINITY)
         if (distance <= tolerance && distance < bestDistance) {
-          best = note
+          best = { note, tail: tailDistance < headDistance && tailDistance <= tolerance }
           bestDistance = distance
         }
       }
@@ -247,12 +257,22 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     [camera.span, chart],
   )
 
+  const zoom = (factor: number): void =>
+    setCamera((current) => {
+      const span = Math.max(1.5, Math.min(120, current.span * factor))
+      const center = current.start + current.span / 2
+      return { span, start: Math.max(0, center - span / 2) }
+    })
+
+  const laneFromY = (y: number, height: number): Lane =>
+    Math.max(0, Math.min(3, Math.floor(((y - 22) / Math.max(1, height - 22)) * 4))) as Lane
+
   /* ----------------------------------------------------------------- canvas */
 
   useEffect(() => {
     const canvas = canvasRef.current
     const wrap = wrapRef.current
-    if (!canvas || !wrap || !chart) return
+    if (!canvas || !wrap || !chart || !plan) return
     let raf = 0
     const draw = (): void => {
       const rect = wrap.getBoundingClientRect()
@@ -293,18 +313,54 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
         ctx.fillRect(x0, ruler, Math.max(1, x1 - x0), height - ruler)
       }
 
+      // Parts trimmed off on the song screen: hatched, and the notes there are drawn faded.
+      const removed = [
+        { start: 0, end: plan.windowStart },
+        ...plan.cuts,
+        { start: plan.windowEnd, end: Math.max(plan.windowEnd, duration) },
+      ]
+      for (const region of removed) {
+        if (region.end - region.start < 0.01) continue
+        const x0 = Math.max(0, xFromTime(region.start, width))
+        const x1 = Math.min(width, xFromTime(region.end, width))
+        if (x1 <= x0) continue
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(x0, ruler, x1 - x0, height - ruler)
+        ctx.clip()
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'
+        ctx.fillRect(x0, ruler, x1 - x0, height - ruler)
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)'
+        ctx.lineWidth = 1
+        for (let x = x0 - height; x < x1; x += 12) {
+          ctx.beginPath()
+          ctx.moveTo(x, height)
+          ctx.lineTo(x + height, ruler)
+          ctx.stroke()
+        }
+        ctx.restore()
+        if (x1 - x0 > 60) {
+          ctx.fillStyle = 'rgba(255,255,255,0.35)'
+          ctx.font = '600 11px ui-monospace, monospace'
+          ctx.textAlign = 'center'
+          ctx.fillText('trimmed', (x0 + x1) / 2, ruler + 10)
+        }
+      }
+
       // Grid
-      const spb = timing.secondsPerBeat(0)
       const stepsPerBeat = chart.stepsPerBeat
-      const stepSeconds = spb / stepsPerBeat
-      const firstStep = Math.floor(camera.start / stepSeconds) - 1
-      const lastStep = Math.ceil((camera.start + camera.span) / stepSeconds) + 1
+      const firstStep = timing.timeToStep(camera.start, stepsPerBeat) - 1
+      const lastStep = timing.timeToStep(camera.start + camera.span, stepsPerBeat) + 1
+      const stepPx = (timing.secondsPerBeat(timing.timeToBeat(camera.start)) / stepsPerBeat / camera.span) * width
       for (let step = firstStep; step <= lastStep; step++) {
         const time = timing.stepToTime(step, stepsPerBeat)
         const x = xFromTime(time, width)
         if (x < -1 || x > width + 1) continue
         const isBar = step % (stepsPerBeat * 4) === 0
         const isBeat = step % stepsPerBeat === 0
+        // Zoomed far out the lines would turn into a solid wall, so only the coarser ones stay.
+        if (!isBeat && stepPx < 5) continue
+        if (!isBar && stepPx * stepsPerBeat < 5) continue
         ctx.strokeStyle = isBar ? 'rgba(86,180,233,0.5)' : isBeat ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.07)'
         ctx.lineWidth = isBar ? 1.5 : 1
         ctx.beginPath()
@@ -330,9 +386,19 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       const noteW = Math.max(7, Math.min(16, camera.span > 30 ? 8 : 14))
       for (const note of chart.notes) {
         const x = xFromTime(note.time, width)
-        if (x < -20 || x > width + 20) continue
+        const tailX = xFromTime(noteEnd(note), width)
+        if (tailX < -20 || x > width + 20) continue
         const y = ruler + note.lane * laneH + (laneH - noteH) / 2
         const color = LANE_INFO[note.lane].color
+        ctx.globalAlpha = isCut(plan, note.time) || note.time < plan.windowStart || note.time > plan.windowEnd ? 0.3 : 1
+        if (tailX > x) {
+          const bodyH = noteH * 0.5
+          const bodyY = y + (noteH - bodyH) / 2
+          ctx.fillStyle = hexToRgba(note.id === selection ? '#ffffff' : color, 0.45)
+          ctx.fillRect(x, bodyY, tailX - x, bodyH)
+          ctx.fillStyle = note.id === selection ? '#ffffff' : color
+          ctx.fillRect(tailX - 3, y + 2, 6, noteH - 4)
+        }
         ctx.fillStyle = note.id === selection ? '#ffffff' : color
         ctx.strokeStyle = hexToRgba(color, 0.9)
         ctx.lineWidth = 1
@@ -347,6 +413,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
         ctx.fill()
         ctx.stroke()
       }
+      ctx.globalAlpha = 1
 
       // Playhead
       const px = xFromTime(playhead, width)
@@ -362,7 +429,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     cancelAnimationFrame(raf)
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [bundle?.meta.analysis.silentRegions, camera, chart, playhead, selection, timing, xFromTime])
+  }, [bundle?.meta.analysis.silentRegions, camera, chart, duration, plan, playhead, selection, timing, xFromTime])
 
   /* -------------------------------------------------------------- shortcuts */
 
@@ -402,14 +469,15 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       if (action && selection) {
         event.preventDefault()
         const before = chart.notes
-        const stepSeconds = timing.secondsPerBeat(0) / chart.stepsPerBeat
+        const target = before.find((note) => note.id === selection)
+        if (!target) return
+        const nextTime = action.time ? Math.max(0, stepTime(target.time, action.time, timing, chart.stepsPerBeat)) : target.time
+        const nextLane = Math.max(0, Math.min(3, target.lane + (action.lane ?? 0))) as Lane
+        const length = noteEnd(target) - target.time
+        if (nextLane === target.lane && Math.abs(nextTime - target.time) < 1e-6) return
+        if (isOccupied(before, nextLane, nextTime, nextTime + length, target.id)) return
         commitNotes(
-          before.map((note) => {
-            if (note.id !== selection) return note
-            const nextTime = Math.max(0, note.time + (action.time ?? 0) * stepSeconds)
-            const nextLane = Math.max(0, Math.min(3, note.lane + (action.lane ?? 0))) as Lane
-            return { ...note, time: nextTime, lane: nextLane, beat: timing.timeToBeat(nextTime), step: timing.timeToStep(nextTime, chart.stepsPerBeat) }
-          }),
+          before.map((note) => (note.id === selection ? placeNote(note, nextTime, nextLane, timing, chart.stepsPerBeat) : note)),
           { undo: before },
         )
       }
@@ -486,7 +554,13 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       }
       if (!chart) return
       const incoming = parsed.chart
-      const notes = [...incoming.notes].sort((a, b) => (a.time === b.time ? a.lane - b.lane : a.time - b.time))
+      const notes: ChartNote[] = []
+      for (const note of [...incoming.notes].sort((a, b) => (a.time === b.time ? a.lane - b.lane : a.time - b.time))) {
+        if (!isOccupied(notes, note.lane, note.time, noteEnd(note))) notes.push(note)
+      }
+      if (notes.length < incoming.notes.length) {
+        parsed.warnings.push(`${incoming.notes.length - notes.length} arrow(s) sat on top of another one and were dropped.`)
+      }
       // The file's notes and grid replace this chart; it stays this song's chart at this difficulty.
       pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
       setChart({
@@ -529,6 +603,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const playability = validatePlayability(chart, duration)
   const errors = playability.issues.filter((issue) => issue.severity === 'error')
   const warnings = playability.issues.filter((issue) => issue.severity === 'warning')
+  const trimmedNotes = plan
+    ? chart.notes.filter((note) => isCut(plan, note.time) || note.time < plan.windowStart || note.time > plan.windowEnd).length
+    : 0
 
   return (
     <div className="page">
@@ -642,7 +719,23 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               const x = event.clientX - rect.left
               const y = event.clientY - rect.top
               const time = timeFromX(x, rect.width)
-              const lane = Math.max(0, Math.min(3, Math.floor(((y - 22) / Math.max(1, rect.height - 22)) * 4))) as Lane
+              pointersRef.current.set(event.pointerId, x)
+              event.currentTarget.setPointerCapture(event.pointerId)
+              if (pointersRef.current.size === 2) {
+                // Second finger means a pinch, so take back whatever the first finger started.
+                const drag = dragRef.current
+                if (drag && !drag.moved && drag.mode === 'create') {
+                  undoRef.current.pop()
+                  commitNotes(drag.before)
+                  setSelection(null)
+                }
+                dragRef.current = null
+                const [a, b] = [...pointersRef.current.values()]
+                pinchRef.current = { distance: Math.max(8, Math.abs(a - b)), span: camera.span, center: timeFromX((a + b) / 2, rect.width) }
+                return
+              }
+              if (pointersRef.current.size > 2) return
+              const lane = laneFromY(y, rect.height)
               if (y < 22) {
                 // The time ruler moves the playhead; Play starts from there.
                 if (playing) stopPlayback()
@@ -656,19 +749,25 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                 if (!hit) return
                 const before = chart.notes
                 commitNotes(
-                  before.filter((note) => note.id !== hit.id),
+                  before.filter((note) => note.id !== hit.note.id),
                   { undo: before },
                 )
-                if (selection === hit.id) setSelection(null)
+                if (selection === hit.note.id) setSelection(null)
                 return
               }
               if (hit) {
-                setSelection(hit.id)
-                dragRef.current = { noteId: hit.id, grabTime: time - hit.time, before: chart.notes, moved: false }
-                event.currentTarget.setPointerCapture(event.pointerId)
+                setSelection(hit.note.id)
+                dragRef.current = {
+                  noteId: hit.note.id,
+                  mode: hit.tail ? 'tail' : 'move',
+                  grabTime: time - (hit.tail ? noteEnd(hit.note) : hit.note.time),
+                  before: chart.notes,
+                  moved: false,
+                }
                 return
               }
               const snapped = snapTime(time)
+              if (isOccupied(chart.notes, lane, snapped, snapped)) return
               const note: ChartNote = {
                 id: createId('note'),
                 lane,
@@ -681,29 +780,53 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               const before = chart.notes
               commitNotes([...before, note], { undo: before })
               setSelection(note.id)
+              // Dragging right from a new arrow pulls it into a long arrow.
+              dragRef.current = { noteId: note.id, mode: 'create', grabTime: 0, before, moved: false }
             }}
             onPointerMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              const x = event.clientX - rect.left
+              if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, x)
+              const pinch = pinchRef.current
+              if (pinch && pointersRef.current.size >= 2) {
+                const [a, b] = [...pointersRef.current.values()]
+                const span = Math.max(1.5, Math.min(120, pinch.span * (pinch.distance / Math.max(8, Math.abs(a - b)))))
+                const centerX = (a + b) / 2
+                setCamera({ span, start: Math.max(0, pinch.center - (centerX / Math.max(1, rect.width)) * span) })
+                return
+              }
               const drag = dragRef.current
               if (!drag) return
-              const rect = event.currentTarget.getBoundingClientRect()
-              const time = timeFromX(event.clientX - rect.left, rect.width) - drag.grabTime
-              const y = event.clientY - rect.top
-              const lane = Math.max(0, Math.min(3, Math.floor(((y - 22) / Math.max(1, rect.height - 22)) * 4))) as Lane
+              const time = timeFromX(x, rect.width) - drag.grabTime
+              const lane = laneFromY(event.clientY - rect.top, rect.height)
               const target = chart.notes.find((note) => note.id === drag.noteId)
               if (!target) return
-              const snappedTime = snapTime(time)
-              const snappedLane = event.altKey ? lane : lane
-              if (Math.abs(target.time - snappedTime) < 1e-6 && target.lane === snappedLane) return
-              const before = drag.before
-              const moved = before.map((note) =>
-                note.id === drag.noteId
-                  ? { ...note, time: snappedTime, lane: snappedLane, beat: timing.timeToBeat(snappedTime), step: timing.timeToStep(snappedTime, chart.stepsPerBeat) }
-                  : note,
-              )
-              commitNotes(moved, drag.moved ? {} : { undo: before })
+              let next: ChartNote
+              if (drag.mode === 'move') {
+                const snappedTime = snapTime(time)
+                if (Math.abs(target.time - snappedTime) < 1e-6 && target.lane === lane) return
+                const length = noteEnd(target) - target.time
+                if (isOccupied(chart.notes, lane, snappedTime, snappedTime + length, target.id)) return
+                next = placeNote(target, snappedTime, lane, timing, chart.stepsPerBeat)
+              } else {
+                // 'create' and 'tail' both set where the long arrow ends; the lane stays.
+                const end = Math.max(target.time, snapTime(time))
+                next = withEnd(target, end, timing, chart.stepsPerBeat)
+                if (next.kind === target.kind && Math.abs(noteEnd(next) - noteEnd(target)) < 1e-6) return
+                if (isOccupied(chart.notes, next.lane, next.time, noteEnd(next), target.id)) return
+              }
+              const moved = chart.notes.map((note) => (note.id === drag.noteId ? next : note))
+              commitNotes(moved, drag.moved || drag.mode === 'create' ? {} : { undo: drag.before })
               drag.moved = true
             }}
-            onPointerUp={() => {
+            onPointerUp={(event) => {
+              pointersRef.current.delete(event.pointerId)
+              if (pointersRef.current.size < 2) pinchRef.current = null
+              dragRef.current = null
+            }}
+            onPointerCancel={(event) => {
+              pointersRef.current.delete(event.pointerId)
+              if (pointersRef.current.size < 2) pinchRef.current = null
               dragRef.current = null
             }}
             onWheel={(event) => {
@@ -730,6 +853,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             Scroll forward
             <Icon name="later" />
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => zoom(0.7)}>
+            Zoom in
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => zoom(1.4)}>
+            Zoom out
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setCamera({ start: 0, span: 12 })}>
             Reset view
           </Button>
@@ -737,9 +866,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             Follow playhead
           </Button>
           <span className="editor-hint">
-            Left-click empty space to add - drag a note to move - right-click to delete - click the time ruler to move the
-            playhead - wheel scrolls - Ctrl+wheel zooms -
-            Space plays - arrows nudge - Del deletes - Ctrl+Z undoes
+            Click empty space to add - drag right while adding to make a long arrow - drag a long arrow's end to
+            stretch it - drag an arrow to move it - right-click or Delete selected removes - click the time ruler to move
+            the playhead - wheel scrolls - Ctrl+wheel or pinch zooms - Space plays - arrow keys nudge - Ctrl+Z undoes
           </span>
         </div>
 
@@ -835,6 +964,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
             <Chip color="#ff4f9a">{playability.errors} errors, {playability.warnings} warnings</Chip>
           )}
           <ul className="bullets muted small mt-12">
+            {trimmedNotes > 0 && (
+              <li>{trimmedNotes} arrow(s) sit in trimmed parts of the song and never play.</li>
+            )}
             {errors.slice(0, 6).map((issue, index) => (
               <li key={`error-${index}`} className="bad">
                 {issue.message} {issue.noteIds.length > 0 && <span className="faint">({issue.noteIds.length} notes)</span>}

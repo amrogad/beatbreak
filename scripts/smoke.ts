@@ -72,7 +72,7 @@ const sm = exportSm(expert, { title: 'Smoke', artist: '', musicFileName: 'smoke.
 check('valid .sm export', sm.ok, sm.errors.join('; ') || `${(sm.text.length / 1024).toFixed(1)} KB`)
 if (sm.ok) {
   const noteLines = sm.text.split('#NOTES:')[1]?.split('\n').filter((line) => /^[0-9LDUR]{4}$/.test(line.trim())) ?? []
-  const noteCount = noteLines.join('').replace(/0/g, '').length
+  const noteCount = noteLines.join('').replace(/[03]/g, '').length // hold tails (3) are not extra notes
   check('.sm contains every note', noteCount === expert.notes.length, `${noteCount} vs ${expert.notes.length}`)
 }
 

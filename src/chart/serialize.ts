@@ -266,27 +266,35 @@ export function exportSm(chart: Chart, options: SmExportOptions): SmExportResult
   const firstBeat = chart.notes.length > 0 ? Math.max(0, Math.floor(rowOf(chart.notes[0]) / rowsPerBeat)) : 0
   if (firstBeat > 0) warnings.push(`Chart starts at beat ${firstBeat}; empty leading measures are included.`)
 
-  const lastNote = chart.notes[chart.notes.length - 1]
-  const lastRow = lastNote ? rowOf(lastNote) : 0
+  // StepMania note letters: 1 = tap, 2 = hold head, 3 = hold tail.
+  const cellsByRow = new Map<number, string[]>()
+  const put = (row: number, lane: Lane, letter: string): void => {
+    const cells = cellsByRow.get(row) ?? ['0', '0', '0', '0']
+    cells[lane] = letter
+    cellsByRow.set(row, cells)
+  }
+  let lastRow = 0
+  for (const note of chart.notes) {
+    const row = rowOf(note)
+    const tailRow =
+      note.kind === 'hold' && note.duration && note.duration > 0
+        ? Math.round(timing.timeToBeat(note.time + note.duration) * rowsPerBeat)
+        : row
+    if (tailRow > row) {
+      put(row, note.lane, '2')
+      put(tailRow, note.lane, '3')
+    } else {
+      put(row, note.lane, '1')
+    }
+    lastRow = Math.max(lastRow, tailRow)
+  }
   const measures = Math.max(1, Math.ceil((lastRow + 1) / rowsPerMeasure))
 
   const laneRows: string[][] = []
   for (let measure = 0; measure < measures; measure++) {
     const rows: string[] = []
     for (let row = 0; row < rowsPerMeasure; row++) {
-      const absoluteRow = measure * rowsPerMeasure + row
-      const beat = absoluteRow / rowsPerBeat
-      const cells = ['0', '0', '0', '0']
-      for (const note of chart.notes) {
-        const noteRow = Math.round(rowOf(note))
-        if (noteRow !== absoluteRow) continue
-        cells[note.lane] = (['L', 'D', 'U', 'R'] as const)[note.lane]
-        if (note.kind === 'hold' && note.duration && note.duration > 0) {
-          warnings.push('Hold notes are exported as taps: this chart has no hold bodies.')
-        }
-      }
-      void beat
-      rows.push(cells.join(''))
+      rows.push((cellsByRow.get(measure * rowsPerMeasure + row) ?? ['0', '0', '0', '0']).join(''))
     }
     laneRows.push(rows)
   }

@@ -165,10 +165,11 @@ describe('StepMania .sm export', () => {
     expect(result.text).toMatch(/#BPMS:0\.0=120\.0;/)
     expect(result.text).toMatch(/dance-single:\n\s+:\n\s+Medium:\n\s+5:/)
 
-    const rows = result.text.split('\n').filter((line) => /^[0LDUR]{4}$/.test(line))
+    const rows = result.text.split('\n').filter((line) => /^[0-3]{4}$/.test(line))
     expect(rows).toHaveLength(64) // ceil((63 + 1) / 16) = 4 measures × 16 rows
-    expect(rows[0]).toBe('L000')
-    expect(rows[63]).toBe('L000')
+    expect(rows[0]).toBe('1000')
+    expect(rows[4]).toBe('0001')
+    expect(rows[63]).toBe('1000')
     const noteCount = rows.join('').split('').filter((ch) => ch !== '0').length
     expect(noteCount).toBe(5)
   })
@@ -187,11 +188,14 @@ describe('StepMania .sm export', () => {
     expect(result.errors).toContain('Chart has no notes.')
   })
 
-  it('warns when hold notes are flattened to taps', () => {
+  it('writes holds as a head and a tail row', () => {
     const chart = makeChart([note(0, 0, { kind: 'hold', duration: 1 }), note(1, 4)])
     const result = exportSm(chart, { title: 'T', artist: '', musicFileName: 'a.ogg' })
     expect(result.ok).toBe(true)
-    expect(result.warnings.some((w) => /hold notes/i.test(w))).toBe(true)
+    const rows = result.text.split('\n').filter((line) => /^[0-3]{4}$/.test(line))
+    expect(rows[0]).toBe('2000')
+    expect(rows[4]).toBe('0100')
+    expect(rows[8]).toBe('3000') // 1 s at 120 BPM = 2 beats = row 8
   })
 
   it('exports multi-segment BPM maps', () => {
