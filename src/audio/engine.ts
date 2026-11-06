@@ -159,17 +159,10 @@ export function estimateOutputLatency(ctx: AudioContext): number {
   return Math.max(0, Math.min(latency, 0.4))
 }
 
-const MUFFLED_HZ = 500
-const MUFFLE_ATTACK_SECONDS = 0.03
-const MUFFLE_HOLD_SECONDS = 0.12
-const MUFFLE_SECONDS = 0.55
-const openToneHz = (ctx: BaseAudioContext): number => Math.min(20000, ctx.sampleRate / 2)
-
 export class AudioEngine {
   private ctx: AudioContext
   private buffer: AudioBuffer
   private gain: GainNode
-  private tone: BiquadFilterNode
   /** Everything scheduled for the current playback: parts are spliced, so there can be several. */
   private scheduled: { source: AudioBufferSourceNode; gain: GainNode }[] = []
   private clock = new PlanClock()
@@ -194,11 +187,7 @@ export class AudioEngine {
     this.onEnded = options.onEnded
     this.gain = ctx.createGain()
     this.gain.gain.value = this.volume
-    this.tone = ctx.createBiquadFilter()
-    this.tone.type = 'lowpass'
-    this.tone.frequency.value = openToneHz(ctx)
-    this.gain.connect(this.tone)
-    this.tone.connect(ctx.destination)
+    this.gain.connect(ctx.destination)
   }
 
   get duration(): number {
@@ -386,18 +375,6 @@ export class AudioEngine {
     gain.linearRampToValueAtTime(0.0001, now + Math.max(0.05, seconds))
   }
 
-  /** A miss: the song drops to a dull thud, then comes back. */
-  muffle(): void {
-    if (this.disposed) return
-    const now = this.ctx.currentTime
-    const frequency = this.tone.frequency
-    frequency.cancelScheduledValues(now)
-    frequency.setValueAtTime(Math.max(MUFFLED_HZ, frequency.value), now)
-    frequency.exponentialRampToValueAtTime(MUFFLED_HZ, now + MUFFLE_ATTACK_SECONDS)
-    frequency.setValueAtTime(MUFFLED_HZ, now + MUFFLE_HOLD_SECONDS)
-    frequency.exponentialRampToValueAtTime(openToneHz(this.ctx), now + MUFFLE_SECONDS)
-  }
-
   /** Metronome click scheduled at an exact song time (used by the editor preview). */
   scheduleClickAt(songTimeSeconds: number, accent = false): void {
     if (this.disposed) return
@@ -429,7 +406,6 @@ export class AudioEngine {
     try {
       this.gain.gain.cancelScheduledValues(this.ctx.currentTime)
       this.gain.disconnect()
-      this.tone.disconnect()
     } catch {
       /* already disconnected */
     }

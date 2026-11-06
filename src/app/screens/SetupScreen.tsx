@@ -530,7 +530,7 @@ export function SetupScreen({
           value={settings.playMode}
           options={[
             { value: 'arrows', label: 'Arrows' },
-            { value: 'circles', label: 'Circles' },
+            { value: 'circles', label: 'Circles (Beta)' },
           ]}
           onChange={(value) => onUpdateSettings({ playMode: value })}
           hint={settings.playMode === 'circles' ? 'Click or tap circles on a field, same rhythm as the arrows.' : 'Arrows rise up four lanes; hit the matching key.'}

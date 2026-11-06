@@ -315,7 +315,6 @@ export function GameScreen({
           tailMs: 900,
           onJudgment: (event) => {
             renderer.notify(event, 0)
-            if (event.judgment === 'miss' && settingsRef.current.missMuffle) engineRef.current?.muffle()
           },
           onComplete: () => {
             runCompleteRef.current = true
@@ -332,7 +331,6 @@ export function GameScreen({
             // StepMania plays no hit sounds: the song is the feedback. The renderer's hit particles
             // and judgment text carry the timing instead.
             renderer.notify(event, session.scoreState.combo)
-            if (event.judgment === 'miss' && settingsRef.current.missMuffle) engineRef.current?.muffle()
           },
           onHoldComplete: (lane) => renderer.holdComplete(lane),
           onComplete: () => {

@@ -53,7 +53,6 @@ export interface Settings {
   /** Loop a preview of a song behind the menus. */
   menuMusic: boolean
   /** The song goes dull for a moment on a miss. */
-  missMuffle: boolean
   /** Long arrows: let go on the end arrow ('release') or just hold to the end ('hold'). */
   holdMode: 'release' | 'hold'
   /** Long arrows in the chart; off plays each one as a tap. Phones start with them off. */
@@ -100,7 +99,6 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPlay: false,
   showStats: false,
   menuMusic: true,
-  missMuffle: true,
   holdMode: 'hold',
   longArrows: true,
   timing: 'pc',
@@ -243,7 +241,6 @@ export function sanitizeSettings(input: unknown): Settings {
     autoPlay: typeof raw.autoPlay === 'boolean' ? raw.autoPlay : DEFAULT_SETTINGS.autoPlay,
     showStats: typeof raw.showStats === 'boolean' ? raw.showStats : DEFAULT_SETTINGS.showStats,
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
-    missMuffle: typeof raw.missMuffle === 'boolean' ? raw.missMuffle : DEFAULT_SETTINGS.missMuffle,
     holdMode: raw.holdMode === 'release' ? 'release' : 'hold',
     longArrows: typeof raw.longArrows === 'boolean' ? raw.longArrows : DEFAULT_SETTINGS.longArrows,
     timing: raw.timing === 'phone' ? 'phone' : 'pc',

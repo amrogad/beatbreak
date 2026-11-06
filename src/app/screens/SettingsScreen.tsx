@@ -136,7 +136,7 @@ export function SettingsScreen({
             value={settings.playMode}
             options={[
               { value: 'arrows', label: 'Arrows' },
-              { value: 'circles', label: 'Circles' },
+              { value: 'circles', label: 'Circles (Beta)' },
             ]}
             onChange={(value) => onUpdate({ playMode: value })}
             hint="Arrows: hit the lane keys. Circles: click or tap each circle as its ring closes. Same rhythm, own high scores."
@@ -321,12 +321,6 @@ export function SettingsScreen({
             onChange={(value) => onUpdate({ audioOffsetMs: value })}
             format={formatSync}
             hint={SYNC_HINT}
-          />
-          <Toggle
-            label="Muffle on miss"
-            checked={settings.missMuffle}
-            onChange={(value) => onUpdate({ missMuffle: value })}
-            hint="The song goes dull for a moment when you miss."
           />
           <Toggle
             label="Menu music"
