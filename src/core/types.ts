@@ -345,6 +345,8 @@ export interface RunResults {
   droppedHolds?: number
   /** Played in circle mode; absent means arrows. Each mode keeps its own best scores. */
   mode?: 'circles'
+  /** Circle mode: what each press did (hit, too early on a circle, off the circle that was due, nothing due). */
+  clicks?: { hit: number; early: number; off: number; stray: number }
   /** True when this run was played in auto-play (verify) mode, so it is not a real score. */
   autoPlay?: boolean
 }

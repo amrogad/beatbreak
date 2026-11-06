@@ -18,7 +18,7 @@ import { TimingMap } from '../chart/timing'
 import { JUDGMENT_LABEL } from '../game/judgment'
 import type { GameSession } from '../game/session'
 import { CircleSession } from '../game/circleSession'
-import type { CircleMap } from '../chart/circles'
+import type { CircleMap, CircleObject } from '../chart/circles'
 import { CircleField } from './circleField'
 import { ParticleSystem } from './particles'
 
@@ -340,6 +340,13 @@ export class PlayfieldRenderer {
     if (!this.circleField) return null
     this.layout()
     return this.circleField.toField(x, y)
+  }
+
+  /** A circle-mode press that scored nothing: shake the circle it was early on, or mark the spot. */
+  ignoredPress(object: CircleObject | null, at: { x: number; y: number }): void {
+    if (!this.circleField) return
+    if (object) this.circleField.shake(object, performance.now())
+    else this.circleField.mark(at, performance.now())
   }
 
   /** Where the mouse cursor is drawn; touch hides it. */
@@ -1352,6 +1359,7 @@ export class PlayfieldRenderer {
       missColor: this.missColor(),
       judgeStyle: (judgment: Judgment) => this.judgeStyle(judgment),
       drawText: (text: string, x: number, y: number, size: number, style: JudgeStyle, glow: boolean) => this.drawText(this.ctx, text, x, y, size, style, glow && this.quality > 0),
+      glow: (color: string, radius: number) => this.glowSprite(color, radius),
     }
   }
 

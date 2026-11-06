@@ -26,6 +26,8 @@ export interface CircleEnv {
   missColor: string
   judgeStyle(judgment: Judgment): TextStyle
   drawText(text: string, x: number, y: number, size: number, style: TextStyle, glow: boolean): void
+  /** The soft round light the arrows use for their hit glow. */
+  glow(color: string, radius: number): HTMLCanvasElement
 }
 
 export interface FieldRect {
@@ -51,6 +53,10 @@ interface Effect {
 
 const HIT_FX_MS = 260
 const TEXT_FX_MS = 520
+/** An early press shakes the circle it landed on for this long. */
+const SHAKE_MS = 260
+/** A press on nothing leaves a small fading mark for this long. */
+const MARK_MS = 280
 
 export class CircleField {
   readonly map: CircleMap
@@ -62,6 +68,8 @@ export class CircleField {
   private paths = new Map<string, Path2D>()
   private pointer: { x: number; y: number; visible: boolean } = { x: 0, y: 0, visible: false }
   private trail: CirclePoint[] = []
+  private shakes = new Map<string, number>()
+  private marks: { x: number; y: number; at: number }[] = []
 
   constructor(map: CircleMap) {
     this.map = map
@@ -107,6 +115,20 @@ export class CircleField {
   reset(): void {
     this.effects = []
     this.trail = []
+    this.shakes.clear()
+    this.marks = []
+  }
+
+  /** A press too early on this circle: it shakes, nothing is scored. */
+  shake(object: CircleObject, nowMs: number): void {
+    this.shakes.set(object.id, nowMs)
+  }
+
+  /** A press that reached no circle: a faint mark where it landed (field units). */
+  mark(at: CirclePoint, nowMs: number): void {
+    const screen = this.toScreen(at.x, at.y)
+    this.marks.push({ x: screen.x, y: screen.y, at: nowMs })
+    if (this.marks.length > 12) this.marks.shift()
   }
 
   /** A judgement happened: an effect where the object was, returned for the particle burst. */
@@ -168,32 +190,51 @@ export class CircleField {
       const start = object.time * 1000 - preemptMs
       const alpha = Math.max(0, Math.min(1, (songTimeMs - start) / fadeInMs))
       if (object.kind === 'slider') this.drawSlider(env, object, songTimeMs, alpha, r)
-      this.drawCircle(env, object, alpha, r, songTimeMs)
+      this.drawCircle(env, object, alpha, r, songTimeMs, session.windows.good)
     }
 
     if (active) this.drawBall(env, active, songTimeMs, r, session.isFollowing)
     this.drawEffects(env, r)
+    this.drawMarks(env, r)
     if (showCursor) this.drawCursor(env, session, songTimeMs, r)
   }
 
-  private drawCircle(env: CircleEnv, object: CircleObject, alpha: number, r: number, songTimeMs: number): void {
+  private drawCircle(env: CircleEnv, object: CircleObject, alpha: number, r: number, songTimeMs: number, lateLimitMs: number): void {
     const ctx = env.ctx
     const color = env.color(object.color)
     const p = this.toScreen(object.x, object.y)
+    const shakeAt = this.shakes.get(object.id)
+    if (shakeAt !== undefined) {
+      const age = env.nowMs - shakeAt
+      if (age >= SHAKE_MS) this.shakes.delete(object.id)
+      else if (!env.reduced) p.x += Math.sin(age * 0.11) * r * 0.16 * (1 - age / SHAKE_MS)
+    }
     const late = songTimeMs - object.time * 1000
     ctx.save()
-    ctx.globalAlpha = alpha * (late > 0 ? Math.max(0.35, 1 - late / 160) : 1)
-    const sprite = this.discSprite(env, late > 40 ? env.missColor : color, r)
+    // It only turns to the miss colour once it can no longer be hit.
+    ctx.globalAlpha = alpha * (late > 0 ? Math.max(0.45, 1 - late / (lateLimitMs * 2)) : 1)
+    const sprite = this.discSprite(env, late > lateLimitMs ? env.missColor : color, r)
     ctx.drawImage(sprite, p.x - sprite.width / env.dpr / 2, p.y - sprite.height / env.dpr / 2, sprite.width / env.dpr, sprite.height / env.dpr)
-    env.drawText(String(object.number), p.x, p.y + r * 0.04, r * 0.82, { fill: '#ffffff', shadow: 'rgba(0,0,0,0.55)', burst: color }, false)
-    // The closing ring: it touches the circle's rim exactly on the beat.
+    env.drawText(String(object.number), p.x, p.y + r * 0.06, r * 0.8, { fill: '#ffffff', shadow: env.mono ? '#000000' : shade(color, -0.7), burst: color }, false)
+    // The closing ring: a neon loop in the circle's colour that touches its rim exactly on the beat.
     const until = object.time * 1000 - songTimeMs
     if (until > 0) {
       const t = until / this.map.preemptMs
-      ctx.strokeStyle = env.mono ? '#ffffff' : color
+      const ring = r * (1 + 2.6 * t)
+      const tone = env.mono ? '#ffffff' : color
+      if (env.quality > 0) {
+        ctx.globalAlpha = alpha * 0.28
+        ctx.strokeStyle = tone
+        ctx.lineWidth = Math.max(5, r * 0.3)
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, ring, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = alpha
+      ctx.strokeStyle = env.mono ? '#ffffff' : shade(color, 0.55)
       ctx.lineWidth = Math.max(2, r * 0.09)
       ctx.beginPath()
-      ctx.arc(p.x, p.y, r * (1 + 2.6 * t), 0, Math.PI * 2)
+      ctx.arc(p.x, p.y, ring, 0, Math.PI * 2)
       ctx.stroke()
     }
     ctx.restore()
@@ -214,20 +255,19 @@ export class CircleField {
       this.paths.set(object.id, path)
       if (this.paths.size > 64) this.paths.delete(this.paths.keys().next().value as string)
     }
+    // The same ribbon as a long arrow: a light rim, dark edges and a bright middle in its colour.
     ctx.save()
-    ctx.globalAlpha = alpha * 0.92
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    ctx.strokeStyle = env.mono ? '#d8d8d8' : '#ffffff'
-    ctx.lineWidth = r * 2
-    ctx.stroke(path)
-    ctx.strokeStyle = env.mono ? '#161616' : mix(color, '#0b0820', 0.62)
-    ctx.lineWidth = r * 2 - Math.max(3, r * 0.16)
-    ctx.stroke(path)
-    ctx.globalAlpha = alpha * 0.35
-    ctx.strokeStyle = env.mono ? '#ffffff' : color
-    ctx.lineWidth = r * 0.5
-    ctx.stroke(path)
+    const bands: [number, string, number][] = env.mono
+      ? [[2, '#d8d8d8', 0.9], [1.86, '#1a1a1a', 0.92], [1.2, '#3a3a3a', 0.92], [0.5, '#8a8a8a', 0.9]]
+      : [[2, shade(color, 0.6), 0.9], [1.86, shade(color, -0.45), 0.92], [1.3, shade(color, -0.1), 0.92], [0.6, shade(color, 0.35), 0.9]]
+    for (const [width, tone, opacity] of bands) {
+      ctx.globalAlpha = alpha * opacity
+      ctx.strokeStyle = tone
+      ctx.lineWidth = r * width
+      ctx.stroke(path)
+    }
     // The far end: a ring, with a turn-back mark while there are passes left.
     const end = object.path[object.path.length - 1]
     const e = this.toScreen(end.x, end.y)
@@ -265,16 +305,19 @@ export class CircleField {
     const ball = sliderBall(object, songTimeMs / 1000)
     const s = this.toScreen(ball.x, ball.y)
     ctx.save()
-    ctx.fillStyle = env.mono ? '#ffffff' : color
-    ctx.beginPath()
-    ctx.arc(s.x, s.y, r * 0.78, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'
-    ctx.beginPath()
-    ctx.arc(s.x, s.y, r * 0.34, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = following ? (env.mono ? '#ffffff' : color) : 'rgba(255,255,255,0.25)'
-    ctx.globalAlpha = following ? 0.8 : 0.4
+    if (following && env.quality > 0) {
+      const flicker = 0.4 + 0.15 * Math.abs(Math.sin(env.nowMs / 32))
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.globalAlpha = flicker
+      const glow = env.glow(env.mono ? '#ffffff' : color, Math.round(r * 1.6))
+      ctx.drawImage(glow, s.x - r * 1.6, s.y - r * 1.6, r * 3.2, r * 3.2)
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = 1
+    }
+    const sprite = this.discSprite(env, color, r * 0.78)
+    ctx.drawImage(sprite, s.x - sprite.width / env.dpr / 2, s.y - sprite.height / env.dpr / 2, sprite.width / env.dpr, sprite.height / env.dpr)
+    ctx.strokeStyle = following ? (env.mono ? '#ffffff' : shade(color, 0.55)) : 'rgba(255,255,255,0.25)'
+    ctx.globalAlpha = following ? 0.85 : 0.4
     ctx.lineWidth = Math.max(2, r * 0.08)
     ctx.beginPath()
     ctx.arc(s.x, s.y, (following ? this.map.followRadius / this.map.radius : 1.1) * r, 0, Math.PI * 2)
@@ -290,6 +333,15 @@ export class CircleField {
       const age = now - fx.at
       if (fx.judgment !== 'miss' && age < HIT_FX_MS && !fx.tail) {
         const t = age / HIT_FX_MS
+        if (env.quality > 0) {
+          // The lit-up flash the arrows get on their target.
+          const size = r * (1.5 + (env.reduced ? 0 : 0.5 * t))
+          ctx.save()
+          ctx.globalCompositeOperation = 'lighter'
+          ctx.globalAlpha = (1 - t) * 0.7
+          ctx.drawImage(env.glow(env.mono ? '#ffffff' : fx.color, Math.round(r * 1.5)), fx.x - size, fx.y - size, size * 2, size * 2)
+          ctx.restore()
+        }
         ctx.save()
         ctx.globalAlpha = (1 - t) * 0.9
         ctx.strokeStyle = env.mono ? '#ffffff' : fx.color
@@ -340,31 +392,74 @@ export class CircleField {
     ctx.restore()
   }
 
-  /** A glossy disc in the combo colour with a white rim; drawn once per colour and size. */
+  private drawMarks(env: CircleEnv, r: number): void {
+    if (this.marks.length === 0) return
+    const ctx = env.ctx
+    this.marks = this.marks.filter((m) => env.nowMs - m.at < MARK_MS)
+    ctx.save()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = Math.max(1.5, r * 0.06)
+    for (const m of this.marks) {
+      const t = (env.nowMs - m.at) / MARK_MS
+      ctx.globalAlpha = 0.45 * (1 - t)
+      ctx.beginPath()
+      ctx.arc(m.x, m.y, r * (0.3 + 0.25 * t), 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  /**
+   * A candy-gloss disc like the arrows: bright body lit from the top, a hard white highlight on
+   * the upper half, a glint on the lower edge, a light rim and a halo in its own colour.
+   */
   private discSprite(env: CircleEnv, color: string, r: number): HTMLCanvasElement {
-    const key = `${color}|${Math.round(r * 4)}|${env.mono ? 1 : 0}`
+    const key = `${color}|${Math.round(r * 4)}|${env.mono ? 1 : 0}|${env.quality > 0 ? 1 : 0}`
     const cached = this.sprites.get(key)
     if (cached) return cached
-    const size = Math.ceil((r * 2 + 6) * env.dpr)
+    const room = Math.ceil(r * 0.45) + 3
+    const size = Math.ceil((r * 2 + room * 2) * env.dpr)
     const canvas = document.createElement('canvas')
     canvas.width = size
     canvas.height = size
     const c = canvas.getContext('2d')!
     c.scale(env.dpr, env.dpr)
     const mid = size / env.dpr / 2
-    const fill = c.createRadialGradient(mid - r * 0.3, mid - r * 0.35, r * 0.1, mid, mid, r)
-    fill.addColorStop(0, env.mono ? '#5a5a5a' : mix(color, '#ffffff', 0.35))
-    fill.addColorStop(0.55, env.mono ? '#2a2a2a' : color)
-    fill.addColorStop(1, env.mono ? '#111111' : mix(color, '#000000', 0.45))
+    const body = env.mono ? shade(color, -0.35) : color
+    const disc = new Path2D()
+    disc.arc(mid, mid, r * 0.94, 0, Math.PI * 2)
+    const fill = c.createLinearGradient(0, mid - r, 0, mid + r)
+    fill.addColorStop(0, shade(body, 0.7))
+    fill.addColorStop(0.3, shade(body, 0.15))
+    fill.addColorStop(0.75, body)
+    fill.addColorStop(1, shade(body, -0.3))
     c.fillStyle = fill
+    c.save()
+    if (env.quality > 0) {
+      c.shadowColor = env.mono ? 'rgba(255,255,255,0.6)' : color
+      c.shadowBlur = r * 0.4 * env.dpr
+    }
+    c.fill(disc)
+    c.restore()
+    c.save()
+    c.clip(disc)
+    const gloss = c.createLinearGradient(0, mid - r, 0, mid + r * 0.04)
+    gloss.addColorStop(0, 'rgba(255,255,255,0.85)')
+    gloss.addColorStop(0.55, 'rgba(255,255,255,0.32)')
+    gloss.addColorStop(1, 'rgba(255,255,255,0)')
+    c.fillStyle = gloss
     c.beginPath()
-    c.arc(mid, mid, r * 0.94, 0, Math.PI * 2)
+    c.ellipse(mid, mid - r * 0.36, r * 0.78, r * 0.56, 0, 0, Math.PI * 2)
     c.fill()
-    c.strokeStyle = '#ffffff'
-    c.lineWidth = Math.max(2, r * 0.11)
-    c.beginPath()
-    c.arc(mid, mid, r * 0.93, 0, Math.PI * 2)
-    c.stroke()
+    const glint = c.createLinearGradient(0, mid + r * 0.55, 0, mid + r)
+    glint.addColorStop(0, 'rgba(255,255,255,0)')
+    glint.addColorStop(1, 'rgba(255,255,255,0.4)')
+    c.fillStyle = glint
+    c.fillRect(mid - r, mid + r * 0.55, r * 2, r * 0.45)
+    c.restore()
+    c.lineWidth = Math.max(1.5, r * 0.06)
+    c.strokeStyle = env.mono ? '#ffffff' : shade(body, 0.6)
+    c.stroke(disc)
     this.sprites.set(key, canvas)
     return canvas
   }
@@ -380,10 +475,10 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath()
 }
 
-/** Blend two #rrggbb colours; t = 0 gives `a`. */
-function mix(a: string, b: string, t: number): string {
-  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16))
-  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16))
-  const m = pa.map((v, i) => Math.round(v + (pb[i] - v) * t))
-  return `rgb(${m[0]}, ${m[1]}, ${m[2]})`
+/** Lighten (amount > 0) or darken (amount < 0) a #rrggbb colour. */
+function shade(hex: string, amount: number): string {
+  const target = amount < 0 ? 0 : 255
+  const t = Math.abs(amount)
+  const channels = [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - t) + target * t))
+  return `#${channels.map((v) => v.toString(16).padStart(2, '0')).join('')}`
 }

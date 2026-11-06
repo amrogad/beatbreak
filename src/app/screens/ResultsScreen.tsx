@@ -126,6 +126,11 @@ export function ResultsScreen({
             </div>
           ))}
         </div>
+        {results.clicks && !results.autoPlay && (
+          <p className="muted small mt-16">
+            Clicks: {results.clicks.hit} on time - {results.clicks.early} too early - {results.clicks.off} off the circle - {results.clicks.stray} with no circle due
+          </p>
+        )}
       </Panel>
 
       <div className="row gap-12 wrap">

@@ -22,6 +22,8 @@ export interface CircleSessionOptions {
   autoPlay?: boolean
   onJudgment?: (event: HitEvent) => void
   onSliderComplete?: (object: CircleObject) => void
+  /** A press that judged nothing: too early on a circle, off every circle that was due, or nothing due. */
+  onIgnoredPress?: (reason: IgnoredPress, object: CircleObject | null, at: CirclePoint) => void
   onComplete?: (state: ScoreState) => void
   tailMs?: number
 }
@@ -32,6 +34,16 @@ export const SLIDER_GRACE_MS = 120
 export const SLIDER_END_LENIENCY_MS = 80
 /** A press counts this far outside the circle's edge, in field units (fingers and fast flicks). */
 const HIT_SLACK = 4
+
+export type IgnoredPress = 'early' | 'off' | 'stray'
+
+/** What every press of a run did, so the results can say why circles were not hit. */
+export interface ClickStats {
+  hit: number
+  early: number
+  off: number
+  stray: number
+}
 
 interface ActiveSlider {
   index: number
@@ -57,6 +69,7 @@ export class CircleSession {
   private active: ActiveSlider | null = null
   private pointer: CirclePoint = { x: 256, y: 192 }
   private held = false
+  private clicks: ClickStats = { hit: 0, early: 0, off: 0, stray: 0 }
   private judgedCount = 0
   private state: ScoreState
   private marvelousStreak = 0
@@ -109,6 +122,10 @@ export class CircleSession {
 
   get meanTimingMs(): number {
     return this.deltaCount > 0 ? this.deltaSum / this.deltaCount : 0
+  }
+
+  get clickStats(): ClickStats {
+    return { ...this.clicks }
   }
 
   get isHeld(): boolean {
@@ -192,13 +209,38 @@ export class CircleSession {
       const object = this.objects[i]
       if (Math.hypot(object.x - x, object.y - y) > reach) continue
       const judgment = judge(delta, this.windows)
+      this.clicks.hit++
       this.commit(i, judgment, delta, songTimeMs)
       if (object.kind === 'slider' && judgment !== 'miss') {
         this.active = { index: i, endMs: object.endTime * 1000, lostAt: null }
       }
       return { judgment, deltaMs: delta, object }
     }
+    this.ignore(x, y, songTimeMs, reach)
     return null
+  }
+
+  /** Sort out why a press hit nothing: the player gets a cue and the results get the count. */
+  private ignore(x: number, y: number, songTimeMs: number, reach: number): void {
+    let reason: IgnoredPress = 'stray'
+    let target: CircleObject | null = null
+    for (let i = this.cursor; i < this.totalNotes; i++) {
+      const delta = songTimeMs - this.timesMs[i]
+      if (delta < -this.map.preemptMs) break
+      if (this.judged[i]) continue
+      const object = this.objects[i]
+      if (delta >= -this.windows.good) {
+        if (reason === 'stray') reason = 'off'
+        continue
+      }
+      if (Math.hypot(object.x - x, object.y - y) <= reach) {
+        reason = 'early'
+        target = object
+        break
+      }
+    }
+    this.clicks[reason]++
+    this.options.onIgnoredPress?.(reason, target, { x, y })
   }
 
   /** Every button, key and finger is up. */
@@ -254,6 +296,7 @@ export class CircleSession {
     this.autoCursor = 0
     this.active = null
     this.held = false
+    this.clicks = { hit: 0, early: 0, off: 0, stray: 0 }
     this.marvelousStreak = 0
     this.bestMarvelousStreak = 0
     this.deltaSum = 0

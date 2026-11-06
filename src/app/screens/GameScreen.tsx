@@ -192,7 +192,7 @@ export function GameScreen({
       meanTimingMs: session.meanTimingMs,
       droppedHolds: state.droppedHolds,
       autoPlay: session.isAutoPlay,
-      ...(session instanceof CircleSession ? { mode: 'circles' as const } : {}),
+      ...(session instanceof CircleSession ? { mode: 'circles' as const, clicks: session.clickStats } : {}),
     }
     // Let the outro breathe: fade the music instead of cutting it the instant the last arrow is
     // judged, then switch to results after the fade has finished. The playfield stays visible (no
@@ -316,6 +316,7 @@ export function GameScreen({
           onJudgment: (event) => {
             renderer.notify(event, 0)
           },
+          onIgnoredPress: (_reason, object, at) => renderer.ignoredPress(object, at),
           onComplete: () => {
             runCompleteRef.current = true
             if (failedRef.current) finishRun()
