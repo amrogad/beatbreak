@@ -33,7 +33,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-4.2'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.3'
 
 /** Hits this close to an eighth snap to it instead of the nearest 16th (Hard and Expert). */
 const COARSE_SNAP_MS = 55
@@ -835,6 +835,12 @@ export function assignLanes(
     // the last note, hand alternation, jacks) and balance. Jitter is deliberately small: it varies
     // a pattern, it does not choose the lane from scratch.
     const preferredLane = currentMotif?.lanes[motifCursor % currentMotif.lanes.length] ?? null
+    // When the next arrow repeats music already charted, its lanes are known: don't run into it
+    // with a jack, or the repeat would have to give up its own lanes.
+    const upcoming = candidates[candidateIndex + 1]
+    const upcomingStored = upcoming?.pattern ? remembered.get(upcoming.pattern) : undefined
+    const upcomingLanes =
+      upcomingStored && upcoming.time - candidate.time < 0.32 ? flip(upcomingStored, upcoming.mirrored) : []
     let bestLane: Lane | null = null
     let bestScore = -Infinity
     for (const lane of LANES) {
@@ -858,9 +864,11 @@ export function assignLanes(
       // One short of the limit is penalised too, so a bar that will repeat in a stream leaves room
       // for its repeat.
       const visits = runVisits(lane, candidate.time) + 1
-      const hammer = visits >= anchorLimit ? -2.2 : visits >= anchorLimit - 1 ? -0.6 : 0
+      const hammer = visits >= anchorLimit ? -2.2 : visits >= anchorLimit - 1 ? -1.2 : 0
+      const intoRepeat = upcomingLanes.includes(lane) ? -2.5 : 0
       const score =
-        gravity + flow + sameHand + repeat + repeatTwo + balance + anchor + motifBonus + hammer + rng.range(-0.08, 0.08)
+        gravity + flow + sameHand + repeat + repeatTwo + balance + anchor + motifBonus + hammer + intoRepeat +
+        rng.range(-0.08, 0.08)
       if (score > bestScore) {
         bestScore = score
         bestLane = lane
@@ -894,19 +902,30 @@ const HOLD_CHANCE: Record<Difficulty, number> = { easy: 0.1, normal: 0.13, hard:
  * only stop a pad that rings for bars from becoming a pole down the lane.
  */
 const HOLD_MAX_SECONDS: Record<Difficulty, number> = { easy: 2, normal: 2.2, hard: 2.5, expert: 3 }
-/**
- * Shortest sustained sound that may become a hold, per difficulty, in seconds. The music decides:
- * a pad or held vocal rings well past this and becomes a short hold; a drum hit decays fast and
- * stays a tap.
- */
 /** A release snaps onto another lane's arrow within this distance of where the sound ends. */
 const RELEASE_ALIGN_SECONDS = 0.15
 /** No other arrow may come this soon before a hold's release. */
 const RELEASE_CLEAR_SECONDS = 0.3
 
+/**
+ * Shortest sustained sound that may become a hold, per difficulty, in seconds. The music decides:
+ * a pad or held vocal rings well past this and becomes a short hold; a drum hit decays fast and
+ * stays a tap.
+ */
 const HOLD_MIN_SUSTAIN: Record<Difficulty, number> = { easy: 0.5, normal: 0.45, hard: 0.4, expert: 0.35 }
 /** Repeats of a held pattern may push the chart this far past its hold cap. */
 const HOLD_REPEAT_ROOM = 1.6
+/**
+ * Hold shaping, tuned on 2026-11-07 against the StepMania and osu!mania charts of the same three
+ * songs: holds went from 1.5 to 1.0 beats (the human median), holds where both humans tap fell
+ * from 176 to 102, and a human hold starts under 43% of ours (was 35%).
+ */
+export const HOLD_SHAPE = {
+  /** Share of the measured sustain a hold lasts: the envelope rings on after a player would let go. */
+  lengthScale: 0.7,
+  /** Most other-lane arrows per beat while a hold runs; a busier span stays a tap. */
+  maxBusyPerBeat: 0.5,
+}
 
 /**
  * Turn notes into hold notes where the music sustains and the lane stays clear long enough.
@@ -988,7 +1007,7 @@ export function applyHolds(
     if (sustainAware) {
       const sustain = sustains.get(Math.round(note.time * 1000))
       if (sustain === undefined || sustain < minSustain) return note
-      wanted = Math.min(sustain, bound - note.time)
+      wanted = Math.min(sustain * HOLD_SHAPE.lengthScale, bound - note.time)
       if (wanted < minHoldSeconds) return note
     } else {
       const onBeat = Math.abs(note.beat - Math.round(note.beat)) < 1e-6
@@ -1014,6 +1033,12 @@ export function applyHolds(
     if (partner && partner.time - note.time >= minHoldSeconds && partner.time <= bound + 1e-6) tailTime = partner.time
     const holdSeconds = tailTime - note.time
     if (holdSeconds < minHoldSeconds) return note
+    let busy = 0
+    for (let j = i + 1; j < notes.length && notes[j].time < tailTime - 1e-6; j++) {
+      if (notes[j].lane !== note.lane && notes[j].time > note.time + 1e-6) busy++
+    }
+    const holdBeats = timing.timeToBeat(tailTime) - note.beat
+    if (busy > HOLD_SHAPE.maxBusyPerBeat * Math.max(holdBeats, 0.25)) return note
     // Keep the run-up to the release clear: arrows in other lanes just before the tail make the
     // player split attention exactly when the hold needs it.
     for (let j = i + 1; j < notes.length && notes[j].time < tailTime - 1e-6; j++) {

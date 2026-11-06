@@ -380,9 +380,11 @@ describe('hold notes', () => {
     const beatSeconds = 60 / truth.bpm
     const padStart = truth.offset + 8 * beatSeconds
     const padSeconds = 1.6
-    // Overlay a sustained 220 Hz pad: a sound with a clear attack that keeps ringing.
+    // A sustained 220 Hz pad over a drum break: a sound with a clear attack that keeps ringing.
+    // Human charts tap through a busy groove, so the drums stop for it.
     const start = Math.floor(padStart * truth.sampleRate)
     const length = Math.floor(padSeconds * truth.sampleRate)
+    truth.samples.fill(0, start - Math.floor(0.05 * truth.sampleRate), start + length)
     for (let i = 0; i < length; i++) {
       const t = i / truth.sampleRate
       const attack = Math.min(1, t / 0.02)
