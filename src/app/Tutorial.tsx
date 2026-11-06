@@ -34,8 +34,8 @@ const STEPS = [
   {
     title: 'Or play circles',
     body: TOUCH
-      ? 'Switch Mode to Circles on the song screen. Tap each circle as its ring closes on it, and slide your finger along with the ball on the long ones.'
-      : 'Switch Mode to Circles on the song screen. Aim with the mouse and click, or press Z or X, as each ring closes on its circle. On the long ones, keep the button down and follow the ball.',
+      ? 'Switch Mode to Circles on the song screen. Tap each circle as its ring closes on it, and slide your finger along with the ball on the long ones. Tapping a circle well before its ring closes misses it.'
+      : 'Switch Mode to Circles on the song screen. Aim with the mouse and click, or press Z or X, as each ring closes on its circle. On the long ones, keep the button down and follow the ball. Clicking a circle well before its ring closes misses it.',
   },
 ] as const
 

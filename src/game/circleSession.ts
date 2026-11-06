@@ -32,6 +32,11 @@ export interface CircleSessionOptions {
 export const SLIDER_GRACE_MS = 120
 /** Letting go this close to a slider's end still completes it. */
 export const SLIDER_END_LENIENCY_MS = 80
+/** A press on a circle earlier than its Good window but within this many ms misses it. */
+export function earlyMissMs(goodMs: number): number {
+  return Math.max(250, goodMs * 2.5)
+}
+
 /** A press counts this far outside the circle's edge, in field units (fingers and fast flicks). */
 const HIT_SLACK = 4
 
@@ -244,6 +249,8 @@ export class CircleSession {
   private ignore(x: number, y: number, songTimeMs: number, reach: number): void {
     let reason: IgnoredPress = 'stray'
     let target: CircleObject | null = null
+    let targetIndex = -1
+    let targetDelta = 0
     for (let i = this.cursor; i < this.totalNotes; i++) {
       const delta = songTimeMs - this.timesMs[i]
       if (delta < -this.map.preemptMs) break
@@ -256,6 +263,8 @@ export class CircleSession {
       if (Math.hypot(object.x - x, object.y - y) <= reach) {
         reason = 'early'
         target = object
+        targetIndex = i
+        targetDelta = delta
         break
       }
     }
@@ -275,6 +284,12 @@ export class CircleSession {
       deltaMs: nearest?.delta ?? null,
       radii: nearest ? Math.hypot(nearest.object.x - x, nearest.object.y - y) / this.map.radius : null,
     })
+    // Too early but close to its time (osu!'s rule): the circle is missed, so mashing while
+    // aiming costs something. Earlier than that it only shakes.
+    if (target && targetDelta >= -earlyMissMs(this.windows.good)) {
+      this.commit(targetIndex, 'miss', targetDelta, songTimeMs)
+      return
+    }
     this.options.onIgnoredPress?.(reason, target, { x, y })
   }
 

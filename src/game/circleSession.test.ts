@@ -62,6 +62,14 @@ describe('circle session', () => {
     expect(session.clickStats).toEqual({ hit: 1, early: 1, off: 1, stray: 1 })
   })
 
+  it('misses a circle clicked too early but close to its time, and only shakes one clicked much earlier', () => {
+    const { session, events } = run(map, chart)
+    expect(session.press(100, 100, 600)).toBeNull()
+    expect(events).toHaveLength(0)
+    session.press(100, 100, 800)
+    expect(events.map((e) => [e.noteId, e.judgment])).toEqual([['a', 'miss']])
+  })
+
   it('misses a circle nobody clicked once its window has passed', () => {
     const { session, events } = run(map, chart)
     session.update(1000 + DEFAULT_WINDOWS.missAfter + 1)
