@@ -83,7 +83,11 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     grabTime: number
     before: ChartNote[]
     moved: boolean
+    /** Where the press started, and whether it has moved far enough to count as a drag. */
+    startX: number
+    armed: boolean
   } | null>(null)
+  const touchPanRef = useRef<{ pointerId: number; startX: number; startCamera: number; time: number; lane: Lane; panning: boolean } | null>(null)
   const pointersRef = useRef(new Map<number, number>())
   const pinchRef = useRef<{ distance: number; span: number; center: number } | null>(null)
   const metronomeRef = useRef(metronome)
@@ -266,9 +270,11 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
 
   /** The note under the pointer, and whether the grab is on a long arrow's end. */
   const hitTest = useCallback(
-    (time: number, lane: Lane): { note: ChartNote; tail: boolean } | null => {
+    (time: number, lane: Lane, widthPx = 0, touch = false): { note: ChartNote; tail: boolean } | null => {
       if (!chart) return null
-      const tolerance = camera.span * 0.012
+      // At least a fingertip (18 px) or a mouse pointer (9 px) wide, whatever the zoom.
+      const minPx = touch ? 18 : 9
+      const tolerance = Math.max(camera.span * 0.012, widthPx > 0 ? (minPx / widthPx) * camera.span : 0)
       let best: { note: ChartNote; tail: boolean } | null = null
       let bestDistance = Number.POSITIVE_INFINITY
       for (const note of chart.notes) {
@@ -806,6 +812,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                   setSelection(null)
                 }
                 dragRef.current = null
+                touchPanRef.current = null
                 const [a, b] = [...pointersRef.current.values()]
                 pinchRef.current = { distance: Math.max(8, Math.abs(a - b)), span: camera.span, center: timeFromX((a + b) / 2, rect.width) }
                 return
@@ -820,7 +827,8 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                 setPlayhead(seek)
                 return
               }
-              const hit = hitTest(time, lane)
+              const touch = event.pointerType === 'touch'
+              const hit = hitTest(time, lane, rect.width, touch)
               if (event.button === 2) {
                 if (!hit) return
                 const before = chart.notes
@@ -839,7 +847,14 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                   grabTime: time - (hit.tail ? noteEnd(hit.note) : hit.note.time),
                   before: chart.notes,
                   moved: false,
+                  startX: x,
+                  armed: false,
                 }
+                return
+              }
+              if (touch) {
+                // A finger on empty space: a tap adds an arrow, a slide scrolls the timeline.
+                touchPanRef.current = { pointerId: event.pointerId, startX: x, startCamera: camera.start, time, lane, panning: false }
                 return
               }
               const snapped = snapTime(time)
@@ -857,7 +872,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               commitNotes([...before, note], { undo: before })
               setSelection(note.id)
               // Dragging right from a new arrow pulls it into a long arrow.
-              dragRef.current = { noteId: note.id, mode: 'create', grabTime: 0, before, moved: false }
+              dragRef.current = { noteId: note.id, mode: 'create', grabTime: 0, before, moved: false, startX: x, armed: true }
             }}
             onPointerMove={(event) => {
               const rect = event.currentTarget.getBoundingClientRect()
@@ -871,8 +886,21 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                 setCamera({ span, start: Math.max(0, pinch.center - (centerX / Math.max(1, rect.width)) * span) })
                 return
               }
+              const pan = touchPanRef.current
+              if (pan && pan.pointerId === event.pointerId) {
+                if (!pan.panning && Math.abs(x - pan.startX) < 10) return
+                pan.panning = true
+                const secondsPerPx = camera.span / Math.max(1, rect.width)
+                setCamera((current) => ({ ...current, start: Math.max(0, pan.startCamera - (x - pan.startX) * secondsPerPx) }))
+                return
+              }
               const drag = dragRef.current
               if (!drag) return
+              // A few pixels of wobble while grabbing a note is not a move.
+              if (!drag.armed) {
+                if (Math.abs(x - drag.startX) < (event.pointerType === 'touch' ? 10 : 4)) return
+                drag.armed = true
+              }
               const time = timeFromX(x, rect.width) - drag.grabTime
               const lane = laneFromY(event.clientY - rect.top, rect.height)
               const target = chart.notes.find((note) => note.id === drag.noteId)
@@ -899,11 +927,31 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
               pointersRef.current.delete(event.pointerId)
               if (pointersRef.current.size < 2) pinchRef.current = null
               dragRef.current = null
+              const pan = touchPanRef.current
+              if (pan && pan.pointerId === event.pointerId) {
+                touchPanRef.current = null
+                if (!pan.panning && chart) {
+                  const snapped = snapTime(pan.time)
+                  if (isOccupied(chart.notes, pan.lane, snapped, snapped)) return
+                  const note: ChartNote = {
+                    id: createId('note'),
+                    lane: pan.lane,
+                    time: snapped,
+                    beat: timing.timeToBeat(snapped),
+                    step: timing.timeToStep(snapped, chart.stepsPerBeat),
+                    kind: 'tap',
+                    strength: 1,
+                  }
+                  commitNotes([...chart.notes, note], { undo: chart.notes })
+                  setSelection(note.id)
+                }
+              }
             }}
             onPointerCancel={(event) => {
               pointersRef.current.delete(event.pointerId)
               if (pointersRef.current.size < 2) pinchRef.current = null
               dragRef.current = null
+              touchPanRef.current = null
             }}
           />
         </div>
