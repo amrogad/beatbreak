@@ -60,6 +60,41 @@ export async function resumeAudioContext(): Promise<void> {
   await Promise.race([ctx.resume().catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 2500))])
 }
 
+/** Longest song Beatbreak takes: decoding and analysing more risks running a phone's tab out of memory. */
+export const MAX_SONG_SECONDS = 20 * 60
+
+function tooLong(file: File, seconds: number): DecodeError {
+  return new DecodeError(
+    'too-large',
+    `"${file.name}" is ${Math.round(seconds / 60)} minutes long. Beatbreak takes songs up to ${MAX_SONG_SECONDS / 60} minutes - ` +
+      'cut out the part you want to play with any audio editor first.',
+  )
+}
+
+/** The file's length from its header via a media element, or NaN when the browser cannot tell quickly. */
+function probeDuration(file: File): Promise<number> {
+  if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') return Promise.resolve(NaN)
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const media = document.createElement('audio')
+    let settled = false
+    const done = (value: number): void => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      media.removeAttribute('src')
+      media.load()
+      URL.revokeObjectURL(url)
+      resolve(value)
+    }
+    const timer = window.setTimeout(() => done(NaN), 3000)
+    media.preload = 'metadata'
+    media.onloadedmetadata = () => done(Number.isFinite(media.duration) ? media.duration : NaN)
+    media.onerror = () => done(NaN)
+    media.src = url
+  })
+}
+
 /**
  * Decode an audio file into an AudioBuffer.
  *
@@ -79,10 +114,15 @@ export async function decodeAudioFile(file: File, options: { maxBytes?: number }
         'usually need more memory than a browser tab can spare — try a shorter edit or a lower bitrate version.',
     )
   }
+  // Size says little: an hour-long mp3 is 58 MB but decodes to 1.4 GB. Ask the browser for the
+  // length first (it reads only the header), and refuse before the decode can take the tab down.
+  const seconds = await probeDuration(file)
+  if (seconds > MAX_SONG_SECONDS) throw tooLong(file, seconds)
   const ctx = getAudioContext()
   const arrayBuffer = await file.arrayBuffer()
   try {
     const buffer = await ctx.decodeAudioData(arrayBuffer)
+    if (buffer && buffer.duration > MAX_SONG_SECONDS) throw tooLong(file, buffer.duration)
     if (!buffer || buffer.duration <= 0 || buffer.length === 0) {
       throw new DecodeError(
         'corrupted',
