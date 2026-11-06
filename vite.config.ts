@@ -60,9 +60,41 @@ function serviceWorkerPrecache(): import('vite').Plugin {
   }
 }
 
+/**
+ * Local builds only: circle-mode runs POST their play log here and it is saved to
+ * ../pulsegrid-testdata/playlogs, so a run can be checked without the player doing anything.
+ */
+function playLog(): import('vite').Plugin {
+  const handler: import('vite').Connect.NextHandleFunction = (req, res, next) => {
+    if (req.method !== 'POST' || !req.url?.endsWith('/__playlog')) return next()
+    let body = ''
+    req.on('data', (chunk) => (body += chunk))
+    req.on('end', async () => {
+      const fs = await import('node:fs')
+      const path = await import('node:path')
+      try {
+        const log = JSON.parse(body)
+        const dir = path.resolve(process.cwd(), '..', 'pulsegrid-testdata', 'playlogs')
+        fs.mkdirSync(dir, { recursive: true })
+        const name = `${String(log.at).replace(/[:.]/g, '-')}-${String(log.song).replace(/[^\w-]+/g, '_').slice(0, 40)}-${log.difficulty}.json`
+        fs.writeFileSync(path.join(dir, name), body)
+        res.statusCode = 204
+      } catch {
+        res.statusCode = 400
+      }
+      res.end()
+    })
+  }
+  return {
+    name: 'pulsegrid-play-log',
+    configureServer: (server) => void server.middlewares.use(handler),
+    configurePreviewServer: (server) => void server.middlewares.use(handler),
+  }
+}
+
 export default defineConfig({
   base: './',
-  plugins: [react(), serviceWorkerPrecache()],
+  plugins: [react(), serviceWorkerPrecache(), playLog()],
   build: {
     target: 'es2022',
     sourcemap: false,

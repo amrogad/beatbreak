@@ -44,6 +44,31 @@ const COUNTDOWN_MS = 3000
  */
 const leadInRef = { current: 900 }
 
+/**
+ * Circle mode is in beta: on a local build (127.0.0.1) every run's presses, judgements and pointer
+ * path go to the dev server, which saves them next to the test data. Never sent anywhere else.
+ */
+function sendPlayLog(session: CircleSession, song: SongMeta, chart: Chart, settings: Settings, engine: AudioEngine | null): void {
+  if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return
+  const body = {
+    at: new Date().toISOString(),
+    song: song.title,
+    difficulty: chart.difficulty,
+    bpms: chart.timing.bpms,
+    windows: session.windows,
+    radius: session.map.radius,
+    preemptMs: session.map.preemptMs,
+    audioOffsetMs: settings.audioOffsetMs,
+    outputLatencyMs: engine ? Math.round(engine.outputLatency * 1000) : null,
+    screen: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio },
+    touch: window.matchMedia('(pointer: coarse)').matches,
+    clicks: session.clickStats,
+    objects: session.map.objects.map((o) => ({ id: o.id, t: Math.round(o.time * 1000), end: Math.round(o.endTime * 1000), x: Math.round(o.x), y: Math.round(o.y), kind: o.kind, number: o.number })),
+    ...session.log,
+  }
+  void fetch('./__playlog', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined)
+}
+
 export function GameScreen({
   song,
   chart: sourceChart,
@@ -194,6 +219,7 @@ export function GameScreen({
       autoPlay: session.isAutoPlay,
       ...(session instanceof CircleSession ? { mode: 'circles' as const, clicks: session.clickStats } : {}),
     }
+    if (session instanceof CircleSession && !session.isAutoPlay) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current)
     // Let the outro breathe: fade the music instead of cutting it the instant the last arrow is
     // judged, then switch to results after the fade has finished. The playfield stays visible (no
     // "loading" overlay) so the ending is not hidden.

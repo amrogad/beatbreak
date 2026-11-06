@@ -45,6 +45,22 @@ export interface ClickStats {
   stray: number
 }
 
+/** One press, for the local play log: what it did and the circle it was nearest to in time. */
+export interface PressLog {
+  t: number
+  x: number
+  y: number
+  result: Judgment | IgnoredPress
+  /** Nearest unjudged circle in time (the one hit, for a hit). */
+  id: string | null
+  deltaMs: number | null
+  /** Distance from that circle's centre, in circle radii. */
+  radii: number | null
+}
+
+/** Where the pointer was, every LOG_PATH_MS of song time, flattened as t, x, y. */
+const LOG_PATH_MS = 33
+
 interface ActiveSlider {
   index: number
   endMs: number
@@ -70,6 +86,9 @@ export class CircleSession {
   private pointer: CirclePoint = { x: 256, y: 192 }
   private held = false
   private clicks: ClickStats = { hit: 0, early: 0, off: 0, stray: 0 }
+  /** Every press, judgement and pointer position of the run, for the local play log. */
+  readonly log: { presses: PressLog[]; judgments: { id: string; judgment: Judgment; deltaMs: number; t: number }[]; path: number[] } = { presses: [], judgments: [], path: [] }
+  private lastPathMs = -Infinity
   private judgedCount = 0
   private state: ScoreState
   private marvelousStreak = 0
@@ -210,6 +229,7 @@ export class CircleSession {
       if (Math.hypot(object.x - x, object.y - y) > reach) continue
       const judgment = judge(delta, this.windows)
       this.clicks.hit++
+      this.log.presses.push({ t: songTimeMs, x, y, result: judgment, id: object.id, deltaMs: delta, radii: Math.hypot(object.x - x, object.y - y) / this.map.radius })
       this.commit(i, judgment, delta, songTimeMs)
       if (object.kind === 'slider' && judgment !== 'miss') {
         this.active = { index: i, endMs: object.endTime * 1000, lostAt: null }
@@ -240,6 +260,21 @@ export class CircleSession {
       }
     }
     this.clicks[reason]++
+    let nearest: { object: CircleObject; delta: number } | null = null
+    for (let i = this.cursor; i < this.totalNotes; i++) {
+      const delta = songTimeMs - this.timesMs[i]
+      if (delta < -this.map.preemptMs) break
+      if (!this.judged[i] && (!nearest || Math.abs(delta) < Math.abs(nearest.delta))) nearest = { object: this.objects[i], delta }
+    }
+    this.log.presses.push({
+      t: songTimeMs,
+      x,
+      y,
+      result: reason,
+      id: nearest?.object.id ?? null,
+      deltaMs: nearest?.delta ?? null,
+      radii: nearest ? Math.hypot(nearest.object.x - x, nearest.object.y - y) / this.map.radius : null,
+    })
     this.options.onIgnoredPress?.(reason, target, { x, y })
   }
 
@@ -252,6 +287,10 @@ export class CircleSession {
   update(songTimeMs: number): void {
     if (this.finished) return
     if (this.autoPlay) this.runAutoPlay(songTimeMs)
+    else if (songTimeMs - this.lastPathMs >= LOG_PATH_MS) {
+      this.lastPathMs = songTimeMs
+      this.log.path.push(Math.round(songTimeMs), Math.round(this.pointer.x), Math.round(this.pointer.y))
+    }
     this.trackSlider(songTimeMs)
     this.resolveMisses(songTimeMs)
     this.checkCompletion(songTimeMs)
@@ -297,6 +336,10 @@ export class CircleSession {
     this.active = null
     this.held = false
     this.clicks = { hit: 0, early: 0, off: 0, stray: 0 }
+    this.log.presses = []
+    this.log.judgments = []
+    this.log.path = []
+    this.lastPathMs = -Infinity
     this.marvelousStreak = 0
     this.bestMarvelousStreak = 0
     this.deltaSum = 0
@@ -358,6 +401,7 @@ export class CircleSession {
   }
 
   private emit(judgment: Judgment, object: CircleObject, deltaMs: number, noteId: string, songTimeMs: number, broke = false): void {
+    this.log.judgments.push({ id: noteId, judgment, deltaMs: Math.round(deltaMs), t: Math.round(songTimeMs) })
     this.options.onJudgment?.({
       judgment,
       lane: object.color as Lane,
