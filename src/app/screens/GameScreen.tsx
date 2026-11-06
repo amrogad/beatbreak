@@ -25,6 +25,7 @@ import { PlayfieldRenderer } from '../../render/renderer'
 import { arrowOffsetMs, type Settings } from '../../store/settings'
 import { Icon, Button, Slider } from '../components'
 import { formatPercent } from '../format'
+import { BACK_EVENT } from '../runtime'
 
 export interface GameScreenProps {
   song: SongMeta
@@ -108,6 +109,8 @@ export function GameScreen({
   /** The audio window has finished playing; the judge clock runs on until the last window closes. */
   const audioEndedRef = useRef(false)
   const finishRunRef = useRef<() => void>(() => undefined)
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
   const pausedRef = useRef(false)
   const judgingRef = useRef(false)
   const countdownStartRef = useRef(0)
@@ -619,6 +622,13 @@ export function GameScreen({
         })
 
     // Audio must never keep playing in a background tab: hiding the tab pauses the run.
+    // Phone Back during a run pauses it; Back again from the pause menu leaves to song setup.
+    const onBack = (): void => {
+      if (finishedRef.current) return
+      if (pausedRef.current) onExitRef.current()
+      else pause()
+    }
+    window.addEventListener(BACK_EVENT, onBack)
     const onVisibility = (): void => {
       if (document.visibilityState !== 'hidden') return
       if (engineRef.current?.isPlaying || (!engineRef.current && !engagingRef.current)) pause()
@@ -645,6 +655,7 @@ export function GameScreen({
       cancelAnimationFrame(rafRef.current)
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur', onBlur)
+      window.removeEventListener(BACK_EVENT, onBack)
       audioContext.removeEventListener('statechange', onAudioState)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerdown', onPointerDown)

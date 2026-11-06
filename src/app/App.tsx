@@ -19,7 +19,7 @@ import type { StoredRun } from '../store/db'
 import { bestRunFor, listCharts } from '../store/repository'
 import { settingsStore } from '../store/settings'
 import type { Settings } from '../store/settings'
-import { editorUnsaved, runtime } from './runtime'
+import { BACK_EVENT, editorUnsaved, runtime } from './runtime'
 import { HomeScreen } from './screens/HomeScreen'
 import { SetupScreen } from './screens/SetupScreen'
 import { GameScreen } from './screens/GameScreen'
@@ -318,6 +318,52 @@ function AppShell(): React.JSX.Element {
   /* ------------------------------------------------------------------ render */
 
   const backHome = useCallback(() => setRoute({ name: 'home' }), [])
+
+  // Phone Back (and the browser's back button) means "back one screen", never "leave the game".
+  // One guard entry sits on the history stack whenever the player is off the home screen; Back
+  // pops it, the app steps back itself, and the guard is put back. From home, Back leaves as usual.
+  const routeRef = useRef(route)
+  routeRef.current = route
+  const guardedRef = useRef(false)
+  useEffect(() => {
+    if (route.name !== 'home' && !guardedRef.current) {
+      try {
+        window.history.pushState({ beatbreak: true }, '')
+        guardedRef.current = true
+      } catch {
+        /* sandboxed frames can refuse history changes */
+      }
+    }
+  }, [route])
+  useEffect(() => {
+    const onPop = (): void => {
+      guardedRef.current = false
+      const current = routeRef.current
+      if (current.name === 'game') {
+        window.dispatchEvent(new Event(BACK_EVENT))
+      } else if (current.name === 'editor') {
+        if (!editorUnsaved.current || window.confirm('Leave the editor without saving your changes?')) {
+          setRoute({ name: 'setup', file: null, songId: current.songId, attempt: 0 })
+        }
+      } else if (current.name === 'results') {
+        setRoute({ name: 'setup', file: null, songId: current.songId, attempt: 0 })
+      } else if (current.name !== 'home') {
+        setRoute({ name: 'home' })
+      }
+      // Still off the home screen (a run, a refused editor exit): put the guard back.
+      const next = routeRef.current
+      if (next.name === 'game' || next.name === 'editor') {
+        try {
+          window.history.pushState({ beatbreak: true }, '')
+          guardedRef.current = true
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   const renderRoute = (): React.JSX.Element => {
     switch (route.name) {

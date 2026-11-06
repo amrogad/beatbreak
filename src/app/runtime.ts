@@ -8,6 +8,9 @@
 import type { AnalysisResult, Chart, SongMeta } from '../core/types'
 import type { SongBundle } from '../store/library'
 
+/** Fired on window when the player presses the phone or browser Back button during a run. */
+export const BACK_EVENT = 'beatbreak:back'
+
 /** True while the chart editor holds edits that are not saved; the app shell asks before leaving. */
 export const editorUnsaved = { current: false }
 
