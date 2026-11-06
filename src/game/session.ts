@@ -220,6 +220,7 @@ export class GameSession {
    */
   releaseLane(lane: Lane, songTimeMs: number): boolean {
     if (this.finished) return false
+    if (!this.autoPlay) this.log.releases.push({ t: Math.round(songTimeMs), lane })
     const hold = this.activeHolds[lane]
     if (!hold) return false
     const delta = songTimeMs - hold.tailMs
@@ -267,6 +268,34 @@ export class GameSession {
   handleTap(lane: Lane, songTimeMs: number): TapResult | null {
     if (this.finished || this.autoPlay) return null
     this.resolveMisses(songTimeMs)
+    const result = this.tap(lane, songTimeMs)
+    if (result) {
+      this.log.presses.push({ t: songTimeMs, lane, result: result.judgment, id: result.noteId, deltaMs: result.deltaMs })
+    } else {
+      // Nothing judged: note the nearest unjudged arrow in the lane, so the log shows how far off it was.
+      let nearest: { id: string; delta: number } | null = null
+      for (const index of this.laneNotes[lane]) {
+        if (this.judged[index]) continue
+        const delta = songTimeMs - this.noteTimesMs[index]
+        if (Math.abs(delta) > 1000) {
+          if (delta < 0) break
+          continue
+        }
+        if (!nearest || Math.abs(delta) < Math.abs(nearest.delta)) nearest = { id: this.notes[index].id, delta }
+      }
+      this.log.presses.push({ t: songTimeMs, lane, result: this.activeHolds[lane] ? 'held' : 'none', id: nearest?.id ?? null, deltaMs: nearest?.delta ?? null })
+    }
+    return result
+  }
+
+  /** Every press, release and judgement of the run, for the local play log. */
+  readonly log: {
+    presses: { t: number; lane: Lane; result: Judgment | 'none' | 'held'; id: string | null; deltaMs: number | null }[]
+    releases: { t: number; lane: Lane }[]
+    judgments: { id: string; judgment: Judgment; deltaMs: number; t: number }[]
+  } = { presses: [], releases: [], judgments: [] }
+
+  private tap(lane: Lane, songTimeMs: number): TapResult | null {
 
     // A live hold means the key is already down (a stray repeat); it cannot judge another note.
     if (this.activeHolds[lane]) return null
@@ -300,6 +329,9 @@ export class GameSession {
 
   /** Restart the run in place (same chart/windows). */
   reset(): void {
+    this.log.presses = []
+    this.log.releases = []
+    this.log.judgments = []
     this.judged = new Uint8Array(this.totalNotes)
     this.judgedCount = 0
     this.autoCursor = 0
@@ -393,6 +425,7 @@ export class GameSession {
     songTimeMs: number,
     holdDrop = false,
   ): void {
+    this.log.judgments.push({ id: noteId, judgment, deltaMs: Math.round(deltaMs), t: Math.round(songTimeMs) })
     const event: HitEvent = {
       judgment,
       lane,
