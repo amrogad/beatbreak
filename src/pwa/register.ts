@@ -1,3 +1,6 @@
+/** Fired on window when a new build has taken over this page's service worker. */
+export const UPDATE_READY_EVENT = 'beatbreak:update-ready'
+
 /**
  * Service worker registration.
  *

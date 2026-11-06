@@ -17,6 +17,7 @@ import '@fontsource/barlow/latin-700.css'
 import './styles/app.css'
 import './styles/theme-disco.css'
 import './styles/theme-mono.css'
+import { UPDATE_READY_EVENT } from './pwa/register'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('#root is missing from index.html')
@@ -32,7 +33,7 @@ createRoot(container).render(<App />)
 
 registerServiceWorker({
   onUpdateReady: () => {
-    // A new build is waiting in the service worker; the next reload picks it up.
-    console.info('[pulsegrid] a new version is ready — reload to update')
+    // A new build took over; the app tells the player once they are out of a run.
+    window.dispatchEvent(new Event(UPDATE_READY_EVENT))
   },
 })

@@ -70,6 +70,16 @@ export function SettingsScreen({
   // Phones and tablets have no keys to set, so the key panel only shows where there is a keyboard.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 
+  /** Ask first, then run a destructive storage action and report a failure instead of dropping it. */
+  const guarded = async (question: string, action: () => Promise<void>): Promise<void> => {
+    if (!window.confirm(question)) return
+    try {
+      await action()
+    } catch (error) {
+      onToast(`That did not work: ${error instanceof Error ? error.message : String(error)}`, 'error')
+    }
+  }
+
   const refreshStorage = useCallback(async () => {
     try {
       setSummary(await storageSummary())
@@ -464,35 +474,41 @@ export function SettingsScreen({
         <div className="row gap-8 wrap mt-16">
           <Button
             size="sm"
-            onClick={async () => {
-              await clearScores()
-              await refreshStorage()
-              onToast('Score history cleared.', 'success')
-            }}
+            onClick={() =>
+              void guarded('Delete every score and personal best? This cannot be undone.', async () => {
+                await clearScores()
+                await refreshStorage()
+                onToast('Score history cleared.', 'success')
+              })
+            }
           >
             Clear scores
           </Button>
           <Button
             size="sm"
-            onClick={async () => {
-              await idbAudioClearAndFlag()
-              onLibraryChanged()
-              await refreshStorage()
-              onToast('Saved audio deleted. Charts and scores were kept.', 'success')
-            }}
+            onClick={() =>
+              void guarded('Delete the saved song files? Charts and scores stay, but you will pick each file again to play it.', async () => {
+                await idbAudioClearAndFlag()
+                onLibraryChanged()
+                await refreshStorage()
+                onToast('Saved audio deleted. Charts and scores were kept.', 'success')
+              })
+            }
           >
             Forget saved audio
           </Button>
           <Button
             size="sm"
             variant="danger"
-            onClick={async () => {
-              await wipeEverything()
-              await refreshStorage()
-              onLibraryChanged()
-              onReset()
-              onToast('All Beatbreak data deleted.', 'success')
-            }}
+            onClick={() =>
+              void guarded('Delete every song, chart, score and setting? This cannot be undone.', async () => {
+                await wipeEverything()
+                await refreshStorage()
+                onLibraryChanged()
+                onReset()
+                onToast('All Beatbreak data deleted.', 'success')
+              })
+            }
           >
             Delete everything
           </Button>

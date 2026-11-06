@@ -35,7 +35,8 @@ import { Button, Icon, Spinner } from './components'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Tutorial } from './Tutorial'
 import { listSongs } from '../store/repository'
-import { isIndexedDbAvailable } from '../store/db'
+import { DB_OUTDATED_EVENT, isIndexedDbAvailable } from '../store/db'
+import { UPDATE_READY_EVENT } from '../pwa/register'
 
 type Route =
   | { name: 'home' }
@@ -85,6 +86,24 @@ function AppShell(): React.JSX.Element {
     setToasts((current) => [...current.slice(-2), { id, message, tone }])
     window.setTimeout(() => setToasts((current) => current.filter((entry) => entry.id !== id)), 6000)
   }, [])
+
+  // A deploy or another tab's newer build: say so once the player is out of a run, never during one.
+  const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => {
+    const onUpdate = (): void => setNotice('A new version of Beatbreak is ready. Reload the page to get it.')
+    const onOutdated = (): void => setNotice('Beatbreak was updated in another tab. Reload this page so your scores keep saving.')
+    window.addEventListener(UPDATE_READY_EVENT, onUpdate)
+    window.addEventListener(DB_OUTDATED_EVENT, onOutdated)
+    return () => {
+      window.removeEventListener(UPDATE_READY_EVENT, onUpdate)
+      window.removeEventListener(DB_OUTDATED_EVENT, onOutdated)
+    }
+  }, [])
+  useEffect(() => {
+    if (!notice || route.name === 'game') return
+    toast(notice, 'info')
+    setNotice(null)
+  }, [notice, route.name, toast])
 
   const refreshLibrary = useCallback(async () => {
     try {
