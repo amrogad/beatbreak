@@ -52,6 +52,8 @@ interface Effect {
 }
 
 const HIT_FX_MS = 260
+/** A missed circle fades out in the miss colour over this long. */
+const MISS_FADE_MS = 320
 const TEXT_FX_MS = 520
 /** An early press shakes the circle it landed on for this long. */
 const SHAKE_MS = 260
@@ -331,6 +333,14 @@ export class CircleField {
     this.effects = this.effects.filter((fx) => now - fx.at < TEXT_FX_MS)
     for (const fx of this.effects) {
       const age = now - fx.at
+      // A missed circle stays a moment, red, and fades where it was (like a missed arrow).
+      if (fx.judgment === 'miss' && !fx.tail && !fx.broke && age < MISS_FADE_MS) {
+        const sprite = this.discSprite(env, env.missColor, r)
+        ctx.save()
+        ctx.globalAlpha = 0.75 * (1 - age / MISS_FADE_MS)
+        ctx.drawImage(sprite, fx.x - sprite.width / env.dpr / 2, fx.y - sprite.height / env.dpr / 2, sprite.width / env.dpr, sprite.height / env.dpr)
+        ctx.restore()
+      }
       if (fx.judgment !== 'miss' && age < HIT_FX_MS && !fx.tail) {
         const t = age / HIT_FX_MS
         if (env.quality > 0) {

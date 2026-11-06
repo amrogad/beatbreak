@@ -80,10 +80,10 @@ interface Profile {
  * turns 9/22/13/35%. Expert here plays like their Insane, a little slower to read (AR 8.5).
  */
 const PROFILES: Record<Difficulty, Profile> = {
-  easy: { cs: 3, ar: 4, spacing: [[0.25, 40], [0.5, 72], [1, 100], [2, 125]], jumpChance: 0, jumpScale: 1, turns: [0.38, 0.54, 0.08], sliderPxPerBeat: 100, minSliderBeats: 0.5, clearBeats: 1, sliderGapBeats: 0.5, pairBeats: [0.5, 1], pairChance: 0.85, spread: 0 },
-  normal: { cs: 3.6, ar: 5, spacing: [[0.25, 36], [0.5, 64], [1, 112], [2, 145]], jumpChance: 0, jumpScale: 1, turns: [0.34, 0.4, 0.26], sliderPxPerBeat: 120, minSliderBeats: 0.5, clearBeats: 1, sliderGapBeats: 0.5, pairBeats: [0.5, 1], pairChance: 0.5, spread: 0.3 },
-  hard: { cs: 4, ar: 7, spacing: [[0.25, 30], [0.5, 72], [1, 136], [2, 175]], jumpChance: 0.15, jumpScale: 1.8, turns: [0.4, 0.48, 0.12], sliderPxPerBeat: 140, minSliderBeats: 0.25, clearBeats: 0.5, sliderGapBeats: 0.25, pairBeats: [0.25, 0.5], pairChance: 0.25, spread: 0.4 },
-  expert: { cs: 4.2, ar: 8.5, spacing: [[0.25, 40], [0.5, 128], [1, 150], [2, 195]], jumpChance: 0.32, jumpScale: 1.6, turns: [0.18, 0.4, 0.42], sliderPxPerBeat: 180, minSliderBeats: 0.25, clearBeats: 0.25, sliderGapBeats: 0.25, pairBeats: [0.25, 0.5], pairChance: 0.55, spread: 0.45 },
+  easy: { cs: 3, ar: 4, spacing: [[0.25, 40], [0.5, 72], [1, 100], [2, 125]], jumpChance: 0, jumpScale: 1, turns: [0.48, 0.48, 0.04], sliderPxPerBeat: 100, minSliderBeats: 0.5, clearBeats: 1, sliderGapBeats: 0.5, pairBeats: [0.5, 1], pairChance: 0.85, spread: 0 },
+  normal: { cs: 3.6, ar: 5, spacing: [[0.25, 36], [0.5, 64], [1, 112], [2, 145]], jumpChance: 0, jumpScale: 1, turns: [0.46, 0.4, 0.14], sliderPxPerBeat: 120, minSliderBeats: 0.5, clearBeats: 1, sliderGapBeats: 0.5, pairBeats: [0.5, 1], pairChance: 0.5, spread: 0.3 },
+  hard: { cs: 4, ar: 7, spacing: [[0.25, 30], [0.5, 72], [1, 136], [2, 175]], jumpChance: 0.15, jumpScale: 1.8, turns: [0.5, 0.42, 0.08], sliderPxPerBeat: 140, minSliderBeats: 0.25, clearBeats: 0.5, sliderGapBeats: 0.25, pairBeats: [0.25, 0.5], pairChance: 0.25, spread: 0.4 },
+  expert: { cs: 4.2, ar: 8.5, spacing: [[0.25, 40], [0.5, 128], [1, 150], [2, 195]], jumpChance: 0.32, jumpScale: 1.6, turns: [0.3, 0.42, 0.28], sliderPxPerBeat: 180, minSliderBeats: 0.25, clearBeats: 0.25, sliderGapBeats: 0.25, pairBeats: [0.25, 0.5], pairChance: 0.55, spread: 0.45 },
 }
 
 export function circleRadius(cs: number): number {
@@ -96,6 +96,8 @@ export function preemptForAr(ar: number): number {
 
 /** Keep centres this far inside the field edge. */
 const EDGE = 26
+/** Within this distance of the field edge a move starts to prefer turning back in. */
+const EDGE_SOFT = 70
 const MAX_SPAN_PX = 230
 const MAX_COMBO = 12
 
@@ -318,15 +320,18 @@ export function placeCircles(
   /** Best spot near `want` at distance ~d from `from`: in bounds, clear of recent circles, on a fresh part of the field. */
   const choose = (from: CirclePoint, wantAngle: number, d: number, time: number, exact: boolean): { p: CirclePoint; angle: number } => {
     let best: { p: CirclePoint; angle: number; score: number } | null = null
-    const scales = exact ? [1, 0.92, 1.08] : [1, 0.85, 1.15, 0.7]
+    const scales = exact ? [1, 0.94, 1.06] : [1, 0.92, 1.08, 0.8]
     for (const scale of scales) {
       for (let k = 0; k <= 36; k++) {
         const off = (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 18)
         const angle = wantAngle + off
         const p = { x: from.x + Math.cos(angle) * d * scale, y: from.y + Math.sin(angle) * d * scale }
         if (!inField(p)) continue
-        const centre = ((p.x - FIELD_W / 2) / (FIELD_W / 2)) ** 2 + ((p.y - FIELD_H / 2) / (FIELD_H / 2)) ** 2
-        const score = Math.abs(off) / Math.PI + Math.abs(scale - 1) * 1.5 + clearOf(p, time) + heatAt(p) * 0.01 + centre * 0.6
+        // The edge only pushes back near the edge: a pull to the centre everywhere bent every move
+        // and made the turns feel random.
+        const edge = Math.min(p.x, FIELD_W - p.x, p.y, FIELD_H - p.y)
+        const nearEdge = edge < EDGE_SOFT ? (1 - edge / EDGE_SOFT) * 0.5 : 0
+        const score = Math.abs(off) / Math.PI + Math.abs(scale - 1) * 1.5 + clearOf(p, time) + heatAt(p) * 0.01 + nearEdge
         if (!best || score < best.score) best = { p, angle, score }
       }
       if (best && best.score < 0.6) break
@@ -348,14 +353,15 @@ export function placeCircles(
     if (bar !== lastBar) {
       lastBar = bar
       patternTurn = pickTurn()
-      if (rng.chance(0.45)) spin = spin === 1 ? -1 : 1
+      // Keep turning the same way through a phrase (8 bars); flipping every bar read as random.
+      if (bar % 8 === 0 && rng.chance(0.5)) spin = spin === 1 ? -1 : 1
       barStartIndex = objects.length
       barTransform = null
       let end = i
       while (end < events.length && Math.floor(events[end].beat / 4 + 1e-6) === bar) end++
       const barEvents = events.slice(i, end)
       const loud = barEvents.reduce((sum, e) => sum + e.strength, 0) / Math.max(1, barEvents.length) - meanStrength
-      barScale = Math.max(0.75, Math.min(1.3, 1 + profile.spread * (loud * 2 + rng.range(-0.25, 0.25))))
+      barScale = Math.max(0.88, Math.min(1.15, 1 + profile.spread * 0.5 * (loud * 2 + rng.range(-0.1, 0.1))))
       const signature = barEvents.length >= 3 ? barSignature(barEvents, timing) : ''
       const known = signature ? bars.get(signature) : undefined
       if (known && known.offsets.length === barEvents.length) {
@@ -388,16 +394,16 @@ export function placeCircles(
       const gapBeats = Math.max(0.05, (event.time - prev.endTime) / beatSec)
       const onBeat = Math.abs(beatInBar - Math.round(beatInBar)) < 0.06
       const downbeat = onBeat && Math.round(beatInBar) % 4 === 0
+      // Same gap, same distance inside a bar: players read the rhythm from the spacing.
       let d = spacingFor(profile, gapBeats) * barScale
-      if (gapBeats > 2) d *= rng.range(0.85, 1.2)
-      if (profile.spread > 0) d *= 1 + profile.spread * 0.5 * (event.strength - 0.6)
       const accent = onBeat ? (downbeat ? 1 : event.strength >= 0.85 ? 0.33 : 0) : event.strength >= 0.85 ? 0.3 : 0
       if (profile.jumpChance > 0 && gapBeats >= 0.45 && accent > 0 && rng.chance(profile.jumpChance * accent)) d *= profile.jumpScale
       // Harder levels stack the first two notes of a quick burst on one spot now and then.
       const prevGap = placed.length >= 2 ? (prev.time - placed[placed.length - 2].endTime) / beatSec : 99
-      if (profile.jumpChance > 0 && gapBeats <= 0.26 && prevGap >= 0.45 && rng.chance(0.35)) d = 0
+      const stacked = profile.jumpChance > 0 && gapBeats <= 0.26 && prevGap >= 0.45 && rng.chance(0.35)
+      if (stacked) d = 0
       // Short gaps (streams) curve gently; everything else follows the bar's pattern turn.
-      const turn = gapBeats <= 0.3 ? rng.range(0.15, 0.45) : patternTurn + rng.range(-0.12, 0.12)
+      const turn = gapBeats <= 0.3 ? rng.range(0.15, 0.35) : patternTurn + rng.range(-0.06, 0.06)
       let want = heading + spin * turn
       const exactDistance = profile.jumpChance === 0
       const shapeIndex = objects.length - barStartIndex
@@ -416,6 +422,9 @@ export function placeCircles(
           pos = pick.p
           heading = pick.angle
         }
+      } else if (stacked) {
+        // A stack sits a little up and left of the circle under it, so both stay visible.
+        pos = { x: Math.max(EDGE, from.x - radius * 0.18), y: Math.max(EDGE, from.y - radius * 0.18) }
       } else {
         if (d < 4) want = heading
         const pick = choose(from, want, d, event.time, exactDistance)
