@@ -18,7 +18,7 @@ import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
 import { CircleSession, HIT_SLACK, TOUCH_HIT_SLACK } from '../../game/circleSession'
 import { approachForSpeed, placeCircles } from '../../chart/circles'
-import { TOUCH_WINDOW_SCALE, compensateInputLatency, windowsForAlignment, windowsForDifficulty } from '../../game/judgment'
+import { compensateInputLatency, windowsForDifficulty } from '../../game/judgment'
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
 import { PlayfieldRenderer } from '../../render/renderer'
@@ -56,15 +56,6 @@ const leadInRef = { current: 900 }
  * On a local build (127.0.0.1) every run's presses, judgements (and in circle mode the pointer
  * path) go to the dev server, which saves them next to the test data. Never sent anywhere else.
  */
-/** Arrows are graded by distance from the target, so the windows follow the current size and speed. */
-function alignArrows(session: GameSession | CircleSession, renderer: PlayfieldRenderer, phone: boolean): void {
-  if (session instanceof CircleSession) return
-  const noteHeightMs = renderer.noteHeightMs()
-  if (!Number.isFinite(noteHeightMs)) return
-  const windows = windowsForAlignment(noteHeightMs, phone ? TOUCH_WINDOW_SCALE : 1)
-  if (Math.abs(windows.good - session.windows.good) > 0.01) session.setWindows(windows)
-}
-
 function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart: Chart, settings: Settings, engine: AudioEngine | null, renderer: PlayfieldRenderer | null, quit = false): void {
   if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return
   const circles = session instanceof CircleSession
@@ -380,7 +371,6 @@ export function GameScreen({
       session.press(at.x, at.y, compensateInputLatency(eventTimeMs, judgeMs, now))
       return
     }
-    if (renderer) alignArrows(session, renderer, settingsRef.current.timing === 'phone')
     session.handleTap(lane, compensateInputLatency(eventTimeMs, judgeMs, now))
   }, [])
 
@@ -480,7 +470,6 @@ export function GameScreen({
           },
         })
     sessionRef.current = session
-    alignArrows(session, renderer, settingsRef.current.timing === 'phone')
 
     const countdownRemaining = (): number => {
       const now = countdownPausedAtRef.current ?? performance.now()
@@ -601,7 +590,6 @@ export function GameScreen({
       }
       const runUpMs = resumeAtRef.current !== null ? resumeAtRef.current - now : goAtRef.current !== null && now - goAtRef.current < 700 ? goAtRef.current - now : null
       const judgeMs = engine.judgeTime * 1000
-      alignArrows(activeSession, renderer, settingsRef.current.timing === 'phone')
       activeSession.update(judgeMs)
       const state = activeSession.scoreState
       renderer.render(activeSession, Math.max(0, judgeMs), {

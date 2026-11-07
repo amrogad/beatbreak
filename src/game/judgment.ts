@@ -93,20 +93,6 @@ export function windowsForDifficulty(
   }
 }
 
-/**
- * Arrows are graded by how far they sit from their target when pressed, in arrow heights: dead on
- * is Marvelous, and the further off the lower the grade, at any scroll speed (Amro, 2026-11-07:
- * "it should be on how close the arrow to the shape"). Past Good the press does not count.
- */
-export const ALIGN_GRADES = { marvelous: 0.15, perfect: 0.3, great: 0.5, good: 0.75 }
-
-/** Timing windows for arrows that take one arrow height every `noteHeightMs` to scroll. */
-export function windowsForAlignment(noteHeightMs: number, scale = 1): JudgmentWindows {
-  const at = (fraction: number): number => fraction * noteHeightMs * scale
-  const good = at(ALIGN_GRADES.good)
-  return { marvelous: at(ALIGN_GRADES.marvelous), perfect: at(ALIGN_GRADES.perfect), great: at(ALIGN_GRADES.great), good, missAfter: good }
-}
-
 /** Judgment for a signed timing delta in milliseconds (negative = early). */
 export function judge(deltaMs: number, windows: JudgmentWindows): Judgment {
   const abs = Math.abs(deltaMs)

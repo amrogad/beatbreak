@@ -61,19 +61,9 @@ interface ActiveHold {
   tailMs: number
 }
 
-function releaseWindowsFor(windows: JudgmentWindows): JudgmentWindows {
-  return {
-    marvelous: windows.marvelous * HOLD_RELEASE_SCALE,
-    perfect: windows.perfect * HOLD_RELEASE_SCALE,
-    great: windows.great * HOLD_RELEASE_SCALE,
-    good: windows.good * HOLD_RELEASE_SCALE,
-    missAfter: windows.missAfter * HOLD_RELEASE_SCALE,
-  }
-}
-
 export class GameSession {
   readonly chart: Chart
-  windows: JudgmentWindows
+  readonly windows: JudgmentWindows
   readonly totalNotes: number
   readonly firstNoteMs: number
   /** Head time of the last note in the chart. */
@@ -83,7 +73,7 @@ export class GameSession {
   /** Hold notes in the chart; each one is judged twice (press and release). */
   readonly holdCount: number
   /** Windows for judging a hold's release. */
-  releaseWindows: JudgmentWindows
+  readonly releaseWindows: JudgmentWindows
 
   private notes: ChartNote[]
   private noteTimesMs: number[]
@@ -125,14 +115,14 @@ export class GameSession {
     this.activeHolds = new Array(LANE_COUNT).fill(null)
     this.judged = new Uint8Array(this.totalNotes)
     this.holdCount = this.notes.filter((note) => note.kind === 'hold' && (note.duration ?? 0) > 0).length
-    this.releaseWindows = releaseWindowsFor(this.windows)
+    this.releaseWindows = {
+      marvelous: this.windows.marvelous * HOLD_RELEASE_SCALE,
+      perfect: this.windows.perfect * HOLD_RELEASE_SCALE,
+      great: this.windows.great * HOLD_RELEASE_SCALE,
+      good: this.windows.good * HOLD_RELEASE_SCALE,
+      missAfter: this.windows.missAfter * HOLD_RELEASE_SCALE,
+    }
     this.state = createScoreState(this.totalNotes + this.holdCount, DIFFICULTY_SCORE_SCALE[this.chart.difficulty] ?? 1)
-  }
-
-  /** Swap the windows mid-run: arrows are graded by how far they sit from the target, frame by frame. */
-  setWindows(windows: JudgmentWindows): void {
-    this.windows = windows
-    this.releaseWindows = releaseWindowsFor(windows)
   }
 
   setAutoPlay(autoPlay: boolean): void {

@@ -427,13 +427,6 @@ export class PlayfieldRenderer {
    * span counts, graded by how far off it was: a long rectangle invites tapping as soon as it
    * touches its target, and phones are meant to be forgiving.
    */
-  /** How long an arrow takes to scroll one arrow height; not used for tiles or circles. */
-  noteHeightMs(): number {
-    if (this.settings.noteShape === 'tile' || this.circleField) return Number.POSITIVE_INFINITY
-    const { noteH, pxPerSec } = this.layout()
-    return (noteH / Math.max(1, pxPerSec)) * 1000
-  }
-
   tileCatchMs(): number {
     if (this.settings.noteShape !== 'tile') return 0
     const { noteH, pxPerSec } = this.layout()
