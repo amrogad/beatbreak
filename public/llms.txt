@@ -9,4 +9,4 @@ Beatbreak is a browser-based rhythm game that turns owned audio files into playa
 - Exports charts as JSON and StepMania .sm files
 
 ## Links
-- Home: https://pulsegrid.app/
+- Home: https://beatbreak.vercel.app/
