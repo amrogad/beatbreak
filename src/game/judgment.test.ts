@@ -11,6 +11,7 @@ import {
   judge,
   normalizeCustomWindows,
   timingLabel,
+  windowsForAlignment,
   windowsForDifficulty,
 } from './judgment'
 import { JUDGMENTS } from '../core/types'
@@ -160,5 +161,12 @@ describe('touch windows', () => {
     expect(touch.good).toBe(Math.round(keys.good * TOUCH_WINDOW_SCALE))
     expect(touch.marvelous).toBe(Math.round(keys.marvelous * TOUCH_WINDOW_SCALE))
     expect(touch.missAfter).toBe(touch.good)
+  })
+})
+
+describe('grading by alignment', () => {
+  it('turns arrow-height fractions into windows for the current scroll', () => {
+    expect(windowsForAlignment(100)).toEqual({ marvelous: 15, perfect: 30, great: 50, good: 75, missAfter: 75 })
+    expect(windowsForAlignment(200).good).toBe(150)
   })
 })
