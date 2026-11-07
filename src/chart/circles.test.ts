@@ -58,6 +58,15 @@ describe('circle placement', () => {
         expect(speed).toBeLessThanOrEqual(limit[difficulty] * 1.1 + 1)
       }
       if (difficulty === 'easy') for (let i = 1; i < objects.length; i++) expect(objects[i].time - objects[i - 1].endTime).toBeGreaterThanOrEqual(0.449)
+      const ballLimit: Record<Difficulty, number> = { easy: 170, normal: 230, hard: 300, expert: 400 }
+      for (const slider of objects.filter((o) => o.kind === 'slider' && o.path)) {
+        const path = slider.path!
+        let length = 0
+        for (let k = 1; k < path.length; k++) length += Math.hypot(path[k].x - path[k - 1].x, path[k].y - path[k - 1].y)
+        const span = (slider.endTime - slider.time) / slider.slides
+        expect(slider.endTime - slider.time).toBeGreaterThanOrEqual(0.199)
+        expect(length / span).toBeLessThanOrEqual(Math.max(ballLimit[difficulty] * 1.15, (36 / span)))
+      }
     }
   })
 

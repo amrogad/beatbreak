@@ -16,7 +16,7 @@ import { TimingMap } from './timing'
  * Bump when placement changes where circles go or how many there are: a run's best only counts
  * against runs on the same maps.
  */
-export const PLACEMENT_VERSION = 2
+export const PLACEMENT_VERSION = 3
 
 export const FIELD_W = 512
 export const FIELD_H = 384
@@ -305,6 +305,12 @@ const EASY_MIN_GAP_SEC = 0.45
  * fast song would otherwise ask for jumps only a good player can make on a level called Hard.
  */
 const MAX_SPEED: Record<Difficulty, number> = { easy: 450, normal: 600, hard: 800, expert: 1100 }
+/**
+ * Slider ball speed and shortest slider, in seconds rather than beats: on a fast song (or one read
+ * at double tempo) a slider sized in beats sent the ball flying (Amro, Blue - All Rise at 196 BPM).
+ */
+const MAX_SLIDER_SPEED: Record<Difficulty, number> = { easy: 170, normal: 230, hard: 300, expert: 400 }
+const MIN_SLIDER_SEC: Record<Difficulty, number> = { easy: 0.45, normal: 0.35, hard: 0.25, expert: 0.2 }
 
 export function placeCircles(
   chart: Pick<Chart, 'id' | 'difficulty' | 'notes' | 'timing'>,
@@ -428,7 +434,7 @@ export function placeCircles(
     let holdSec = event.hold
     if (holdSec > 0 && next) holdSec = Math.min(holdSec, next.time - event.time - Math.max(profile.sliderGapBeats * beatSec, 0.1))
     const holdBeats = holdSec > 0 ? timing.timeToBeat(event.time + holdSec) - event.beat : 0
-    const isSlider = holdBeats >= profile.minSliderBeats - 1e-6
+    const isSlider = holdBeats >= profile.minSliderBeats - 1e-6 && holdSec >= (MIN_SLIDER_SEC[chart.difficulty] ?? 0.3)
 
     let pos: CirclePoint
     if (!prev) {
@@ -490,7 +496,7 @@ export function placeCircles(
     let slides = 1
     let endPoint = pos
     if (isSlider) {
-      const total = profile.sliderPxPerBeat * holdBeats
+      const total = Math.min(profile.sliderPxPerBeat * holdBeats, (MAX_SLIDER_SPEED[chart.difficulty] ?? 250) * holdSec)
       slides = Math.max(1, Math.ceil(total / MAX_SPAN_PX))
       const spanLen = Math.max(radius * 0.9, total / slides)
       const bend = (spin * rng.range(0.12, 0.3)) as number

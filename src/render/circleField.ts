@@ -168,8 +168,8 @@ export class CircleField {
     session.forEachVisible(songTimeMs, (object) => visible.push(object), env.songMs(nowScroll + preemptMs))
     const active = session.activeSlider
 
-    // The path to the next circle: a small comet in the next circle's colour. It waits at the
-    // edge of the circle before, pointing the way, then flies over and lands as the ring closes.
+    // The path to the next circle: a small comet in the next circle's colour. It leaves when the
+    // circle before is played and lands on the next one as its ring closes.
     if (env.pathGuide) this.drawPathComets(env, session, visible, active, songTimeMs, r, untilMs)
 
     // The running slider sits under everything that is still coming.
@@ -218,8 +218,10 @@ export class CircleField {
       const uy = (to.y - from.y) / dist
       // Flight time is the gap between the two objects, eased out so it settles onto the target.
       const travel = Math.max(0, Math.min(1, (songTimeMs - a.endTime * 1000) / Math.max(1, (b.time - a.endTime) * 1000)))
+      // Nothing waits on screen: the comet only exists while it flies (Amro: a waiting one confused).
+      if (travel <= 0) continue
       const ease = 1 - (1 - travel) * (1 - travel)
-      const startD = r * 1.15 + r * 0.9
+      const startD = r * 1.15
       const endD = dist - r * 1.1
       if (endD <= startD) continue
       const headD = startD + (endD - startD) * ease
