@@ -596,7 +596,6 @@ function AppShell(): React.JSX.Element {
             </span>
             <span className="brand-text">
               <b>BEATBREAK</b>
-              <small>Rhythm Engine</small>
             </span>
           </button>
           <div className="row gap-8">

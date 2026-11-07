@@ -492,10 +492,6 @@ export function SetupScreen({
           <div className="mt-12">
             <ProgressBar fraction={progress.fraction} />
           </div>
-          <p className="muted small mt-16">
-            Beatbreak listens for the beat, builds four difficulty levels, and starts you on the
-            one that fits the song.
-          </p>
           <div className="mt-16">
             <Button variant="ghost" onClick={onBack}>
               Cancel
@@ -611,7 +607,6 @@ export function SetupScreen({
             { value: 'circles', label: 'Circles (Beta)' },
           ]}
           onChange={(value) => onUpdateSettings({ playMode: value })}
-          hint={settings.playMode === 'circles' ? 'Click or tap circles on a field, same rhythm as the arrows.' : 'Arrows rise up four lanes; hit the matching key.'}
         />
         <div className="difficulty-grid mt-12" role="radiogroup" aria-label="Difficulty">
           {DIFFICULTY_ORDER.map((item) => {
@@ -760,7 +755,6 @@ export function SetupScreen({
             step={0.1}
             onChange={(value) => chooseSpeed(value)}
             format={(value) => `${value.toFixed(1)} / 10`}
-            hint="Slower arrows are spread further apart. Changing it here only affects this song."
           />
           {meta.scrollSpeed !== undefined && (
             <Button size="sm" variant="ghost" onClick={() => chooseSpeed(undefined)}>

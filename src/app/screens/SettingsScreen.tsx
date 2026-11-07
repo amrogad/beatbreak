@@ -187,18 +187,12 @@ export function SettingsScreen({
               { value: 'circles', label: 'Circles (Beta)' },
             ]}
             onChange={(value) => onUpdate({ playMode: value })}
-            hint={
-              arrowMode
-                ? 'Arrows: hit the lane keys. Circles: click or tap each circle as its ring closes. Same rhythm, own high scores.'
-                : 'Circles: click or tap each circle as its ring closes. The settings that only change arrows are hidden while Circles is on.'
-            }
           />
           {!arrowMode && (
             <Toggle
               label="Path to the next circle"
               checked={settings.circlePath}
               onChange={(value) => onUpdate({ circlePath: value })}
-              hint="A small comet flies from each circle to the next one, so you know where to move."
             />
           )}
           <Choice
@@ -212,7 +206,6 @@ export function SettingsScreen({
               { value: 'expert', label: 'Expert', color: DIFFICULTY_COLOR.expert },
             ]}
             onChange={(value) => onUpdate({ defaultDifficulty: value })}
-            hint="Auto picks the right one for each song. A song remembers what you last picked."
           />
           {arrowMode && (
           <>
@@ -224,7 +217,6 @@ export function SettingsScreen({
               { value: 'phone', label: 'Phone' },
             ]}
             onChange={(value) => onUpdate({ timing: value })}
-            hint="Phone timing is easier, for tapping on a screen. Phones start on it."
           />
           <Choice
             label="Long arrows"
@@ -234,7 +226,6 @@ export function SettingsScreen({
               { value: 'off', label: 'Off' },
             ]}
             onChange={(value) => onUpdate({ longArrows: value === 'on' })}
-            hint="Off turns every long arrow into a single tap. Phones start with them off."
           />
           {settings.longArrows && (
           <Choice
@@ -256,7 +247,6 @@ export function SettingsScreen({
               { value: 'down', label: 'Down' },
             ]}
             onChange={(value) => onUpdate({ scrollDirection: value })}
-            hint="Up: arrows rise to targets at the top. Down: they fall to targets at the bottom."
           />
           <Slider
             label="Arrow speed"
@@ -266,7 +256,6 @@ export function SettingsScreen({
             step={0.1}
             onChange={(value) => onUpdate({ scrollSpeed: value })}
             format={(value) => `${value.toFixed(1)} / 10`}
-            hint="Higher = arrows travel faster, so you read less of the chart ahead."
           />
           </>
           )}
@@ -304,7 +293,6 @@ export function SettingsScreen({
             step={0.05}
             onChange={(value) => onUpdate({ noteScale: value })}
             format={(value) => `${Math.round(value * 100)}%`}
-            hint="Tap notes, hold tails and target outlines scale together."
           />
           </>
           )}
@@ -316,7 +304,6 @@ export function SettingsScreen({
               { value: 'mono', label: 'Blackout' },
             ]}
             onChange={(value) => onUpdate({ theme: value })}
-            hint="Blackout is pitch black with white light only."
           />
           <Choice
             label="Arrow colours"
@@ -326,7 +313,6 @@ export function SettingsScreen({
               { value: 'random', label: 'Shuffle' },
             ]}
             onChange={(value) => onUpdate({ arrowColors: value })}
-            hint="Shuffle picks new colours every song. Blackout keeps every arrow white."
           />
           {settings.arrowColors === 'column' && (
             <div className="field">
@@ -363,7 +349,6 @@ export function SettingsScreen({
             label="Reduced motion"
             checked={settings.reducedMotion}
             onChange={(value) => onUpdate({ reducedMotion: value })}
-            hint="Turns off particles and motion effects."
           />
         </div>
       </Panel>
@@ -378,7 +363,6 @@ export function SettingsScreen({
             step={0.01}
             onChange={(value) => onUpdate({ volume: value })}
             format={(value) => `${Math.round(value * 100)}%`}
-            hint="Defaults to 100%. Your system volume still applies."
           />
           <Slider
             label="Audio sync"
@@ -401,13 +385,11 @@ export function SettingsScreen({
             label="Menu music"
             checked={settings.menuMusic}
             onChange={(value) => onUpdate({ menuMusic: value })}
-            hint="Plays a loop of your latest song behind the menus."
           />
           <Toggle
             label="Click sounds"
             checked={settings.uiSounds}
             onChange={(value) => onUpdate({ uiSounds: value })}
-            hint="The small sounds when you press buttons in the menus."
           />
         </div>
       </Panel>
@@ -509,13 +491,11 @@ export function SettingsScreen({
               { value: 'fullscreen', label: 'Fullscreen' },
             ]}
             onChange={(value) => onUpdate({ displayMode: value })}
-            hint="Fullscreen applies while playing. The browser can refuse it."
           />
           <Toggle
             label="Show diagnostics"
             checked={settings.showStats}
             onChange={(value) => onUpdate({ showStats: value })}
-            hint="Frame rate and quality level in the corner."
           />
         </div>
       </details>
