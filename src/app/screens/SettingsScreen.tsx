@@ -259,7 +259,7 @@ export function SettingsScreen({
             hint="Up: arrows rise to targets at the top. Down: they fall to targets at the bottom."
           />
           <Slider
-            label="Scroll speed"
+            label="Arrow speed"
             value={settings.scrollSpeed}
             min={1}
             max={10}

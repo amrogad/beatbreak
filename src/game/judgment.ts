@@ -59,12 +59,9 @@ export function normalizeCustomWindows(custom: Partial<CustomWindows> | undefine
 }
 
 /**
- * How a chart's difficulty shifts the windows (harder charts get slightly tighter scoring).
- * Hard is the reference point where a preset applies exactly as defined — that is what keeps the
- * StepMania preset at StepMania's own 22.5 ms W1 instead of a rounded 23. Scaling away from hard
- * rounds to whole milliseconds so the numbers stay readable. The player's audio-offset calibration
- * is applied by the engine, not by widening the windows. A hand-set ("custom") window set is used
- * exactly as entered — that is the point of setting it.
+ * The windows for a run. Every difficulty uses the preset as defined, the way StepMania does;
+ * the player's audio-offset calibration is applied by the engine, not by widening the windows.
+ * A hand-set ("custom") window set is used exactly as entered.
  */
 /**
  * Touch screens get windows this much wider than the preset, since tapping glass is harder than
@@ -84,8 +81,8 @@ export function windowsForDifficulty(
     return { ...normalized, missAfter: normalized.good }
   }
   const base = WINDOW_PRESETS[preset]
-  // Easy and Normal used to widen the windows; an arrow should only count when it is on its target.
-  const scale = (difficulty === 'expert' ? 0.92 : 1) * (touch ? TOUCH_WINDOW_SCALE : 1)
+  // Every difficulty uses the same windows, as in StepMania (Amro, 2026-11-07).
+  const scale = touch ? TOUCH_WINDOW_SCALE : 1
   if (scale === 1) return { ...base }
   return {
     marvelous: Math.round(base.marvelous * scale),

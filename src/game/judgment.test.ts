@@ -80,19 +80,11 @@ describe('window presets and difficulty scaling', () => {
     }
   })
 
-  it('keeps windows tight on every difficulty, tighter still on expert', () => {
-    const easy = windowsForDifficulty('standard', 'easy')
-    const normal = windowsForDifficulty('standard', 'normal')
-    const hard = windowsForDifficulty('standard', 'hard')
-    const expert = windowsForDifficulty('standard', 'expert')
-    for (const tier of tiers) {
-      expect(easy[tier]).toBeGreaterThanOrEqual(normal[tier])
-      expect(normal[tier]).toBeGreaterThanOrEqual(hard[tier])
-      expect(hard[tier]).toBeGreaterThanOrEqual(expert[tier])
+  it('uses the same windows on every difficulty', () => {
+    for (const difficulty of ['easy', 'normal', 'hard', 'expert'] as const) {
+      expect(windowsForDifficulty('stepmania', difficulty)).toEqual(WINDOW_PRESETS.stepmania)
+      expect(windowsForDifficulty('standard', difficulty)).toEqual(DEFAULT_WINDOWS)
     }
-    expect(hard).toEqual(DEFAULT_WINDOWS) // standard preset is the reference point
-    expect(expert).toEqual({ marvelous: 14, perfect: 30, great: 55, good: 74, missAfter: 74 })
-    expect(easy).toEqual(DEFAULT_WINDOWS)
   })
 
   it('ships StepMania’s own windows (W1–W4) as a preset', () => {

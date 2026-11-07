@@ -427,17 +427,6 @@ export class PlayfieldRenderer {
    * span counts, graded by how far off it was: a long rectangle invites tapping as soon as it
    * touches its target, and phones are meant to be forgiving.
    */
-  /**
-   * How long an arrow overlaps its target, either side of the beat: the time it takes to move one
-   * note height. A press outside this does not count, whatever the timing window says, so a fast
-   * scroll speed never scores an arrow that has not reached the target (Amro, 2026-11-07).
-   */
-  overlapMs(): number {
-    if (this.settings.noteShape === 'tile') return Infinity
-    const { noteH, pxPerSec } = this.layout()
-    return Math.round(((noteH * 0.9) / Math.max(1, pxPerSec)) * 1000)
-  }
-
   tileCatchMs(): number {
     if (this.settings.noteShape !== 'tile') return 0
     const { noteH, pxPerSec } = this.layout()

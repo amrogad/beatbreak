@@ -259,6 +259,20 @@ export function SetupScreen({
     [bundle],
   )
 
+  // The slider moves at once; the song is saved when it settles.
+  const speedSaveRef = useRef<number | undefined>(undefined)
+  const chooseSpeed = useCallback(
+    (next: number | undefined) => {
+      if (!bundle) return
+      const songId = bundle.meta.id
+      setBundle((current) => (current ? { ...current, meta: { ...current.meta, scrollSpeed: next } } : current))
+      window.clearTimeout(speedSaveRef.current)
+      speedSaveRef.current = window.setTimeout(() => void updateSong(songId, { scrollSpeed: next }), 300)
+    },
+    [bundle],
+  )
+  useEffect(() => () => window.clearTimeout(speedSaveRef.current), [])
+
   const saveTitle = useCallback(async () => {
     setRenaming(false)
     if (!bundle) return
@@ -738,6 +752,21 @@ export function SetupScreen({
             format={formatSync}
             hint={SYNC_HINT}
           />
+          <Slider
+            label={meta.scrollSpeed === undefined ? 'Arrow speed' : 'Arrow speed (this song)'}
+            value={meta.scrollSpeed ?? settings.scrollSpeed}
+            min={1}
+            max={10}
+            step={0.1}
+            onChange={(value) => chooseSpeed(value)}
+            format={(value) => `${value.toFixed(1)} / 10`}
+            hint="Slower arrows are spread further apart. Changing it here only affects this song."
+          />
+          {meta.scrollSpeed !== undefined && (
+            <Button size="sm" variant="ghost" onClick={() => chooseSpeed(undefined)}>
+              Use default speed ({settings.scrollSpeed.toFixed(1)})
+            </Button>
+          )}
         </div>
 
           <input

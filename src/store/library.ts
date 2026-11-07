@@ -250,6 +250,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     if (existing.trimCuts !== undefined) meta.trimCuts = existing.trimCuts
     if (existing.trimManual) meta.trimManual = true
     if (existing.beatFix) meta.beatFix = existing.beatFix
+    if (existing.scrollSpeed !== undefined) meta.scrollSpeed = existing.scrollSpeed
   } else {
     // Trim conservatively on the first import: only waveform-verified near-silence at the edges.
     // A quiet intro is never cut just because it is quiet.

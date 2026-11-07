@@ -34,7 +34,7 @@ describe('sanitizeSettings', () => {
 
   it('accepts the StepMania preset and rejects unknown ones', () => {
     expect(sanitizeSettings({ windowPreset: 'stepmania' }).windowPreset).toBe('stepmania')
-    expect(sanitizeSettings({ windowPreset: 'nonsense' }).windowPreset).toBe('standard')
+    expect(sanitizeSettings({ windowPreset: 'nonsense' }).windowPreset).toBe('stepmania')
     expect(sanitizeSettings({ failRule: 'nonsense' }).failRule).toBe(DEFAULT_SETTINGS.failRule)
   })
 
@@ -92,7 +92,7 @@ describe('settings migration and storage', () => {
     expect(migrated.failRule).toBe('never')
     expect(migrated.uiSounds).toBe(true)
     expect(migrated.noteScale).toBe(DEFAULT_SETTINGS.noteScale)
-    expect(migrated.windowPreset).toBe('standard')
+    expect(migrated.windowPreset).toBe('stepmania')
   })
 
   it('never resurrects the old hit-sound option from a newer blob', () => {
@@ -122,7 +122,7 @@ describe('settings migration and storage', () => {
     expect(settings.keyMap.up).toEqual(['KeyW', 'ArrowUp'])
     expect(settings.keyMap.right).toEqual(['KeyD', 'ArrowRight'])
     const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as { schema?: number }
-    expect(raw.schema).toBe(17)
+    expect(raw.schema).toBe(19)
   })
 
   it('moves the old -20 ms default to a plain 0 and keeps what it meant', () => {
@@ -136,7 +136,7 @@ describe('settings migration and storage', () => {
     vi.stubGlobal('localStorage', storage)
     saveSettings({ ...DEFAULT_SETTINGS, volume: 0.25, windowPreset: 'stepmania' })
     const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as { schema?: number }
-    expect(raw.schema).toBe(17)
+    expect(raw.schema).toBe(19)
     const reloaded = loadSettings()
     expect(reloaded.volume).toBe(0.25)
     expect(reloaded.windowPreset).toBe('stepmania')
