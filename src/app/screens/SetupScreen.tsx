@@ -163,6 +163,11 @@ export function SetupScreen({
       .then((result) => {
         if (cancelled) return
         adopt(result)
+        const meta = result.meta
+        const skipped = (meta.trimStart ?? 0) + (meta.duration - (meta.trimEnd ?? meta.duration))
+        if (!meta.trimManual && skipped >= 0.5 && Date.now() - meta.createdAt < 60_000) {
+          onToast(`Skipped ${Math.round(skipped)} s of silence at the edges. Trim, then Restore whole song, plays all of it.`, 'info')
+        }
         if (result.audioNotSaved) onToast('Your browser is not keeping files for Beatbreak right now (storage full or blocked), so pick this song again next time.', 'info')
       })
       .catch((caught: unknown) => {
@@ -235,9 +240,13 @@ export function SetupScreen({
     if (chosenForRef.current === bundleMeta.id) return
     chosenForRef.current = bundleMeta.id
     // The song's own last pick wins; otherwise the default from Settings, or the recommendation.
-    const fallback = settings.defaultDifficulty === 'auto' ? recommended : settings.defaultDifficulty
+    // The recommendation rates the song, not the player: someone with no cleared run yet starts
+    // no higher than Normal.
+    const newPlayer = Object.keys(bestScores).length === 0
+    const capped = newPlayer && (recommended === 'hard' || recommended === 'expert') ? 'normal' : recommended
+    const fallback = settings.defaultDifficulty === 'auto' ? capped : settings.defaultDifficulty
     setDifficulty(bundleMeta.preferredDifficulty ?? fallback ?? 'normal')
-  }, [bundleMeta, recommended, settings.defaultDifficulty])
+  }, [bundleMeta, recommended, settings.defaultDifficulty, bestScores])
 
   const chooseDifficulty = useCallback(
     (next: Difficulty) => {
@@ -395,6 +404,14 @@ export function SetupScreen({
       setAttaching(true)
       try {
         const buffer = await decodeAudioFile(chosen)
+        // The charts were made for this song: a file of a different length is a different song.
+        if (Math.abs(buffer.duration - bundle.meta.duration) > 1.5) {
+          onToast(
+            `That file is ${formatDuration(buffer.duration)} long, but this song is ${formatDuration(bundle.meta.duration)}. Pick the same file, or add it as a new song from Home.`,
+            'error',
+          )
+          return
+        }
         let nextAnalysis = bundle.analysis
         if (!nextAnalysis) {
           const client = new AnalysisClient()

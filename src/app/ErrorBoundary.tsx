@@ -1,7 +1,9 @@
 import React from 'react'
+import { STORAGE_KEY } from '../store/settings'
 
 interface ErrorBoundaryState {
   error: Error | null
+  copied: boolean
 }
 
 /**
@@ -12,10 +14,10 @@ interface ErrorBoundaryState {
  * the volatile in-memory song cache, never the user's library (IndexedDB is untouched).
  */
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: null }
+  state: ErrorBoundaryState = { error: null, copied: false }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { error }
+    return { error, copied: false }
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
@@ -32,6 +34,23 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
     // then reload into a clean Home. The persisted library is untouched.
     this.setState({ error: null })
     window.location.assign(new URL('./', document.baseURI).toString())
+  }
+
+  /** A setting that breaks a screen would break it on every reload: this is the way out. Songs stay. */
+  private resetSettings = (): void => {
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      /* storage blocked: the reload still helps */
+    }
+    window.location.assign(new URL('./', document.baseURI).toString())
+  }
+
+  private copyDetails = (): void => {
+    const { error } = this.state
+    if (!error) return
+    const text = [`${error.name}: ${error.message}`, error.stack ?? '', `Page: ${location.href}`, `Browser: ${navigator.userAgent}`].join('\n')
+    void navigator.clipboard?.writeText(text).then(() => this.setState({ copied: true })).catch(() => undefined)
   }
 
   render(): React.ReactNode {
@@ -67,6 +86,17 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
               </button>
               <button type="button" className="btn btn-ghost" onClick={this.reload}>
                 Reload the page
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={this.copyDetails}>
+                {this.state.copied ? 'Copied' : 'Copy details'}
+              </button>
+            </div>
+            <p className="muted small mt-16">
+              If this keeps coming back, reset the settings. Your songs, charts and scores stay.
+            </p>
+            <div className="row gap-8 wrap mt-8">
+              <button type="button" className="btn btn-danger btn-sm" onClick={this.resetSettings}>
+                Reset settings
               </button>
             </div>
           </section>

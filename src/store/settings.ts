@@ -110,7 +110,7 @@ export const DEFAULT_SETTINGS: Settings = {
   playMode: 'arrows',
 }
 
-const STORAGE_KEY = 'pulsegrid:settings:v1'
+export const STORAGE_KEY = 'pulsegrid:settings:v1'
 
 /**
  * Saved-settings schema. Bumping it runs a one-time migration in `loadSettings`; every other
@@ -263,10 +263,15 @@ function touchDefaults(): Partial<Settings> {
   return touch ? { scrollDirection: 'down', noteShape: 'tile', timing: 'phone', reducedMotion: true, longArrows: false } : {}
 }
 
+/** The system's "reduce motion" setting, taken as the starting value on a first visit. */
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 export function loadSettings(): Settings {
   try {
     const text = localStorage.getItem(STORAGE_KEY)
-    if (!text) return { ...DEFAULT_SETTINGS, ...touchDefaults() }
+    if (!text) return { ...DEFAULT_SETTINGS, ...touchDefaults(), ...(prefersReducedMotion() ? { reducedMotion: true } : {}) }
     const parsed = JSON.parse(text) as Partial<Settings> & { schema?: number }
     if ((parsed.schema ?? 1) < SETTINGS_SCHEMA) {
       // v5: terminal was the app's default, not a choice the player made. Move it to disco;

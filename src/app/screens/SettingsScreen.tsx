@@ -71,6 +71,7 @@ export function SettingsScreen({
   const captureRef = useRef<Lane | null>(null)
   // Phones and tablets have no keys to set, so the key panel only shows where there is a keyboard.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
+  const arrowMode = settings.playMode !== 'circles'
 
   const [calibrating, setCalibrating] = useState(false)
   const backupInputRef = useRef<HTMLInputElement | null>(null)
@@ -184,7 +185,11 @@ export function SettingsScreen({
               { value: 'circles', label: 'Circles (Beta)' },
             ]}
             onChange={(value) => onUpdate({ playMode: value })}
-            hint="Arrows: hit the lane keys. Circles: click or tap each circle as its ring closes. Same rhythm, own high scores."
+            hint={
+              arrowMode
+                ? 'Arrows: hit the lane keys. Circles: click or tap each circle as its ring closes. Same rhythm, own high scores.'
+                : 'Circles: click or tap each circle as its ring closes. The settings that only change arrows are hidden while Circles is on.'
+            }
           />
           <Choice
             label="Default difficulty"
@@ -199,6 +204,8 @@ export function SettingsScreen({
             onChange={(value) => onUpdate({ defaultDifficulty: value })}
             hint="Auto picks the right one for each song. A song remembers what you last picked."
           />
+          {arrowMode && (
+          <>
           <Choice
             label="Timing"
             value={settings.timing}
@@ -251,11 +258,15 @@ export function SettingsScreen({
             format={(value) => `${value.toFixed(1)} / 10`}
             hint="Higher = arrows travel faster, so you read less of the chart ahead."
           />
+          </>
+          )}
         </div>
       </Panel>
 
       <Panel title="Style">
         <div className="settings-stack">
+          {arrowMode && (
+          <>
           <div className="field">
             <span className="field-label">Arrow style</span>
             <div className="note-skin-grid" role="radiogroup" aria-label="Arrow style">
@@ -285,6 +296,8 @@ export function SettingsScreen({
             format={(value) => `${Math.round(value * 100)}%`}
             hint="Tap notes, hold tails and target outlines scale together."
           />
+          </>
+          )}
           <Choice
             label="Theme"
             value={settings.theme === 'mono' ? 'mono' : 'disco'}
@@ -379,6 +392,12 @@ export function SettingsScreen({
             checked={settings.menuMusic}
             onChange={(value) => onUpdate({ menuMusic: value })}
             hint="Plays a loop of your latest song behind the menus."
+          />
+          <Toggle
+            label="Click sounds"
+            checked={settings.uiSounds}
+            onChange={(value) => onUpdate({ uiSounds: value })}
+            hint="The small sounds when you press buttons in the menus."
           />
         </div>
       </Panel>
