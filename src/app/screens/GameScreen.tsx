@@ -41,6 +41,10 @@ export interface GameScreenProps {
 }
 
 const COUNTDOWN_MS = 3000
+/** 3-2-1 after Resume, so the hands are back on the keys before the music is. */
+const RESUME_RUNUP_MS = 3000
+/** How long a first press of Restart or Quit waits for the second one. */
+const CONFIRM_MS = 2500
 /**
  * After 3-2-1 comes a short run-up, shown as GO!, while the first arrows travel up from the
  * bottom. Its length is the arrows' travel time, so nothing is on screen during the numbers.
@@ -116,6 +120,14 @@ export function GameScreen({
   const countdownStartRef = useRef(0)
   const countdownPausedAtRef = useRef<number | null>(null)
   const engagingRef = useRef(false)
+  const resumeAtRef = useRef<number | null>(null)
+  const goAtRef = useRef<number | null>(null)
+  // A pause the player did not choose (tab-out, a portal overlay, a phone call, Back) keeps held
+  // long arrows alive: a lane let go meanwhile is judged when the music comes back, unless the
+  // player is holding it again by then.
+  const autoPausedRef = useRef(false)
+  const deferredReleaseRef = useRef(new Set<0 | 1 | 2 | 3>())
+  const armedTimerRef = useRef(0)
   const resultTimersRef = useRef<number[]>([])
   const settingsRef = useRef(settings)
   const autoPlayRef = useRef(autoPlay)
@@ -123,6 +135,8 @@ export function GameScreen({
 
   const [paused, setPaused] = useState(false)
   const [crashed, setCrashed] = useState(false)
+  const [armed, setArmed] = useState<'restart' | 'quit' | null>(null)
+  const armedRef = useRef<'restart' | 'quit' | null>(null)
   // The mode is fixed for the run; changing it in Settings applies to the next one.
   const [circleMode] = useState(() => settings.playMode === 'circles')
   const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart, circleRhythm ?? sourceChart) : null), [circleMode, sourceChart, circleRhythm])
@@ -175,8 +189,10 @@ export function GameScreen({
 
   /* ---------------------------------------------------------------- callbacks */
 
-  const pause = useCallback(() => {
+  const pause = useCallback((automatic = false) => {
     if (finishedRef.current || pausedRef.current) return
+    if (automatic) autoPausedRef.current = true
+    resumeAtRef.current = null
     // Every note is already judged and only the outro is playing: Esc (or a hidden tab) means
     // "I'm done", so the run is saved and the results open instead of a pause menu.
     if (runCompleteRef.current && !failedRef.current) {
@@ -200,21 +216,26 @@ export function GameScreen({
 
   const resume = useCallback(() => {
     if (finishedRef.current || !pausedRef.current) return
+    window.clearTimeout(armedTimerRef.current)
+    armedRef.current = null
+    setArmed(null)
     if (countdownPausedAtRef.current !== null) {
       countdownStartRef.current += performance.now() - countdownPausedAtRef.current
       countdownPausedAtRef.current = null
     }
     // Inside the click: the one moment a browser always lets a suspended context start again.
     void resumeAudioContext()
-    engineRef.current?.resume()
     pausedRef.current = false
-    judgingRef.current = true
     setPaused(false)
+    // The music comes back after a 3-2-1 (the loop starts it). Before the song starts there is
+    // nothing to run up to: the countdown itself carries on.
+    if (engineRef.current) resumeAtRef.current = performance.now() + RESUME_RUNUP_MS
+    else judgingRef.current = true
   }, [])
 
   const togglePause = useCallback(() => {
     if (pausedRef.current) resume()
-    else pause()
+    else pause(false)
   }, [pause, resume])
 
   const finishRun = useCallback(() => {
@@ -276,6 +297,13 @@ export function GameScreen({
     judgingRef.current = false
     engagingRef.current = false
     countdownPausedAtRef.current = null
+    resumeAtRef.current = null
+    goAtRef.current = null
+    autoPausedRef.current = false
+    deferredReleaseRef.current.clear()
+    window.clearTimeout(armedTimerRef.current)
+    armedRef.current = null
+    setArmed(null)
     session.reset()
     // Re-run the countdown instead of jumping straight into the first notes; an instant restart
     // used to drop the opening arrows on the receptors with no time to read them.
@@ -284,6 +312,30 @@ export function GameScreen({
     setHud({ score: 0, combo: 0, accuracy: 1, judged: 0 })
     rendererRef.current?.setChart(buffer.duration, chart)
   }, [buffer.duration, chart])
+
+  // Restart and Quit throw the run away, so each needs a second press within a moment.
+  const disarm = useCallback(() => {
+    window.clearTimeout(armedTimerRef.current)
+    armedRef.current = null
+    setArmed(null)
+  }, [])
+  const confirmThen = useCallback((kind: 'restart' | 'quit', action: () => void) => {
+    if (armedRef.current === kind) {
+      disarm()
+      action()
+      return
+    }
+    window.clearTimeout(armedTimerRef.current)
+    armedRef.current = kind
+    setArmed(kind)
+    armedTimerRef.current = window.setTimeout(disarm, CONFIRM_MS)
+  }, [disarm])
+  const quit = useCallback(() => {
+    const session = sessionRef.current
+    // A run quit halfway is often the one worth reading: log what was played.
+    if (session && !session.isAutoPlay && !finishedRef.current) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current, true)
+    onExitRef.current()
+  }, [chart, song])
 
   const toggleFullscreen = useCallback(async () => {
     const root = rootRef.current
@@ -301,6 +353,7 @@ export function GameScreen({
     const engine = engineRef.current
     const renderer = rendererRef.current
     renderer?.press(lane)
+    deferredReleaseRef.current.delete(lane)
     if (!session || !engine || !judgingRef.current || session.isAutoPlay) return
     const now = performance.now()
     const judgeMs = engine.judgeTime * 1000
@@ -321,6 +374,10 @@ export function GameScreen({
     // pressing again would complete the hold with full credit.
     if (!session || !engine || finishedRef.current || session.isAutoPlay) return
     if (session instanceof CircleSession) return
+    if (autoPausedRef.current) {
+      deferredReleaseRef.current.add(lane)
+      return
+    }
     const now = performance.now()
     // Releasing starts the StepMania hold-life drain (250 ms). Pressing the lane again refills
     // it; if it runs out before the tail the session scores a LetGo (miss).
@@ -506,6 +563,20 @@ export function GameScreen({
       // One clock for everything: the judged time (what the player hears, minus device latency and
       // their calibration) also positions the notes, so a note on the receptor is exactly delta 0.
       // StepMania's global offset shifts the chart against the audio the same way.
+      const resumeAt = resumeAtRef.current
+      if (resumeAt !== null && !pausedRef.current && now >= resumeAt) {
+        resumeAtRef.current = null
+        goAtRef.current = now
+        engine.resume()
+        judgingRef.current = true
+        if (autoPausedRef.current) {
+          autoPausedRef.current = false
+          const at = engine.judgeTime * 1000
+          for (const lane of deferredReleaseRef.current) if (!activeSession.isAutoPlay && !(activeSession instanceof CircleSession)) activeSession.releaseLane(lane, at)
+          deferredReleaseRef.current.clear()
+        }
+      }
+      const runUpMs = resumeAtRef.current !== null ? resumeAtRef.current - now : goAtRef.current !== null && now - goAtRef.current < 700 ? goAtRef.current - now : null
       const judgeMs = engine.judgeTime * 1000
       activeSession.update(judgeMs)
       const state = activeSession.scoreState
@@ -514,7 +585,7 @@ export function GameScreen({
         combo: state.combo,
         accuracy: state.accuracy,
         progress: engine.planDuration > 0 ? Math.min(1, Math.max(0, engine.planTime / engine.planDuration)) : 0,
-        countdownMs: null,
+        countdownMs: runUpMs,
         paused: false,
         autoPlay: activeSession.isAutoPlay,
         showStats: settingsRef.current.showStats,
@@ -624,7 +695,16 @@ export function GameScreen({
           releaseLane(lane, eventTimeMs)
         },
         onPause: () => togglePause(),
-        onRestart: () => restart(),
+        // The router lets go of every held key when focus goes; pause first, so held long arrows
+        // wait for the run to come back instead of being judged as let go.
+        onFocusLost: (type) => {
+          if (type === 'visibilitychange' && document.visibilityState !== 'hidden') return
+          if (engineRef.current?.isPlaying || resumeAtRef.current !== null) pause(true)
+        },
+        onRestart: () => {
+          if (!pausedRef.current) pause(false)
+          confirmThen('restart', restart)
+        },
         onFullscreen: () => void toggleFullscreen(),
       },
       {
@@ -648,16 +728,16 @@ export function GameScreen({
     const onBack = (): void => {
       if (finishedRef.current) return
       if (pausedRef.current) onExitRef.current()
-      else pause()
+      else pause(true)
     }
     window.addEventListener(BACK_EVENT, onBack)
     const onVisibility = (): void => {
       if (document.visibilityState !== 'hidden') return
-      if (engineRef.current?.isPlaying || (!engineRef.current && !engagingRef.current)) pause()
+      if (engineRef.current?.isPlaying || resumeAtRef.current !== null || (!engineRef.current && !engagingRef.current)) pause(true)
     }
     // Leaving during the countdown pauses too; otherwise the song starts while nobody is looking.
     const onBlur = (): void => {
-      if (engineRef.current?.isPlaying || (!engineRef.current && !engagingRef.current)) pause()
+      if (engineRef.current?.isPlaying || resumeAtRef.current !== null || (!engineRef.current && !engagingRef.current)) pause(true)
     }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)
@@ -665,7 +745,7 @@ export function GameScreen({
     // picture would freeze with no menu. Pause instead, so Resume restarts the audio.
     const audioContext = getAudioContext()
     const onAudioState = (): void => {
-      if (audioContext.state !== 'running' && engineRef.current?.isPlaying && !pausedRef.current) pause()
+      if (audioContext.state !== 'running' && engineRef.current?.isPlaying && !pausedRef.current) pause(true)
     }
     audioContext.addEventListener('statechange', onAudioState)
 
@@ -696,7 +776,7 @@ export function GameScreen({
       sessionRef.current = null
       rendererRef.current = null
     }
-  }, [buffer, chart, circleMap, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.title, sourceChart, toggleFullscreen, togglePause, windows])
+  }, [buffer, chart, circleMap, confirmThen, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.title, sourceChart, toggleFullscreen, togglePause, windows])
 
   /* --------------------------------------------------------- live settings */
 
@@ -799,17 +879,11 @@ export function GameScreen({
               <Button variant="primary" onClick={resume}>
                 Resume ({describeKey(settings.controls.pause[0])})
               </Button>
-              <Button onClick={restart}>Restart ({describeKey(settings.controls.restart[0])})</Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  const session = sessionRef.current
-                  // A run quit halfway is often the one worth reading: log what was played.
-                  if (session && !session.isAutoPlay && !finishedRef.current) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current, true)
-                  onExit()
-                }}
-              >
-                Quit to song setup
+              <Button onClick={() => confirmThen('restart', restart)}>
+                {armed === 'restart' ? `Press again to restart` : `Restart (${describeKey(settings.controls.restart[0])})`}
+              </Button>
+              <Button variant="ghost" onClick={() => confirmThen('quit', quit)}>
+                {armed === 'quit' ? 'Press again to quit' : 'Quit to song setup'}
               </Button>
             </div>
             <div className="hr" />

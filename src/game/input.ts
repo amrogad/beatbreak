@@ -116,6 +116,8 @@ export interface InputHandlers {
   onPause?: (eventTimeMs: number) => void
   onRestart?: () => void
   onFullscreen?: () => void
+  /** Focus left the page (blur or a visibility change), called before held lanes are let go. */
+  onFocusLost?: (type: string) => void
   /** Returns true when the key should be swallowed (prevents page scrolling etc.). */
   shouldPreventDefault?: (code: string) => boolean
 }
@@ -163,7 +165,8 @@ export class InputRouter {
   }
 
   /** Keyups are lost while the window is unfocused, so release every held lane here. */
-  private onBlur = (): void => {
+  private onBlur = (event: Event): void => {
+    this.handlers.onFocusLost?.(event.type)
     const released = [...this.held]
     this.held.clear()
     const now = performance.now()
