@@ -37,6 +37,30 @@ describe('circle placement', () => {
     expect(circleRhythm([{ difficulty: 'hard' as Difficulty }], { difficulty: 'hard' as Difficulty }).difficulty).toBe('hard')
   })
 
+  it('easy keeps the downbeat over the off-beat note before it', () => {
+    // Beats 3.5 (off-beat), 4 (downbeat), 4.5 (off-beat): one circle fits, and it should be the 4.
+    const notes = [tap(0, 0, 1), tap(1.75, 1), tap(2, 2), tap(2.25, 3)]
+    const beats = place('easy', notes).objects.map((o) => o.time * 2)
+    expect(beats).toEqual([0, 4])
+  })
+
+  it('caps how fast the pointer must travel on a fast song', () => {
+    // 240 BPM: the same riff twice as fast.
+    const fast = { offset: 0, bpms: [{ beat: 0, bpm: 240 }] }
+    const notes = song().map((n) => ({ ...n, time: n.time / 2, duration: n.duration ? n.duration / 2 : undefined }))
+    const limit: Record<Difficulty, number> = { easy: 450, normal: 600, hard: 800, expert: 1100 }
+    for (const difficulty of DIFFICULTIES) {
+      const objects = placeCircles({ id: `fast-${difficulty}`, difficulty, notes, timing: fast }).objects
+      for (let i = 1; i < objects.length; i++) {
+        const a = sliderExit(objects[i - 1])
+        const b = objects[i]
+        const speed = Math.hypot(b.x - a.x, b.y - a.y) / Math.max(0.05, b.time - objects[i - 1].endTime)
+        expect(speed).toBeLessThanOrEqual(limit[difficulty] * 1.1 + 1)
+      }
+      if (difficulty === 'easy') for (let i = 1; i < objects.length; i++) expect(objects[i].time - objects[i - 1].endTime).toBeGreaterThanOrEqual(0.449)
+    }
+  })
+
   it('keeps a beat between easy circles', () => {
     const map = place('easy')
     for (let i = 1; i < map.objects.length; i++) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Chart, ChartNote, HitEvent, Lane } from '../core/types'
 import { placeCircles, sliderBall, type CircleMap } from '../chart/circles'
-import { CircleSession } from './circleSession'
+import { CircleSession, MISS_COMMIT_GRACE_MS, TOUCH_HIT_SLACK } from './circleSession'
 import { DEFAULT_WINDOWS } from './judgment'
 
 const tap = (time: number, lane: Lane = 0): ChartNote => ({ id: `t${time}`, lane, time, beat: time * 2, step: Math.round(time * 8), kind: 'tap', strength: 0.7 })
@@ -70,10 +70,26 @@ describe('circle session', () => {
     expect(events.map((e) => [e.noteId, e.judgment])).toEqual([['a', 'miss']])
   })
 
-  it('misses a circle nobody clicked once its window has passed', () => {
+  it('misses a circle nobody clicked once its window and the late-event grace have passed', () => {
     const { session, events } = run(map, chart)
     session.update(1000 + DEFAULT_WINDOWS.missAfter + 1)
+    expect(events).toHaveLength(0)
+    session.update(1000 + DEFAULT_WINDOWS.missAfter + MISS_COMMIT_GRACE_MS + 1)
     expect(events.map((e) => e.judgment)).toEqual(['miss'])
+  })
+
+  it('still hits a circle when an in-time press is handled after the frame that passed its window', () => {
+    const { session, events } = run(map, chart)
+    session.update(1000 + DEFAULT_WINDOWS.good + 5)
+    expect(session.press(100, 100, 1000 + DEFAULT_WINDOWS.good - 5)?.judgment).toBe('good')
+    expect(events.map((e) => e.judgment)).toEqual(['good'])
+  })
+
+  it('gives fingers more room around a circle than a mouse', () => {
+    const mouse = run(map, chart).session
+    expect(mouse.press(100 + 36 + 8, 100, 1000)).toBeNull()
+    const finger = new CircleSession({ chart, map, windows: DEFAULT_WINDOWS, hitSlack: TOUCH_HIT_SLACK })
+    expect(finger.press(100 + 36 + 8, 100, 1000)?.judgment).toBe('marvelous')
   })
 
   it('completes a slider that is followed to the end and breaks one that is let go', () => {
@@ -94,9 +110,30 @@ describe('circle session', () => {
     const drop = run(placed, chartOf(notes))
     drop.session.press(slider.x, slider.y, 1000)
     drop.session.release(1100)
-    for (let t = 1100; t <= 1500; t += 16) drop.session.update(t)
+    for (let t = 1100; t <= slider.endTime * 1000 + 20; t += 16) drop.session.update(t)
     expect(drop.events.map((e) => e.judgment)).toEqual(['marvelous', 'miss'])
     expect(drop.events[1].holdDrop).toBe(true)
+    expect(drop.session.brokenSliders).toBe(1)
+  })
+
+  it('lets a player who slips off a slider for a moment get back on for partial credit', () => {
+    const notes = [hold(1, 1), tap(3)]
+    const placed = placeCircles({ id: 'x', difficulty: 'normal', notes, timing: chartOf(notes).timing })
+    const slider = placed.objects[0]
+    const length = (slider.endTime - slider.time) * 1000
+    const slip = run(placed, chartOf(notes))
+    slip.session.press(slider.x, slider.y, 1000)
+    // Off the ball for 120 ms of grace plus a fifth of the slider, then back on.
+    const offFrom = 1000 + length * 0.2
+    const offUntil = offFrom + 120 + length * 0.2
+    for (let t = 1000; t <= slider.endTime * 1000 + 20; t += 8) {
+      const ball = sliderBall(slider, t / 1000)
+      if (t >= offFrom && t < offUntil) slip.session.move(ball.x + 400, ball.y)
+      else slip.session.move(ball.x, ball.y)
+      slip.session.update(t)
+    }
+    expect(slip.events.map((e) => e.judgment)).toEqual(['marvelous', 'great'])
+    expect(slip.session.brokenSliders).toBe(0)
   })
 
   it('auto-play clears a generated map with no misses', () => {

@@ -55,7 +55,7 @@ export function ResultsScreen({
         <div>
           <Chip color={DIFFICULTY_COLOR[chart.difficulty]}>{DIFFICULTY_LABEL[chart.difficulty]}</Chip>
           <h1 className="mt-8">{song.title}</h1>
-          <p className="muted small">{results.totalNotes} {things} in this chart</p>
+          <p className="muted small">{results.objects ?? results.totalNotes} {things} in this chart</p>
         </div>
         {results.autoPlay && <Chip color="#ff7a3d">Auto-play — not counted as a score</Chip>}
       </div>

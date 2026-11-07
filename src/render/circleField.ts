@@ -28,6 +28,10 @@ export interface CircleEnv {
   drawText(text: string, x: number, y: number, size: number, style: TextStyle, glow: boolean): void
   /** The soft round light the arrows use for their hit glow. */
   glow(color: string, radius: number): HTMLCanvasElement
+  /** Song time (ms) on the played timeline, cuts closed up, so approaches run on through a cut. */
+  scrollMs(songMs: number): number
+  /** The inverse of `scrollMs`. */
+  songMs(scrollMs: number): number
 }
 
 export interface FieldRect {
@@ -155,15 +159,20 @@ export class CircleField {
     roundRect(ctx, this.rect.x, this.rect.y, this.rect.w, this.rect.h, 18)
     ctx.fill()
 
+    // Approaches run on the played timeline: a circle just after a trim cut rings in like any other.
+    const nowScroll = env.scrollMs(songTimeMs)
+    const untilMs = (object: CircleObject): number => env.scrollMs(object.time * 1000) - nowScroll
     const visible: CircleObject[] = []
-    session.forEachVisible(songTimeMs, (object) => visible.push(object))
+    session.forEachVisible(songTimeMs, (object) => visible.push(object), env.songMs(nowScroll + preemptMs))
     const active = session.activeSlider
 
-    // Follow points: a faint line from each circle to the next one while it approaches.
+    // Follow points: a line from each circle to the next one while it approaches. It starts at the
+    // circle just hit, so the guide stays while the player travels.
     ctx.save()
     ctx.lineCap = 'round'
     ctx.lineWidth = Math.max(1.5, r * 0.07)
-    const chain = active ? [active, ...visible] : visible
+    const lastHit = !active && session.firstPendingIndex > 0 ? session.objectAt(session.firstPendingIndex - 1) : undefined
+    const chain = active ? [active, ...visible] : lastHit ? [lastHit, ...visible] : visible
     for (let i = 0; i + 1 < chain.length; i++) {
       const a = chain[i]
       const b = chain[i + 1]
@@ -172,10 +181,10 @@ export class CircleField {
       const to = this.toScreen(b.x, b.y)
       const dist = Math.hypot(to.x - from.x, to.y - from.y)
       if (dist < r * 2.6) continue
-      const appear = Math.max(0, Math.min(1, (songTimeMs - (b.time * 1000 - preemptMs)) / fadeInMs))
+      const appear = Math.max(0, Math.min(1, (preemptMs - untilMs(b)) / fadeInMs))
       const ux = (to.x - from.x) / dist
       const uy = (to.y - from.y) / dist
-      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.22 * appear).toFixed(3)})`
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.35 * appear).toFixed(3)})`
       ctx.beginPath()
       ctx.moveTo(from.x + ux * r * 1.2, from.y + uy * r * 1.2)
       ctx.lineTo(from.x + ux * (r * 1.2 + (dist - r * 2.4) * appear), from.y + uy * (r * 1.2 + (dist - r * 2.4) * appear))
@@ -189,10 +198,9 @@ export class CircleField {
     // Later objects underneath, the next one to hit on top.
     for (let i = visible.length - 1; i >= 0; i--) {
       const object = visible[i]
-      const start = object.time * 1000 - preemptMs
-      const alpha = Math.max(0, Math.min(1, (songTimeMs - start) / fadeInMs))
+      const alpha = Math.max(0, Math.min(1, (preemptMs - untilMs(object)) / fadeInMs))
       if (object.kind === 'slider') this.drawSlider(env, object, songTimeMs, alpha, r)
-      this.drawCircle(env, object, alpha, r, songTimeMs, session.windows.good)
+      this.drawCircle(env, object, alpha, r, songTimeMs, session.windows.good, untilMs(object))
     }
 
     if (active) this.drawBall(env, active, songTimeMs, r, session.isFollowing)
@@ -201,7 +209,7 @@ export class CircleField {
     if (showCursor) this.drawCursor(env, session, songTimeMs, r)
   }
 
-  private drawCircle(env: CircleEnv, object: CircleObject, alpha: number, r: number, songTimeMs: number, lateLimitMs: number): void {
+  private drawCircle(env: CircleEnv, object: CircleObject, alpha: number, r: number, songTimeMs: number, lateLimitMs: number, until: number): void {
     const ctx = env.ctx
     const color = env.color(object.color)
     const p = this.toScreen(object.x, object.y)
@@ -219,7 +227,6 @@ export class CircleField {
     ctx.drawImage(sprite, p.x - sprite.width / env.dpr / 2, p.y - sprite.height / env.dpr / 2, sprite.width / env.dpr, sprite.height / env.dpr)
     env.drawText(String(object.number), p.x, p.y + r * 0.06, r * 0.8, { fill: '#ffffff', shadow: env.mono ? '#000000' : shade(color, -0.7), burst: color }, false)
     // The closing ring: a neon loop in the circle's colour that touches its rim exactly on the beat.
-    const until = object.time * 1000 - songTimeMs
     if (until > 0) {
       const t = until / this.map.preemptMs
       const ring = r * (1 + 2.6 * t)

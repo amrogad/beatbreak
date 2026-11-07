@@ -12,6 +12,12 @@ import type { Chart, ChartNote, Difficulty } from '../core/types'
 import { createRng, hashString, type Rng } from '../core/rng'
 import { TimingMap } from './timing'
 
+/**
+ * Bump when placement changes where circles go or how many there are: a run's best only counts
+ * against runs on the same maps.
+ */
+export const PLACEMENT_VERSION = 2
+
 export const FIELD_W = 512
 export const FIELD_H = 384
 
@@ -127,15 +133,46 @@ function toEvents(notes: ChartNote[], timing: TimingMap): Event[] {
   return events
 }
 
-/** Drop objects that start sooner than `beats` after the previous one ends (the first stays, so repeated bars stay alike). */
-function spaceOut(events: Event[], beats: number, timing: TimingMap): Event[] {
-  const out: Event[] = []
-  for (const e of events) {
-    const last = out[out.length - 1]
-    const lastEnd = last ? timing.timeToBeat(last.time + last.hold) : -Infinity
-    if (!last || e.beat - lastEnd >= beats - 0.02) out.push(e)
+/**
+ * Keep the strongest set of objects at least `beats` (and `minSec`) apart. First come first kept
+ * would keep an off-beat note and drop the downbeat after it, so the pick weighs each note's
+ * strength plus a bonus for sitting on a beat, most for the bar's first beat.
+ */
+function spaceOut(events: Event[], beats: number, minSec: number, timing: TimingMap): Event[] {
+  const n = events.length
+  if (n === 0) return []
+  const weight = events.map((e) => {
+    const inBar = (((e.beat % 4) + 4) % 4)
+    const onBeat = Math.abs(inBar - Math.round(inBar)) < 0.06
+    // An off-beat note is worth well under half a beat note, so two off-beats never beat the
+    // beat between them.
+    return 0.5 * e.strength + (onBeat ? 1 : 0.2) + (onBeat && Math.round(inBar) % 4 === 0 ? 0.5 : 0)
+  })
+  const ends = events.map((e) => ({ beat: timing.timeToBeat(e.time + e.hold), time: e.time + e.hold }))
+  // best[i]: the best total of a set that ends with event i; from[i]: the event kept before it.
+  const best = new Float64Array(n)
+  const from = new Int32Array(n).fill(-1)
+  let lastFit = -1
+  const prefix: number[] = []
+  const prefixAt: number[] = []
+  for (let i = 0; i < n; i++) {
+    // Every j whose end leaves room before i; ends grow with j for taps and short holds.
+    while (lastFit + 1 < i && events[i].beat - ends[lastFit + 1].beat >= beats - 0.02 && events[i].time - ends[lastFit + 1].time >= minSec - 1e-3) {
+      lastFit++
+      const value = best[lastFit]
+      const top = prefix.length ? prefix[prefix.length - 1] : -Infinity
+      prefix.push(Math.max(top, value))
+      prefixAt.push(value >= top ? lastFit : prefixAt[prefixAt.length - 1])
+    }
+    const before = prefix.length ? prefix[prefix.length - 1] : 0
+    best[i] = weight[i] + Math.max(0, before)
+    if (prefix.length) from[i] = prefixAt[prefixAt.length - 1]
   }
-  return out
+  let end = 0
+  for (let i = 1; i < n; i++) if (best[i] > best[end]) end = i
+  const out: Event[] = []
+  for (let i = end; i >= 0; i = from[i]) out.push(events[i])
+  return out.reverse()
 }
 
 /**
@@ -261,6 +298,13 @@ export function circleRhythm<T extends Pick<Chart, 'difficulty'>>(charts: readon
 
 /** Easy circles keep at least this many beats between objects (human Easy maps: never under 1/2). */
 const EASY_MIN_GAP_BEATS = 1
+/** ...and this much time, so a fast song's Easy does not ask for a click every 300 ms. */
+const EASY_MIN_GAP_SEC = 0.45
+/**
+ * Fastest the pointer is asked to travel, in field px per second. Spacing is set in beats, so a
+ * fast song would otherwise ask for jumps only a good player can make on a level called Hard.
+ */
+const MAX_SPEED: Record<Difficulty, number> = { easy: 450, normal: 600, hard: 800, expert: 1100 }
 
 export function placeCircles(
   chart: Pick<Chart, 'id' | 'difficulty' | 'notes' | 'timing'>,
@@ -272,7 +316,7 @@ export function placeCircles(
   const timing = new TimingMap(rhythm.timing)
   const rng = createRng(hashString(`${chart.id}|circles`))
   let raw = toEvents(rhythm.notes, timing)
-  if (chart.difficulty === 'easy') raw = spaceOut(raw, EASY_MIN_GAP_BEATS, timing)
+  if (chart.difficulty === 'easy') raw = spaceOut(raw, EASY_MIN_GAP_BEATS, EASY_MIN_GAP_SEC, timing)
   const events = pairSliders(raw, profile, timing, rng)
   const objects: CircleObject[] = []
   const placed: Placed[] = []
@@ -402,6 +446,7 @@ export function placeCircles(
       const prevGap = placed.length >= 2 ? (prev.time - placed[placed.length - 2].endTime) / beatSec : 99
       const stacked = profile.jumpChance > 0 && gapBeats <= 0.26 && prevGap >= 0.45 && rng.chance(0.35)
       if (stacked) d = 0
+      d = Math.min(d, (MAX_SPEED[chart.difficulty] ?? MAX_SPEED.normal) * Math.max(0.05, event.time - prev.endTime))
       // Short gaps (streams) curve gently; everything else follows the bar's pattern turn.
       const turn = gapBeats <= 0.3 ? rng.range(0.15, 0.35) : patternTurn + rng.range(-0.06, 0.06)
       let want = heading + spin * turn
@@ -431,6 +476,14 @@ export function placeCircles(
         pos = pick.p
         if (Math.hypot(pos.x - from.x, pos.y - from.y) > 4) heading = Math.atan2(pos.y - from.y, pos.x - from.x)
       }
+    }
+
+    // Whatever picked the spot (a repeated shape, a jump, a nudge off a recent circle), the move
+    // stays under the level's pointer speed.
+    if (prev) {
+      const maxD = (MAX_SPEED[chart.difficulty] ?? MAX_SPEED.normal) * Math.max(0.05, event.time - prev.endTime)
+      const dist = Math.hypot(pos.x - prev.x, pos.y - prev.y)
+      if (dist > maxD) pos = { x: prev.x + ((pos.x - prev.x) * maxD) / dist, y: prev.y + ((pos.y - prev.y) * maxD) / dist }
     }
 
     let path: CirclePoint[] | undefined

@@ -2,6 +2,7 @@
 import type { Difficulty, RunResults } from '../../core/types'
 import { listRuns } from '../../store/repository'
 import type { Settings } from '../../store/settings'
+import { PLACEMENT_VERSION } from '../../chart/circles'
 
 type RulesSettings = Pick<Settings, 'windowPreset' | 'customWindows' | 'timing' | 'holdMode' | 'longArrows' | 'noteShape'>
 
@@ -14,8 +15,9 @@ type RulesSettings = Pick<Settings, 'windowPreset' | 'customWindows' | 'timing' 
 export function runRulesKey(settings: RulesSettings, mode: 'arrows' | 'circles'): string {
   const w = settings.customWindows
   const windows = settings.windowPreset === 'custom' ? `custom ${w.marvelous}/${w.perfect}/${w.great}/${w.good}` : settings.windowPreset
-  // Circles always use the phone window scale and have no long-arrow or rectangle settings.
-  if (mode === 'circles') return `circles ${windows}`
+  // Circles always use the phone window scale and have no long-arrow or rectangle settings. Their
+  // maps are placed by code, so a new placement version starts fresh bests.
+  if (mode === 'circles') return `circles ${windows} | maps ${PLACEMENT_VERSION}`
   return [
     windows,
     settings.timing === 'phone' && settings.windowPreset !== 'custom' ? 'phone' : 'pc',

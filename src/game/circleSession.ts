@@ -8,7 +8,8 @@
  *  - A press hits the earliest pending circle that is under the cursor and inside the hit window.
  *    A press anywhere else is ignored, so a stray click never costs a circle.
  *  - A slider is two judgements, like a long arrow: its head, and following the ball to the end.
- *    Letting go, or leaving the follow circle, for longer than a short grace breaks it (a miss).
+ *    The end is graded by the share of the slider followed; time lost beyond a short grace counts
+ *    against it, and the player can get back on the ball. Losing more than half breaks it (a miss).
  */
 import type { Chart, HitEvent, Judgment, JudgmentWindows, Lane, ScoreState } from '../core/types'
 import { sliderBall, sliderExit, type CircleMap, type CircleObject, type CirclePoint } from '../chart/circles'
@@ -26,6 +27,8 @@ export interface CircleSessionOptions {
   onIgnoredPress?: (reason: IgnoredPress, object: CircleObject | null, at: CirclePoint) => void
   onComplete?: (state: ScoreState) => void
   tailMs?: number
+  /** How far outside a circle's edge a press still counts, in field units. Fingers need more. */
+  hitSlack?: number
 }
 
 /** Time a slider forgives a lifted button or a cursor outside the follow circle. */
@@ -37,8 +40,17 @@ export function earlyMissMs(goodMs: number): number {
   return Math.max(250, goodMs * 2.5)
 }
 
-/** A press counts this far outside the circle's edge, in field units (fingers and fast flicks). */
-const HIT_SLACK = 4
+/** A press counts this far outside the circle's edge, in field units (fast mouse flicks). */
+export const HIT_SLACK = 4
+/** Fingertips land a few px off where the player aims: about 10 screen px on a phone. */
+export const TOUCH_HIT_SLACK = 12
+/**
+ * A circle past its window is drawn as missed at once but only scored a miss this much later, so a
+ * press that happened in time but reaches us a frame late still hits it.
+ */
+export const MISS_COMMIT_GRACE_MS = 30
+/** Share of a slider followed for each end judgement (osu! grades its slider ticks the same way). */
+const SLIDER_GRADES: [number, Judgment][] = [[0.9, 'marvelous'], [0.75, 'great'], [0.5, 'good']]
 
 export type IgnoredPress = 'early' | 'off' | 'stray'
 
@@ -68,9 +80,12 @@ const LOG_PATH_MS = 33
 
 interface ActiveSlider {
   index: number
+  startMs: number
   endMs: number
   /** When the cursor or the button was lost, or null while following. */
   lostAt: number | null
+  /** Time lost so far beyond the grace of each slip, in ms. */
+  lostMs: number
 }
 
 export class CircleSession {
@@ -91,6 +106,7 @@ export class CircleSession {
   private pointer: CirclePoint = { x: 256, y: 192 }
   private held = false
   private clicks: ClickStats = { hit: 0, early: 0, off: 0, stray: 0 }
+  private broken = 0
   /** Every press, judgement and pointer position of the run, for the local play log. */
   readonly log: { presses: PressLog[]; judgments: { id: string; judgment: Judgment; deltaMs: number; t: number }[]; path: number[] } = { presses: [], judgments: [], path: [] }
   private lastPathMs = -Infinity
@@ -148,6 +164,11 @@ export class CircleSession {
     return this.deltaCount > 0 ? this.deltaSum / this.deltaCount : 0
   }
 
+  /** Sliders broken this run (let go or lost for more than half their length). */
+  get brokenSliders(): number {
+    return this.broken
+  }
+
   get clickStats(): ClickStats {
     return { ...this.clicks }
   }
@@ -174,8 +195,8 @@ export class CircleSession {
    * Visit every object the player should see: unjudged ones whose approach has started, in time
    * order. Judged ones are drawn by the renderer's own fade-outs.
    */
-  forEachVisible(songTimeMs: number, visit: (object: CircleObject, index: number) => void): void {
-    const until = songTimeMs + this.map.preemptMs
+  forEachVisible(songTimeMs: number, visit: (object: CircleObject, index: number) => void, untilMs = songTimeMs + this.map.preemptMs): void {
+    const until = untilMs
     for (let i = this.cursor; i < this.totalNotes; i++) {
       if (this.timesMs[i] > until) break
       if (!this.judged[i]) visit(this.objects[i], i)
@@ -225,7 +246,7 @@ export class CircleSession {
     this.held = true
     if (this.finished || this.autoPlay) return null
     this.resolveMisses(songTimeMs)
-    const reach = this.map.radius + HIT_SLACK
+    const reach = this.map.radius + (this.options.hitSlack ?? HIT_SLACK)
     for (let i = this.cursor; i < this.totalNotes; i++) {
       const delta = songTimeMs - this.timesMs[i]
       if (delta < -this.windows.good) break
@@ -237,7 +258,7 @@ export class CircleSession {
       this.log.presses.push({ t: songTimeMs, x, y, result: judgment, id: object.id, deltaMs: delta, radii: Math.hypot(object.x - x, object.y - y) / this.map.radius })
       this.commit(i, judgment, delta, songTimeMs)
       if (object.kind === 'slider' && judgment !== 'miss') {
-        this.active = { index: i, endMs: object.endTime * 1000, lostAt: null }
+        this.active = { index: i, startMs: this.timesMs[i], endMs: object.endTime * 1000, lostAt: null, lostMs: 0 }
       }
       return { judgment, deltaMs: delta, object }
     }
@@ -319,16 +340,26 @@ export class CircleSession {
       if (songTimeMs >= active.endMs) this.finishSlider('marvelous', songTimeMs)
       return
     }
-    const ball = sliderBall(object, Math.min(songTimeMs, active.endMs) / 1000)
+    const now = Math.min(songTimeMs, active.endMs)
+    const ball = sliderBall(object, now / 1000)
     const inside = this.held && Math.hypot(this.pointer.x - ball.x, this.pointer.y - ball.y) <= this.map.followRadius
-    if (inside) active.lostAt = null
-    else if (active.lostAt === null) active.lostAt = songTimeMs
-    const lostFor = active.lostAt === null ? 0 : songTimeMs - active.lostAt
-    if (active.lostAt !== null && lostFor > SLIDER_GRACE_MS && active.lostAt < active.endMs - SLIDER_END_LENIENCY_MS) {
+    // A slip costs only what lies beyond the grace, and nothing in the last few ms of the slider.
+    const slipCost = (from: number): number => Math.max(0, Math.min(now, active.endMs - SLIDER_END_LENIENCY_MS) - from - SLIDER_GRACE_MS)
+    if (inside) {
+      if (active.lostAt !== null) active.lostMs += slipCost(active.lostAt)
+      active.lostAt = null
+    } else if (active.lostAt === null) active.lostAt = now
+    const length = Math.max(1, active.endMs - active.startMs)
+    const lost = active.lostMs + (active.lostAt === null ? 0 : slipCost(active.lostAt))
+    if (lost / length > 0.5) {
+      this.broken++
       this.finishSlider('miss', songTimeMs, true)
       return
     }
-    if (songTimeMs >= active.endMs) this.finishSlider('marvelous', songTimeMs)
+    if (songTimeMs >= active.endMs) {
+      const followed = 1 - lost / length
+      this.finishSlider(SLIDER_GRADES.find(([share]) => followed >= share)?.[1] ?? 'miss', songTimeMs)
+    }
   }
 
   private finishSlider(judgment: Judgment, songTimeMs: number, broke = false): void {
@@ -351,6 +382,7 @@ export class CircleSession {
     this.active = null
     this.held = false
     this.clicks = { hit: 0, early: 0, off: 0, stray: 0 }
+    this.broken = 0
     this.log.presses = []
     this.log.judgments = []
     this.log.path = []
@@ -381,7 +413,7 @@ export class CircleSession {
       if (this.active) this.finishSlider('marvelous', songTimeMs)
       this.commit(index, 'marvelous', songTimeMs - this.timesMs[index], songTimeMs)
       const object = this.objects[index]
-      if (object.kind === 'slider') this.active = { index, endMs: object.endTime * 1000, lostAt: null }
+      if (object.kind === 'slider') this.active = { index, startMs: this.timesMs[index], endMs: object.endTime * 1000, lostAt: null, lostMs: 0 }
     }
   }
 
@@ -392,7 +424,7 @@ export class CircleSession {
         continue
       }
       const delta = songTimeMs - this.timesMs[this.cursor]
-      if (!isMissed(delta, this.windows)) break
+      if (!isMissed(delta - MISS_COMMIT_GRACE_MS, this.windows)) break
       this.commit(this.cursor, 'miss', delta, songTimeMs)
     }
   }

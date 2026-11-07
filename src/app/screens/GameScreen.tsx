@@ -16,7 +16,7 @@ import { AudioEngine, estimateOutputLatency, getAudioContext, resumeAudioContext
 import { buildEditPlan, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
-import { CircleSession } from '../../game/circleSession'
+import { CircleSession, HIT_SLACK, TOUCH_HIT_SLACK } from '../../game/circleSession'
 import { placeCircles } from '../../chart/circles'
 import { compensateInputLatency, windowsForDifficulty } from '../../game/judgment'
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
@@ -266,7 +266,8 @@ export function GameScreen({
       failed,
       createdAt: Date.now(),
       meanTimingMs: session.meanTimingMs,
-      droppedHolds: state.droppedHolds,
+      droppedHolds: session instanceof CircleSession ? session.brokenSliders : state.droppedHolds,
+      objects: session.totalNotes,
       autoPlay: session.isAutoPlay,
       rules: runRulesKey(settingsRef.current, session instanceof CircleSession ? 'circles' : 'arrows'),
       ...(session instanceof CircleSession ? { mode: 'circles' as const, clicks: session.clickStats } : {}),
@@ -430,6 +431,7 @@ export function GameScreen({
           windows: runWindows,
           autoPlay: autoPlayRef.current,
           tailMs: 900,
+          hitSlack: window.matchMedia('(pointer: coarse)').matches ? TOUCH_HIT_SLACK : HIT_SLACK,
           onJudgment: (event) => {
             renderer.notify(event, 0)
           },
@@ -632,14 +634,21 @@ export function GameScreen({
       if (!engine || !judgingRef.current) return null
       return compensateInputLatency(eventTimeMs, engine.judgeTime * 1000, performance.now())
     }
+    // A slider follows the finger that started it: a second finger tapping the next circles must
+    // not move the ball's pointer away.
+    let followId: number | null = null
+    const lastAt = new Map<number, { x: number; y: number }>()
     const aim = (event: PointerEvent): { x: number; y: number } | null => {
       const rect = canvas.getBoundingClientRect()
       const sx = event.clientX - rect.left
       const sy = event.clientY - rect.top
       rendererRef.current?.setPointer(sx, sy, event.pointerType !== 'touch')
       const field = rendererRef.current?.toField(sx, sy)
-      if (field && session instanceof CircleSession) session.move(field.x, field.y)
-      return field ?? null
+      if (!field || !(session instanceof CircleSession)) return field ?? null
+      lastAt.set(event.pointerId, field)
+      if (!session.activeSlider) followId = null
+      if (followId === null || followId === event.pointerId) session.move(field.x, field.y)
+      return field
     }
     const letGo = (key: string, eventTimeMs: number): void => {
       if (!held.delete(key) || held.size > 0 || !(session instanceof CircleSession)) return
@@ -655,10 +664,16 @@ export function GameScreen({
       held.add(`p${event.pointerId}:${event.button}`)
       const at = judgeAt(event.timeStamp)
       if (at === null || session.isAutoPlay) return
-      session.press(field.x, field.y, at)
+      const hit = session.press(field.x, field.y, at)
+      if (hit?.object.kind === 'slider' && session.activeSlider === hit.object) followId = event.pointerId
+      else if (followId !== null && followId !== event.pointerId) {
+        const back = lastAt.get(followId)
+        if (back) session.move(back.x, back.y)
+      }
     }
     const onPointerUp = (event: PointerEvent): void => {
       aim(event)
+      lastAt.delete(event.pointerId)
       letGo(`p${event.pointerId}:${event.button}`, event.timeStamp)
     }
     const onPointerCancel = (event: PointerEvent): void => {

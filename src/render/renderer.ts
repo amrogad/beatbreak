@@ -1448,6 +1448,8 @@ export class PlayfieldRenderer {
       judgeStyle: (judgment: Judgment) => this.judgeStyle(judgment),
       drawText: (text: string, x: number, y: number, size: number, style: JudgeStyle, glow: boolean) => this.drawText(this.ctx, text, x, y, size, style, glow && this.quality > 0),
       glow: (color: string, radius: number) => this.glowSprite(color, radius),
+      scrollMs: (songMs: number) => this.scrollMs(songMs),
+      songMs: (scrollMs: number) => (this.plan ? songTimeForScrollTime(this.plan, scrollMs / 1000) * 1000 : scrollMs),
     }
   }
 
