@@ -355,4 +355,9 @@ export interface RunResults {
   clicks?: { hit: number; early: number; off: number; stray: number }
   /** True when this run was played in auto-play (verify) mode, so it is not a real score. */
   autoPlay?: boolean
+  /**
+   * The scoring settings the run was played on (`runRulesKey`). Bests are only compared between
+   * runs on the same rules. Absent on old records, which count under any rules.
+   */
+  rules?: string
 }

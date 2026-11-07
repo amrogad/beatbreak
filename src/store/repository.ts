@@ -139,8 +139,15 @@ export async function listRuns(songId?: string): Promise<StoredRun[]> {
   return runs.sort((a, b) => b.createdAt - a.createdAt)
 }
 
-export async function bestRunFor(songId: string, difficulty: Difficulty, mode: 'arrows' | 'circles' = 'arrows'): Promise<StoredRun | undefined> {
-  const runs = (await listRuns(songId)).filter((run) => run.difficulty === difficulty && !run.failed && (run.mode ?? 'arrows') === mode)
+/** Best cleared run of one chart; with `rules`, only runs on those rules (or old unstamped ones) count. */
+export async function bestRunFor(songId: string, difficulty: Difficulty, mode: 'arrows' | 'circles' = 'arrows', rules?: string): Promise<StoredRun | undefined> {
+  const runs = (await listRuns(songId)).filter(
+    (run) =>
+      run.difficulty === difficulty &&
+      !run.failed &&
+      (run.mode ?? 'arrows') === mode &&
+      (rules === undefined || run.rules === undefined || run.rules === rules),
+  )
   let best: StoredRun | undefined
   for (const run of runs) {
     if (!best || run.score > best.score) best = run

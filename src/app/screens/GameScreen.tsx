@@ -25,6 +25,7 @@ import { PlayfieldRenderer } from '../../render/renderer'
 import { arrowOffsetMs, type Settings } from '../../store/settings'
 import { Icon, Button, Slider } from '../components'
 import { formatPercent } from '../format'
+import { runRulesKey } from './bestScores'
 import { BACK_EVENT } from '../runtime'
 
 export interface GameScreenProps {
@@ -268,6 +269,7 @@ export function GameScreen({
       meanTimingMs: session.meanTimingMs,
       droppedHolds: state.droppedHolds,
       autoPlay: session.isAutoPlay,
+      rules: runRulesKey(settingsRef.current, session instanceof CircleSession ? 'circles' : 'arrows'),
       ...(session instanceof CircleSession ? { mode: 'circles' as const, clicks: session.clickStats } : {}),
     }
     if (!session.isAutoPlay) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current)

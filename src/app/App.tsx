@@ -29,7 +29,7 @@ import { AboutScreen } from './screens/AboutScreen'
 const EditorScreen = lazy(() =>
   import('./screens/EditorScreen').then((module) => ({ default: module.EditorScreen })),
 )
-import { loadBestScores } from './screens/bestScores'
+import { loadBestScores, runRulesKey } from './screens/bestScores'
 import type { BestScores } from './screens/bestScores'
 import { Button, Icon, Spinner } from './components'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -105,9 +105,10 @@ function AppShell(): React.JSX.Element {
     setNotice(null)
   }, [notice, route.name, toast])
 
+  const rulesKey = runRulesKey(settings, settings.playMode)
   const refreshLibrary = useCallback(async () => {
     try {
-      const [nextSongs, nextBest] = await Promise.all([listSongs(), loadBestScores(settings.playMode)])
+      const [nextSongs, nextBest] = await Promise.all([listSongs(), loadBestScores(settings.playMode, rulesKey)])
       setSongs(nextSongs)
       setBestScores(nextBest)
     } catch (error) {
@@ -115,7 +116,7 @@ function AppShell(): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [toast, settings.playMode])
+  }, [toast, settings.playMode, rulesKey])
 
   useEffect(() => {
     void refreshLibrary()
@@ -285,7 +286,7 @@ function AppShell(): React.JSX.Element {
       let isNewBest = false
       let history: StoredRun[] = []
       try {
-        previousBest = (await bestRunFor(results.songId, results.difficulty, results.mode ?? 'arrows')) ?? null
+        previousBest = (await bestRunFor(results.songId, results.difficulty, results.mode ?? 'arrows', results.rules)) ?? null
         if (!results.autoPlay) {
           isNewBest = !results.failed && results.score > 0 && (!previousBest || results.score > previousBest.score)
           await saveRun({
