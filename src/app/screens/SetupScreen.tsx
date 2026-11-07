@@ -32,7 +32,7 @@ import { circleRhythm, placeCircles } from '../../chart/circles'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
 import { BackButton, Button, Choice, Modal, Panel, ProgressBar, Slider, Spinner } from '../components'
 import { TrimEditor } from '../TrimEditor'
-import { SYNC_HINT, formatDuration, formatPercent, formatSync } from '../format'
+import { SYNC_HINT, formatDuration, formatPercent, formatSync, friendlyError } from '../format'
 import type { BestScores } from './bestScores'
 
 type Phase = 'idle' | 'importing' | 'ready' | 'error'
@@ -176,7 +176,7 @@ export function SetupScreen({
           onBack()
           return
         }
-        setError(caught instanceof Error ? caught.message : String(caught))
+        setError(friendlyError(caught))
         setPhase('error')
       })
       .finally(() => {
@@ -220,7 +220,7 @@ export function SetupScreen({
       })
       .catch((caught: unknown) => {
         if (cancelled) return
-        setError(caught instanceof Error ? caught.message : String(caught))
+        setError(friendlyError(caught))
         setPhase('error')
       })
     return () => {

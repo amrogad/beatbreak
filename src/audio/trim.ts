@@ -217,7 +217,9 @@ export function detectEdgeSilenceFromPeaks(peaks: Uint8Array, duration: number):
   if (maxPeak <= 2) return null // the file is silent or unreadable; trimming cannot help
   // Absolute amplitude, not a fraction of the song's loudness: this only catches digital silence
   // / dither-level noise, never a quiet verse, fade-in or spoken intro.
-  const threshold = Math.max(2, Math.round(maxPeak * 0.004))
+  // A quietly recorded file (a voice memo, a live take) gets a lower floor, so its soft intro is
+  // never mistaken for silence: byte 2 is 25% of a file that peaks at byte 8.
+  const threshold = maxPeak >= 100 ? 2 : maxPeak >= 40 ? 1 : 0
   let first = 0
   while (first < peaks.length && peaks[first] <= threshold) first++
   let last = peaks.length - 1

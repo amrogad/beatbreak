@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { removeFromTrim, removedParts, snapTrimRange } from './trim'
 import { analyzeSamples } from './analyze'
 import { renderTestRhythm } from './synth'
-import { analyzeTrimSuggestions, applyTrimSuggestion, autoTrimWindow, normalizeTrimWindow } from './trim'
+import { analyzeTrimSuggestions, applyTrimSuggestion, autoTrimWindow, detectEdgeSilenceFromPeaks, normalizeTrimWindow } from './trim'
 import { toPeakBytes } from '../core/math'
 import type { AnalysisResult, OnsetEvent, Section } from '../core/types'
 
@@ -232,5 +232,16 @@ describe('manual trim', () => {
       { start: 20, end: 30 },
       { start: 100, end: 120 },
     ])
+  })
+})
+
+describe('edge silence on a quiet recording', () => {
+  it('keeps a soft intro in a file that peaks low, and still trims true digital silence', () => {
+    // 10 s in 100 buckets: 1 s of zeros, 2 s of a soft intro at byte 2, then music peaking at 8.
+    const peaks = new Uint8Array(100)
+    for (let i = 10; i < 30; i++) peaks[i] = 2
+    for (let i = 30; i < 100; i++) peaks[i] = 8
+    const edges = detectEdgeSilenceFromPeaks(peaks, 10)
+    expect(edges?.leadingEnd).toBeCloseTo(1, 5)
   })
 })

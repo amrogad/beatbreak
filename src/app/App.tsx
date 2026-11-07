@@ -214,9 +214,10 @@ function AppShell(): React.JSX.Element {
 
   /* --------------------------------------------------------------- actions */
 
-  const startImport = useCallback((file: File) => {
+  const startImport = useCallback((file: File, total = 1) => {
+    if (total > 1) toast(`One song at a time: adding "${file.name}". Add the other ${total - 1} after it.`, 'info')
     setRoute((current) => ({ name: 'setup', file, songId: null, attempt: current.name === 'setup' ? current.attempt + 1 : 0 }))
-  }, [])
+  }, [toast])
 
   const startDemo = useCallback(() => {
     // The demo is already in the library: open it instead of adding another copy.
@@ -245,7 +246,7 @@ function AppShell(): React.JSX.Element {
       if (event.defaultPrevented || !event.dataTransfer?.types.includes('Files')) return
       event.preventDefault()
       const file = event.dataTransfer.files[0]
-      if (route.name === 'home' && file) startImport(file)
+      if (route.name === 'home' && file) startImport(file, event.dataTransfer.files.length)
     }
     window.addEventListener('dragover', onDragOver)
     window.addEventListener('drop', onDrop)

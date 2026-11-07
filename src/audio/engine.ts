@@ -172,7 +172,7 @@ export async function decodeAudioFile(file: File, options: { maxBytes?: number }
     throw new DecodeError(
       'corrupted',
       `Could not decode "${file.name}". The file may be corrupted, DRM-protected, or in a format this browser ` +
-        'cannot decode (WAV, MP3, OGG, M4A/AAC and FLAC usually work).',
+        'cannot decode. MP3, M4A/AAC and WAV work in every browser; OGG and FLAC in most.',
     )
   }
 }

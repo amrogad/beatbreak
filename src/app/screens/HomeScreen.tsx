@@ -15,7 +15,7 @@ export interface HomeScreenProps {
   onRetryLoad: () => void
   bestScores: BestScores
   storageAvailable: boolean
-  onImport: (file: File) => void
+  onImport: (file: File, total?: number) => void
   onPlayDemo: () => void
   onOpenSong: (songId: string) => void
   onDeleteSong: (songId: string) => void
@@ -56,7 +56,7 @@ export function HomeScreen({
 
   const accept = (files: FileList | null): void => {
     const file = files?.[0]
-    if (file) onImport(file)
+    if (file) onImport(file, files?.length ?? 1)
   }
 
   const deleting = confirmDelete ? songs.find((song) => song.id === confirmDelete) ?? null : null

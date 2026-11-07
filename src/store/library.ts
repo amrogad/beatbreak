@@ -2,8 +2,9 @@
  * Library: turning a picked audio file into a stored song with generated charts.
  *
  * This is the only place that assembles a `SongMeta`, so the rules about what is persisted live
- * here: metadata, peaks, the honest analysis summary and the generated charts are saved; the
- * decoded audio buffer only lives in memory (and in IndexedDB solely when the user opted in).
+ * here: metadata, peaks, the honest analysis summary and the generated charts are saved, and a
+ * copy of the picked file is kept in IndexedDB so the song plays offline later. The decoded audio
+ * buffer only lives in memory.
  */
 import type { AnalysisResult, Chart, Difficulty, SongMeta } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
@@ -19,6 +20,9 @@ import { TimingMap } from '../chart/timing'
 import { AnalysisClient } from '../workers/analysisClient'
 import { openDb } from './db'
 import {
+  deleteSong,
+  getSong,
+  updateSong,
   listCharts,
   listSongs,
   loadAnalysis,
@@ -28,6 +32,10 @@ import {
   saveCharts,
   saveSong,
 } from './repository'
+
+/** Below these a file is a clip, not a song: there is nothing to chart. */
+const MIN_ONSETS = 24
+const MIN_AUDIBLE_SECONDS = 10
 
 export interface ImportProgress {
   stage: string
@@ -203,6 +211,11 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     signal: options.signal,
     onProgress: (stage, fraction) => onProgress?.({ stage, fraction }),
   })
+  // A clip, a sound effect or a silent file would give an empty chart with no explanation.
+  const silent = analysis.silentRegions.reduce((sum, region) => sum + Math.max(0, region.end - region.start), 0)
+  if (analysis.onsets.length < MIN_ONSETS || buffer.duration - silent < MIN_AUDIBLE_SECONDS) {
+    throw new Error('This file is too short or too quiet to make a chart from. Pick a song at least 10 seconds long with a beat.')
+  }
   if (options.signal?.aborted) throw new DOMException('Import cancelled', 'AbortError')
 
   onStage?.('Generating charts')
@@ -274,6 +287,9 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
       )
       .filter((chart): chart is Chart => chart !== undefined)
   }
+
+  // Cancel pressed while the charts were being made: nothing is saved.
+  if (options.signal?.aborted) throw new DOMException('Import cancelled', 'AbortError')
 
   // The song row goes last, so a failure part way never leaves a song in the library that has no
   // analysis or charts. A full disk only costs the stored copy of the audio, not the song.
@@ -431,11 +447,22 @@ async function loadSongBundleNow(songId: string, options: { requireAudio?: boole
   // (hold lengths, for one). The regeneration below then rebuilds their unedited charts.
   let reanalysed = false
   if (analysis && buffer && analysis.version !== ANALYSIS_VERSION) {
-    analysis = await reanalyze(songId, buffer)
-    reanalysed = true
-    const nextMeta: SongMeta = { ...meta, analysis: summarizeAnalysis(analysis) }
-    await saveSong(nextMeta)
-    meta = nextMeta
+    try {
+      const fresh = await reanalyze(songId, buffer)
+      // Written as a patch on the row as it is now: the player may have renamed or deleted the
+      // song while this ran.
+      const updated = await updateSong(songId, { analysis: summarizeAnalysis(fresh) })
+      if (!updated) {
+        await deleteSong(songId)
+        return null
+      }
+      analysis = fresh
+      meta = updated
+      reanalysed = true
+    } catch (error) {
+      // The old analysis still plays: a failed update must never lock the song out.
+      console.warn('[beatbreak] re-analysis failed, keeping the old one', error)
+    }
   }
   if (analysis) {
     // A saved trim is never re-run here: it may be the player's own (the trim tool on the song
@@ -458,6 +485,7 @@ async function loadSongBundleNow(songId: string, options: { requireAudio?: boole
         edit: planForMeta(meta),
         options: { salt: meta.chartVariant ?? 0 },
       })
+      if (!(await getSong(songId))) return null
       await saveCharts(regenerated)
       const byDifficulty = new Map(regenerated.map((chart) => [chart.difficulty, chart]))
       charts = charts.map((chart) => byDifficulty.get(chart.difficulty) ?? chart)
