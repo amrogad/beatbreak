@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartNote, Difficulty, Lane } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
-import { FIELD_H, FIELD_W, approachForSpeed, circleRhythm, placeCircles, sliderBall, sliderExit } from './circles'
+import { FIELD_H, FIELD_W, approachForSpeed, circleRhythm, circleWindows, placeCircles, sliderBall, sliderExit } from './circles'
 
 // 120 BPM: one beat = 0.5 s.
 const timing = { offset: 0, bpms: [{ beat: 0, bpm: 120 }] }
@@ -176,5 +176,12 @@ describe('approach speed', () => {
     expect(approachForSpeed(1200, 2.5)).toBe(2400)
     expect(approachForSpeed(1200, 10)).toBe(350)
     expect(approachForSpeed(1200, 1)).toBe(2400)
+  })
+})
+
+describe('osu! hit windows', () => {
+  it('uses the osu! formulas for each difficulty', () => {
+    expect(circleWindows('hard')).toEqual({ marvelous: 38, perfect: 38, great: 84, good: 130, missAfter: 130 })
+    expect(circleWindows('easy').good).toBe(170)
   })
 })

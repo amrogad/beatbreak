@@ -8,7 +8,7 @@
  *  - turns between moves follow each level's spread of straight, wide and sharp angles;
  *  - repeated bars get the same shape again, mirrored on every other repeat.
  */
-import type { Chart, ChartNote, Difficulty } from '../core/types'
+import type { Chart, ChartNote, Difficulty, JudgmentWindows } from '../core/types'
 import { createRng, hashString, type Rng } from '../core/rng'
 import { TimingMap } from './timing'
 
@@ -90,6 +90,21 @@ const PROFILES: Record<Difficulty, Profile> = {
   normal: { cs: 3.6, ar: 5, spacing: [[0.25, 36], [0.5, 64], [1, 112], [2, 145]], jumpChance: 0, jumpScale: 1, turns: [0.46, 0.4, 0.14], sliderPxPerBeat: 120, minSliderBeats: 0.5, clearBeats: 1, sliderGapBeats: 0.5, pairBeats: [0.5, 1], pairChance: 0.5, spread: 0.3 },
   hard: { cs: 4, ar: 7, spacing: [[0.25, 30], [0.5, 72], [1, 136], [2, 175]], jumpChance: 0.15, jumpScale: 1.8, turns: [0.5, 0.42, 0.08], sliderPxPerBeat: 140, minSliderBeats: 0.25, clearBeats: 0.5, sliderGapBeats: 0.25, pairBeats: [0.25, 0.5], pairChance: 0.25, spread: 0.4 },
   expert: { cs: 4.2, ar: 8.5, spacing: [[0.25, 40], [0.5, 128], [1, 150], [2, 195]], jumpChance: 0.32, jumpScale: 1.6, turns: [0.3, 0.42, 0.28], sliderPxPerBeat: 180, minSliderBeats: 0.25, clearBeats: 0.25, sliderGapBeats: 0.25, pairBeats: [0.25, 0.5], pairChance: 0.55, spread: 0.45 },
+}
+
+/** Each difficulty's osu! overall difficulty, which sets the hit windows. */
+const CIRCLE_OD: Record<Difficulty, number> = { easy: 3, normal: 5, hard: 7, expert: 8 }
+
+/**
+ * osu!standard's own hit windows for the difficulty: 300 = 80 - 6 OD, 100 = 140 - 8 OD,
+ * 50 = 200 - 10 OD ms. A 300 counts as Marvelous, a 100 as Great and a 50 as Good, so players
+ * coming from osu! feel no difference (Amro, 2026-11-07).
+ */
+export function circleWindows(difficulty: Difficulty): JudgmentWindows {
+  const od = CIRCLE_OD[difficulty] ?? 5
+  const great300 = 80 - 6 * od
+  const good = 200 - 10 * od
+  return { marvelous: great300, perfect: great300, great: 140 - 8 * od, good, missAfter: good }
 }
 
 export function circleRadius(cs: number): number {

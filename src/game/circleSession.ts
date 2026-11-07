@@ -35,9 +35,9 @@ export interface CircleSessionOptions {
 export const SLIDER_GRACE_MS = 120
 /** Letting go this close to a slider's end still completes it. */
 export const SLIDER_END_LENIENCY_MS = 80
-/** A press on a circle earlier than its Good window but within this many ms misses it. */
+/** A press on a circle earlier than its Good window but within this many ms misses it, as in osu!. */
 export function earlyMissMs(goodMs: number): number {
-  return Math.max(250, goodMs * 2.5)
+  return Math.max(400, goodMs)
 }
 
 /** A press counts this far outside the circle's edge, in field units (fast mouse flicks). */

@@ -17,7 +17,7 @@ import { buildEditPlan, isCut, planForMeta, toPlaybackPlan } from '../../core/ed
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
 import { CircleSession, HIT_SLACK, TOUCH_HIT_SLACK } from '../../game/circleSession'
-import { approachForSpeed, placeCircles } from '../../chart/circles'
+import { approachForSpeed, circleWindows, placeCircles } from '../../chart/circles'
 import { compensateInputLatency, windowsForDifficulty } from '../../game/judgment'
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
@@ -171,8 +171,8 @@ export function GameScreen({
   // here would rebuild the whole run (the volume slider in the pause menu used to do that).
   const customWindowsKey = JSON.stringify(settings.customWindows)
   const windows = useMemo(
-    // Circles ask for aim as well as timing, so they get the wider phone windows everywhere.
-    () => windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows, settings.timing === 'phone' || circleMode),
+    // Circles use osu!'s own windows; arrows use the chosen preset.
+    () => (circleMode ? circleWindows(chart.difficulty) : windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows, settings.timing === 'phone')),
     [settings.windowPreset, customWindowsKey, chart.difficulty, settings.timing, circleMode],
   )
 

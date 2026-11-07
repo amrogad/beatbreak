@@ -54,7 +54,7 @@ describe('circle session', () => {
   it('tells apart presses that were too early, off the circle, or with nothing due', () => {
     const ignored: string[] = []
     const session = new CircleSession({ chart, map, windows: DEFAULT_WINDOWS, onIgnoredPress: (reason) => ignored.push(reason) })
-    expect(session.press(100, 100, 600)).toBeNull()
+    expect(session.press(100, 100, 500)).toBeNull()
     expect(session.press(250, 250, 1000)).toBeNull()
     expect(session.press(100, 100, -500)).toBeNull()
     expect(session.press(100, 100, 1000)?.judgment).toBe('marvelous')
@@ -64,7 +64,7 @@ describe('circle session', () => {
 
   it('misses a circle clicked too early but close to its time, and only shakes one clicked much earlier', () => {
     const { session, events } = run(map, chart)
-    expect(session.press(100, 100, 600)).toBeNull()
+    expect(session.press(100, 100, 500)).toBeNull()
     expect(events).toHaveLength(0)
     session.press(100, 100, 800)
     expect(events.map((e) => [e.noteId, e.judgment])).toEqual([['a', 'miss']])

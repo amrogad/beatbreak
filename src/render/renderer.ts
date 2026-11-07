@@ -194,6 +194,18 @@ export function scrollPixelsPerSecond(speed: number, travelDistance: number): nu
   return reference * (travelDistance / referenceDistance)
 }
 
+/**
+ * Arrows scroll in arrow heights per second, the way StepMania sizes them against the screen: at
+ * speed 5 an arrow moves 7.5 of its own heights a second, so a Great lands within about two thirds
+ * of an arrow and a Good within one, on any screen (Amro, 2026-11-07).
+ */
+export function arrowPixelsPerSecond(speed: number, noteH: number): number {
+  const clamped = Math.max(1, Math.min(10, speed))
+  return noteH * ARROW_HEIGHTS_PER_SEC * ((140 + clamped * 138) / (140 + 5 * 138))
+}
+
+const ARROW_HEIGHTS_PER_SEC = 7.5
+
 /** Arcade marquee face for big numbers and judgments; a condensed sans for small labels. */
 const DISPLAY = 'Bungee, "Segoe UI", Arial, sans-serif'
 const FONT = 'Barlow, "Segoe UI", Arial, sans-serif'
@@ -577,7 +589,7 @@ export class PlayfieldRenderer {
         : Math.max(96, Math.min(this.height * 0.16, 150), 64 + noteH / 2)
     const receptorY = direction === 1 ? inset : this.height - inset
     const travelDistance = direction === 1 ? this.height - receptorY : receptorY
-    const pxPerSec = scrollPixelsPerSecond(this.settings.scrollSpeed, travelDistance)
+    const pxPerSec = tiles || this.preview ? scrollPixelsPerSecond(this.settings.scrollSpeed, travelDistance) : arrowPixelsPerSecond(this.settings.scrollSpeed, noteH)
     const layout: PlayfieldLayout = {
       laneW,
       laneX: [0, 1, 2, 3].map((i) => laneAreaX + i * laneW),
