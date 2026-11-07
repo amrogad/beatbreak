@@ -425,7 +425,20 @@ export function GameScreen({
 
     // Rectangles: a tap counts for as long as the rectangle overlaps its target.
     const catchMs = circleMap ? 0 : renderer.tileCatchMs()
-    const runWindows = catchMs > windows.good ? { ...windows, good: catchMs, missAfter: Math.max(windows.missAfter, catchMs) } : windows
+    const caught = catchMs > windows.good ? { ...windows, good: catchMs, missAfter: Math.max(windows.missAfter, catchMs) } : windows
+    // Arrows count only while they touch the target: at a fast scroll the Good window would
+    // otherwise reach arrows still a note's height away.
+    const overlap = circleMap ? Infinity : renderer.overlapMs()
+    const runWindows =
+      overlap < caught.good
+        ? {
+            marvelous: Math.min(caught.marvelous, overlap),
+            perfect: Math.min(caught.perfect, overlap),
+            great: Math.min(caught.great, overlap),
+            good: overlap,
+            missAfter: Math.min(caught.missAfter, overlap),
+          }
+        : caught
     const session: GameSession | CircleSession = circleMap
       ? new CircleSession({
           chart: sourceChart,
