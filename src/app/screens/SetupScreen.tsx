@@ -747,6 +747,8 @@ export function SetupScreen({
             format={formatSync}
             hint={SYNC_HINT}
           />
+        </div>
+        <div className="mt-20">
           <Slider
             label={meta.scrollSpeed === undefined ? 'Arrow speed' : 'Arrow speed (this song)'}
             value={meta.scrollSpeed ?? settings.scrollSpeed}
