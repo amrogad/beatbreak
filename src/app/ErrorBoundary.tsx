@@ -22,7 +22,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     // Keep the details in the console for a bug report; the UI stays calm and actionable.
-    console.error('[pulsegrid] unhandled render error', error, info.componentStack)
+    console.error('[beatbreak] unhandled render error', error, info.componentStack)
   }
 
   private reload = (): void => {

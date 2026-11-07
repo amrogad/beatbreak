@@ -25,7 +25,7 @@ export function registerServiceWorker(options: { onUpdateReady?: () => void } = 
         })
       })
       .catch((error) => {
-        console.warn('[pulsegrid] service worker registration failed:', error)
+        console.warn('[beatbreak] service worker registration failed:', error)
       })
   })
 }

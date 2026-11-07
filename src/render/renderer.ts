@@ -15,7 +15,6 @@
  */
 import type { Chart, ChartNote, HitEvent, Judgment, Lane } from '../core/types'
 import { JUDGMENTS } from '../core/types'
-import { TimingMap } from '../chart/timing'
 import { JUDGMENT_LABEL } from '../game/judgment'
 import type { GameSession } from '../game/session'
 import { CircleSession } from '../game/circleSession'
@@ -197,7 +196,7 @@ export function scrollPixelsPerSecond(speed: number, travelDistance: number): nu
 /**
  * Arrows scroll in arrow heights per second, the way StepMania sizes them against the screen: at
  * speed 5 an arrow moves 7.5 of its own heights a second, so a Great lands within about two thirds
- * of an arrow and a Good within one, on any screen (Amro, 2026-11-07).
+ * of an arrow and a Good within one, on any screen.
  */
 export function arrowPixelsPerSecond(speed: number, noteH: number): number {
   const clamped = Math.max(1, Math.min(10, speed))
@@ -218,7 +217,6 @@ export class PlayfieldRenderer {
   private ctx: CanvasRenderingContext2D
   private settings: RenderSettings
   private particles = new ParticleSystem()
-  private timing = TimingMap.single(120, 0)
   private columnColors = [...COLUMN_COLORS]
   /** The two side rails take two of the column colours, picked fresh for every song. */
   private railColors = [COLUMN_COLORS[0], COLUMN_COLORS[3]]
@@ -317,7 +315,7 @@ export class PlayfieldRenderer {
     this.plan = plan
   }
 
-  setChart(durationSeconds: number, chart?: Pick<Chart, 'notes' | 'timing'>): void {
+  setChart(durationSeconds: number, chart?: Pick<Chart, 'notes'>): void {
     void durationSeconds
     this.particles.clear()
     this.flash = null
@@ -333,7 +331,6 @@ export class PlayfieldRenderer {
     this.railColors = [this.columnColors[order[0]], this.columnColors[order[1]]]
     this.spritesWarm = false
     if (!chart) return
-    this.timing = new TimingMap(chart.timing)
     for (const note of chart.notes) {
       this.notesById.set(note.id, note)
     }
@@ -479,7 +476,7 @@ export class PlayfieldRenderer {
     }
     this.flash = { judgment, lane, deltaMs: event.deltaMs, ageMs: 0, ...(event.holdDrop ? { holdDrop: true } : {}) }
     if (judgment === 'miss') {
-      // A miss turns red and fades out where it happened instead of scrolling away (Amro's pick).
+      // A miss turns red and fades out where it happened instead of scrolling away.
       const note = this.notesById.get(event.noteId.replace(/#tail$/, ''))
       if (note) {
         const headTime = event.noteId.endsWith('#tail') ? Math.max(note.time, event.time) : note.time
@@ -688,8 +685,6 @@ export class PlayfieldRenderer {
 
     if (!this.spritesWarm && !this.circleField) this.warmSprites()
     const songSeconds = songTimeMs / 1000
-    const beat = this.timing.timeToBeat(songSeconds)
-    const beatFrac = beat - Math.floor(beat)
 
     this.drawBackground(songSeconds)
     if (this.circleField && session instanceof CircleSession) {
@@ -998,7 +993,7 @@ export class PlayfieldRenderer {
 
   /**
    * A rectangle's height, in the half-note units its shape uses: every one is twice as tall as it
-   * is wide (Amro, 2026-11-05). Close ones in a column overlap, later on top, so each front edge
+   * is wide. Close ones in a column overlap, later on top, so each front edge
    * stays in view.
    */
   private tileHyFor(note: ChartNote): number {

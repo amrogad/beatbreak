@@ -10,11 +10,11 @@
  * Boundary rule: a delta exactly on a window edge counts as the *tighter* tier (<=, not <), and
  * tests assert this explicitly so gameplay and scoring can never disagree.
  */
-import type { Difficulty, Judgment, JudgmentWindows } from '../core/types'
+import type { Judgment, JudgmentWindows } from '../core/types'
 
 /**
- * The default windows, well inside StepMania's (Good ends at 80 ms instead of 135 ms). Amro,
- * 2026-11-05: early presses counting made the game too easy; at 100 ms it still was.
+ * The default windows, well inside StepMania's (Good ends at 80 ms instead of 135 ms):
+ * with wider windows early presses counted and the game played too easy.
  */
 export const DEFAULT_WINDOWS: JudgmentWindows = {
   marvelous: 15,
@@ -65,14 +65,13 @@ export function normalizeCustomWindows(custom: Partial<CustomWindows> | undefine
  */
 /**
  * Touch screens get windows this much wider than the preset, since tapping glass is harder than
- * pressing keys (Amro, 2026-11-05: easier on phones is the principle). 1.5x puts the standard
+ * pressing keys. 1.5x puts the standard
  * preset at roughly StepMania's own windows.
  */
 export const TOUCH_WINDOW_SCALE = 1.5
 
-export function windowsForDifficulty(
+export function judgmentWindows(
   preset: WindowPreset,
-  difficulty: Difficulty,
   custom?: Partial<CustomWindows>,
   touch = false,
 ): JudgmentWindows {
@@ -81,7 +80,6 @@ export function windowsForDifficulty(
     return { ...normalized, missAfter: normalized.good }
   }
   const base = WINDOW_PRESETS[preset]
-  // Every difficulty uses the same windows, as in StepMania (Amro, 2026-11-07).
   const scale = touch ? TOUCH_WINDOW_SCALE : 1
   if (scale === 1) return { ...base }
   return {

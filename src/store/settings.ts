@@ -262,7 +262,7 @@ export function sanitizeSettings(input: unknown): Settings {
  * Phones and tablets start the other way up: piano tiles falling to targets at the bottom, where
  * thumbs are. Only for a first visit; a saved choice always wins.
  */
-/** Phones start slower: the default felt too fast on a phone (Amro, 2026-11-07). */
+/** Phones start slower: the default felt too fast on a phone. */
 const PHONE_SCROLL_SPEED = 4
 
 function touchDefaults(): Partial<Settings> {
@@ -299,18 +299,18 @@ export function loadSettings(): Settings {
       if ((parsed.schema ?? 1) < 9 && parsed.windowPreset === 'stepmania') parsed.windowPreset = 'standard'
       // v10: the windows tightened again; every preset except a hand-set one moves to the default.
       if ((parsed.schema ?? 1) < 10 && parsed.windowPreset !== 'custom') parsed.windowPreset = 'standard'
-      // v19: phones keep long arrows and start a little slower (Amro, 2026-11-07).
+      // v19: phones keep long arrows and start a little slower.
       if ((parsed.schema ?? 1) < 19 && touchDefaults().timing) {
         parsed.longArrows = true
         if (parsed.scrollSpeed === undefined || parsed.scrollSpeed === DEFAULT_SETTINGS.scrollSpeed) parsed.scrollSpeed = PHONE_SCROLL_SPEED
       }
-      // v18: StepMania's windows are the default (Amro, 2026-11-07).
+      // v18: StepMania's windows are the default.
       if ((parsed.schema ?? 1) < 18 && parsed.windowPreset === 'standard') parsed.windowPreset = 'stepmania'
       // v11: arrow size is shown relative to the default (100%) instead of a raw 130%.
       if ((parsed.schema ?? 1) < 11 && typeof parsed.noteScale === 'number') parsed.noteScale = parsed.noteScale / 1.3
       // The old default of -20 ms was the display allowance; it now lives in arrowOffsetMs.
       if ((parsed.schema ?? 1) < 17 && typeof parsed.audioOffsetMs === 'number') parsed.audioOffsetMs -= DISPLAY_LEAD_MS
-      // v15: phones start with effects off, for a smoother game (Amro, 2026-11-06).
+      // v15: phones start with effects off, for a smoother game.
       if ((parsed.schema ?? 1) < 15 && touchDefaults().reducedMotion) parsed.reducedMotion = true
       // v14: phones and tablets start on the wider phone timing.
       if ((parsed.schema ?? 1) < 14 && touchDefaults().timing) parsed.timing = 'phone'

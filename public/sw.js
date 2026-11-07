@@ -3,7 +3,7 @@
  *
  * Offline strategy:
  *  - On install the full build output (JS/CSS/icons/manifest) is precached. The manifest is
- *    injected at build time by the `pulsegrid-sw-precache` Vite plugin, so hashed asset names
+ *    injected at build time by the `sw-precache` Vite plugin, so hashed asset names
  *    are always in sync with the bundle.
  *  - Navigations: network first, but a fetch that has not answered in NAV_TIMEOUT_MS gets the
  *    cached shell (a weak signal hangs instead of failing). The fetch still refreshes the cache.
@@ -54,7 +54,7 @@ self.addEventListener('install', (event) => {
           try {
             await cache.add(new Request(scoped(entry.url), { cache: 'reload' }))
           } catch (err) {
-            console.warn('[pulsegrid/sw] precache miss', entry.url, err)
+            console.warn('[beatbreak/sw] precache miss', entry.url, err)
             if (/\.(js|css|html)$/.test(entry.url)) missing.push(entry.url)
           }
         }),

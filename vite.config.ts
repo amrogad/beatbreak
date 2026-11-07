@@ -8,7 +8,7 @@ import react from '@vitejs/plugin-react'
  */
 function serviceWorkerPrecache(): import('vite').Plugin {
   return {
-    name: 'pulsegrid-sw-precache',
+    name: 'sw-precache',
     apply: 'build',
     async closeBundle() {
       // Node builtins resolved lazily so tsconfig never needs @types/node.
@@ -54,8 +54,7 @@ function serviceWorkerPrecache(): import('vite').Plugin {
       // service worker silently fell back to "no precache" while still looking installed.
       sw = sw.replace('"__PRECACHE_MANIFEST__"', JSON.stringify(JSON.stringify(manifest)))
       fs.writeFileSync(swPath, sw)
-      // eslint-disable-next-line no-console
-      console.log(`[pulsegrid] service worker precache: ${manifest.length} entries`)
+      console.log(`[beatbreak] service worker precache: ${manifest.length} entries`)
     },
   }
 }
@@ -102,7 +101,7 @@ function playLog(): import('vite').Plugin {
     })
   }
   return {
-    name: 'pulsegrid-play-log',
+    name: 'play-log',
     configureServer: (server) => void server.middlewares.use(handler),
     configurePreviewServer: (server) => void server.middlewares.use(handler),
   }

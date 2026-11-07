@@ -1,6 +1,6 @@
 /** About: what the game is, where the music goes, and how to report a problem. */
 import React from 'react'
-import { BackButton, Button, Panel } from '../components'
+import { BackButton, Panel } from '../components'
 
 export interface AboutScreenProps {
   onBack: () => void

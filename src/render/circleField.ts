@@ -218,7 +218,7 @@ export class CircleField {
       const uy = (to.y - from.y) / dist
       // Flight time is the gap between the two objects, eased out so it settles onto the target.
       const travel = Math.max(0, Math.min(1, (songTimeMs - a.endTime * 1000) / Math.max(1, (b.time - a.endTime) * 1000)))
-      // Nothing waits on screen: the comet only exists while it flies (Amro: a waiting one confused).
+      // Nothing waits on screen: the comet only exists while it flies; one waiting on screen was confusing.
       if (travel <= 0) continue
       const ease = 1 - (1 - travel) * (1 - travel)
       const startD = r * 1.15

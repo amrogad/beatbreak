@@ -51,7 +51,7 @@ describe('InputRouter edge cases', () => {
     const doc = new EventTarget()
     Object.assign(globalThis, { window: win, document: doc })
     const log: string[] = []
-    const router = new InputRouter(win as unknown as Window, {
+    const router = new InputRouter({
       onLaneDown: (lane) => log.push(`down ${lane}`),
       onLaneUp: (lane) => log.push(`up ${lane}`),
       onRestart: () => log.push('restart'),

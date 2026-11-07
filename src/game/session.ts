@@ -52,7 +52,7 @@ export interface TapResult {
  * The release is judged on windows 1.5x the press windows (osu!mania's ScoreV2 rule): letting go
  * on the tail arrow is the skill, and a hand needs a little more room to lift than to strike.
  * Letting go before the release window is a LetGo (a miss) on the spot — there is no grabbing a
- * hold again (Amro, 2026-11-05: "if u let go, u missed it"). Holding past the window is a miss too.
+ * hold again. Holding past the window is a miss too.
  */
 export const HOLD_RELEASE_SCALE = 1.5
 

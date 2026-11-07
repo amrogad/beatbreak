@@ -7,7 +7,7 @@
  * "Whole song"; a new arrow variation is an explicit opt-in.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Chart, Difficulty } from '../../core/types'
+import type { Difficulty } from '../../core/types'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
 import type { SongBundle } from '../../store/library'
 import {
@@ -117,7 +117,7 @@ export function SetupScreen({
     bundleReadyRef.current = onBundleReady
   }, [onBundleReady])
 
-  const charts = bundle?.charts ?? []
+  const charts = useMemo(() => bundle?.charts ?? [], [bundle?.charts])
   const circleMode = settings.playMode === 'circles'
   const things = circleMode ? 'circles' : 'arrows'
   // Circle counts come from the real placement: chords become one circle, some pairs one slider.
@@ -130,7 +130,6 @@ export function SetupScreen({
     }
     return counts
   }, [circleMode, bundle?.charts])
-  const duration = bundle?.meta.duration ?? 0
   const analysis = bundle?.analysis ?? null
 
   const adopt = useCallback((next: SongBundle) => {
@@ -190,6 +189,8 @@ export function SetupScreen({
       client.dispose()
       analysisClientRef.current = null
     }
+    // onToast is left out on purpose: a new toast callback must not restart the analysis.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, adopt, onBack])
 
   /* ----------------------------------------------------------- open from library */
@@ -398,7 +399,7 @@ export function SetupScreen({
     } finally {
       setVariationBusy(false)
     }
-  }, [adopt, analysis, bundle, onToast, variationBusy])
+  }, [adopt, analysis, bundle, onToast, things, variationBusy])
 
   /* ------------------------------------------------------------------- audio */
 

@@ -308,15 +308,6 @@ function percentile(values: Float32Array, p: number): number {
   return sorted[index]
 }
 
-function frameMean(envelope: Float32Array, rate: number, start: number, end: number): number {
-  const i0 = clamp(Math.floor(start * rate), 0, envelope.length)
-  const i1 = clamp(Math.ceil(end * rate), i0, envelope.length)
-  if (i1 <= i0) return 0
-  let sum = 0
-  for (let i = i0; i < i1; i++) sum += envelope[i]
-  return sum / (i1 - i0)
-}
-
 /**
  * Whether frame `i` is a hit that ends the quiet run.
  *

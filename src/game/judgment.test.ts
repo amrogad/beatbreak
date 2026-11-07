@@ -11,7 +11,7 @@ import {
   judge,
   normalizeCustomWindows,
   timingLabel,
-  windowsForDifficulty,
+  judgmentWindows,
 } from './judgment'
 import { JUDGMENTS } from '../core/types'
 
@@ -80,25 +80,22 @@ describe('window presets and difficulty scaling', () => {
     }
   })
 
-  it('uses the same windows on every difficulty', () => {
-    for (const difficulty of ['easy', 'normal', 'hard', 'expert'] as const) {
-      expect(windowsForDifficulty('stepmania', difficulty)).toEqual(WINDOW_PRESETS.stepmania)
-      expect(windowsForDifficulty('standard', difficulty)).toEqual(DEFAULT_WINDOWS)
-    }
+  it('returns the preset windows unchanged on keyboards', () => {
+    expect(judgmentWindows('stepmania')).toEqual(WINDOW_PRESETS.stepmania)
+    expect(judgmentWindows('standard')).toEqual(DEFAULT_WINDOWS)
   })
 
   it('ships StepMania’s own windows (W1–W4) as a preset', () => {
     // Values straight from StepMania's Player.cpp (`TimingWindowSecondsInit`, dance mode).
     expect(WINDOW_PRESETS.stepmania).toEqual({ marvelous: 22.5, perfect: 45, great: 90, good: 135, missAfter: 135 })
-    expect(windowsForDifficulty('stepmania', 'hard')).toEqual(WINDOW_PRESETS.stepmania)
+    expect(judgmentWindows('stepmania')).toEqual(WINDOW_PRESETS.stepmania)
   })
 })
 
 describe('custom windows', () => {
-  it('uses hand-set windows exactly, at every difficulty', () => {
+  it('uses hand-set windows exactly', () => {
     const custom = { marvelous: 12, perfect: 30, great: 60, good: 100 }
-    expect(windowsForDifficulty('custom', 'expert', custom)).toEqual({ ...custom, missAfter: 100 })
-    expect(windowsForDifficulty('custom', 'easy', custom)).toEqual({ ...custom, missAfter: 100 })
+    expect(judgmentWindows('custom', custom)).toEqual({ ...custom, missAfter: 100 })
   })
 
   it('orders and clamps hand-set windows', () => {
@@ -155,8 +152,8 @@ describe('compensateInputLatency', () => {
 
 describe('touch windows', () => {
   it('widens every window by the touch scale on touch screens', () => {
-    const keys = windowsForDifficulty('standard', 'normal')
-    const touch = windowsForDifficulty('standard', 'normal', undefined, true)
+    const keys = judgmentWindows('standard')
+    const touch = judgmentWindows('standard', undefined, true)
     expect(touch.good).toBe(Math.round(keys.good * TOUCH_WINDOW_SCALE))
     expect(touch.marvelous).toBe(Math.round(keys.marvelous * TOUCH_WINDOW_SCALE))
     expect(touch.missAfter).toBe(touch.good)

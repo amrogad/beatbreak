@@ -72,7 +72,7 @@ export function applyChartRules(
   return notes.sort((a, b) => a.time - b.time || a.lane - b.lane)
 }
 
-/** No more arrows than this in any one second, on any level (Amro, 2026-11-07). */
+/** No more arrows than this in any one second, on any level. */
 export const MAX_NOTES_PER_SECOND = 12
 
 /**

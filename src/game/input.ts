@@ -138,19 +138,17 @@ export interface InputRouterOptions {
 }
 
 /**
- * Attaches listeners to a target element and translates key events into lane presses.
+ * Listens for key events on the window and translates them into lane presses.
  * Every listener it adds is removed by `dispose()`.
  */
 export class InputRouter {
-  private target: Window | HTMLElement
   private options: InputRouterOptions
   private handlers: InputHandlers
   /** Tracks which physical key currently holds a lane down, so auto-repeat is filtered out. */
   private held = new Set<string>()
   private disposed = false
 
-  constructor(target: Window | HTMLElement, handlers: InputHandlers, options: InputRouterOptions) {
-    this.target = target
+  constructor(handlers: InputHandlers, options: InputRouterOptions) {
     this.handlers = handlers
     this.options = options
     window.addEventListener('keydown', this.onKeyDown, { capture: true })

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { Chart, ChartNote, Lane } from '../core/types'
 import { GameSession } from '../game/session'
-import { windowsForDifficulty } from '../game/judgment'
+import { judgmentWindows } from '../game/judgment'
 import { PlayfieldRenderer } from '../render/renderer'
 import { settingsStore } from '../store/settings'
 
@@ -41,7 +41,7 @@ export function PlayfieldPreview(): React.JSX.Element {
 
     const session = new GameSession({
       chart,
-      windows: windowsForDifficulty('standard', 'normal'),
+      windows: judgmentWindows('standard'),
       holdMode: 'hold',
       onJudgment: (event) => renderer.notify(event, session.scoreState.combo),
       onHoldComplete: (lane) => renderer.holdComplete(lane),

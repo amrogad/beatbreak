@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { GameSession, checkFail } from './session'
+import { GameSession } from './session'
 import { DEFAULT_WINDOWS } from './judgment'
 import type { Chart, ChartNote, HitEvent, Lane, ScoreState } from '../core/types'
 

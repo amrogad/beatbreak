@@ -9,7 +9,7 @@
  * chart cannot be represented as a valid StepMania file, the editor says so instead of writing one.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Chart, ChartNote, Difficulty, Lane } from '../../core/types'
+import type { Chart, ChartNote, Lane } from '../../core/types'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL, LANE_INFO } from '../../core/types'
 import { CIRCLE_RHYTHM } from '../../chart/circles'
 import { AudioEngine, getAudioContext, resumeAudioContext } from '../../audio/engine'
@@ -511,6 +511,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     return () => cancelAnimationFrame(raf)
   }, [bundle?.meta.analysis.silentRegions, camera, chart, duration, plan, playhead, selection, sizeTick, timing, xFromTime])
 
+  // The canvas only exists once a chart is loaded.
+  const hasChart = chart !== null
+
   // A resize or a phone rotation stretches the old bitmap: draw again at the new size.
   useEffect(() => {
     const canvas = canvasRef.current
@@ -518,7 +521,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     const observer = new ResizeObserver(() => setSizeTick((tick) => tick + 1))
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [chart !== null])
+  }, [hasChart])
 
   /* -------------------------------------------------------------- shortcuts */
 
@@ -603,7 +606,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
-  }, [chart !== null])
+  }, [hasChart])
 
   const save = useCallback(async () => {
     if (!chart) return

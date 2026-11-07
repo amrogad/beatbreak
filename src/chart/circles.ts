@@ -2,7 +2,7 @@
  * Circle mode placement: turns a chart's timed arrows into circles and sliders on a 512x384 field.
  *
  * The rhythm is the arrow chart's, untouched: same times, same holds. Only the positions are new.
- * The numbers come from human-made maps of the same songs (pulsegrid-testdata, osustd.mjs):
+ * The numbers come from human-made osu! maps of the same songs:
  *  - distance grows with the time gap, and flattens out past one beat;
  *  - harder levels jump on strong beats, easier ones never do;
  *  - turns between moves follow each level's spread of straight, wide and sharp angles;
@@ -98,7 +98,7 @@ const CIRCLE_OD: Record<Difficulty, number> = { easy: 3, normal: 5, hard: 7, exp
 /**
  * osu!standard's own hit windows for the difficulty: 300 = 80 - 6 OD, 100 = 140 - 8 OD,
  * 50 = 200 - 10 OD ms. A 300 counts as Marvelous, a 100 as Great and a 50 as Good, so players
- * coming from osu! feel no difference (Amro, 2026-11-07).
+ * coming from osu! feel no difference.
  */
 export function circleWindows(difficulty: Difficulty): JudgmentWindows {
   const od = CIRCLE_OD[difficulty] ?? 5
@@ -117,7 +117,7 @@ export function preemptForAr(ar: number): number {
 
 /**
  * The approach time at a speed setting (1-10, 5 = the difficulty's own). Each step of 2.5 halves or
- * doubles it, like moving osu!'s approach rate (Amro, 2026-11-07: the speed slider drives circles too).
+ * doubles it, like moving osu!'s approach rate.
  */
 export function approachForSpeed(preemptMs: number, speed: number): number {
   return Math.round(Math.max(350, Math.min(2400, preemptMs * 2 ** ((5 - speed) / 2.5))))
@@ -330,7 +330,7 @@ const EASY_MIN_GAP_SEC = 0.45
 const MAX_SPEED: Record<Difficulty, number> = { easy: 450, normal: 600, hard: 800, expert: 1100 }
 /**
  * Slider ball speed and shortest slider, in seconds rather than beats: on a fast song (or one read
- * at double tempo) a slider sized in beats sent the ball flying (Amro, Blue - All Rise at 196 BPM).
+ * at double tempo) a slider sized in beats sent the ball flying.
  */
 const MAX_SLIDER_SPEED: Record<Difficulty, number> = { easy: 170, normal: 230, hard: 300, expert: 400 }
 const MIN_SLIDER_SEC: Record<Difficulty, number> = { easy: 0.45, normal: 0.35, hard: 0.25, expert: 0.2 }

@@ -16,7 +16,7 @@ import { loadSongBundle } from '../store/library'
 import { attachUiSounds, configureSfx } from '../audio/sfx'
 import { listRuns, deleteSong as deleteSongRecord, saveRun, updateSong } from '../store/repository'
 import type { StoredRun } from '../store/db'
-import { bestRunFor, listCharts } from '../store/repository'
+import { bestRunFor } from '../store/repository'
 import { settingsStore } from '../store/settings'
 import type { Settings } from '../store/settings'
 import { BACK_EVENT, editorUnsaved, runtime } from './runtime'
@@ -36,7 +36,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { Tutorial } from './Tutorial'
 import { listSongs } from '../store/repository'
 import { DB_OUTDATED_EVENT, isIndexedDbAvailable } from '../store/db'
-import { UPDATE_READY_EVENT } from '../pwa/register'
+import { UPDATE_READY_EVENT } from './serviceWorker'
 
 type Route =
   | { name: 'home' }
@@ -123,7 +123,7 @@ function AppShell(): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [toast, settings.playMode, rulesKey])
+  }, [settings.playMode, rulesKey])
 
   useEffect(() => {
     void refreshLibrary()

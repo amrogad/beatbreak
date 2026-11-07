@@ -537,10 +537,10 @@ export function measureGridCoverage(
 export function chooseBeatMarker(onsets: OnsetEvent[], periodSeconds: number, phase: number): number {
   if (onsets.length === 0 || periodSeconds <= 0) return phase
   const sixteenth = periodSeconds / 4
-  const score = (candidate: number, step: number, sigma: number, use: (o: OnsetEvent) => number): number => {
+  const score = (candidate: number, step: number, sigma: number, weightOf: (o: OnsetEvent) => number): number => {
     let total = 0
     for (const onset of onsets) {
-      const weight = use(onset)
+      const weight = weightOf(onset)
       if (weight <= 0) continue
       const relative = onset.time - candidate
       const distance = relative - Math.round(relative / step) * step

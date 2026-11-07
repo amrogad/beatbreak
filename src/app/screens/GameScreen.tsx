@@ -13,12 +13,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Chart, RunResults, SongMeta } from '../../core/types'
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
 import { AudioEngine, estimateOutputLatency, getAudioContext, resumeAudioContext } from '../../audio/engine'
-import { buildEditPlan, isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
+import { isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
 import { CircleSession, HIT_SLACK, TOUCH_HIT_SLACK } from '../../game/circleSession'
 import { approachForSpeed, circleWindows, placeCircles } from '../../chart/circles'
-import { compensateInputLatency, windowsForDifficulty } from '../../game/judgment'
+import { compensateInputLatency, judgmentWindows } from '../../game/judgment'
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
 import { PlayfieldRenderer } from '../../render/renderer'
@@ -172,7 +172,9 @@ export function GameScreen({
   const customWindowsKey = JSON.stringify(settings.customWindows)
   const windows = useMemo(
     // Circles use osu!'s own windows; arrows use the chosen preset.
-    () => (circleMode ? circleWindows(chart.difficulty) : windowsForDifficulty(settings.windowPreset, chart.difficulty, settings.customWindows, settings.timing === 'phone')),
+    () => (circleMode ? circleWindows(chart.difficulty) : judgmentWindows(settings.windowPreset, settings.customWindows, settings.timing === 'phone')),
+    // customWindowsKey stands in for the object so an equal copy doesn't rebuild the windows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [settings.windowPreset, customWindowsKey, chart.difficulty, settings.timing, circleMode],
   )
 
@@ -288,6 +290,8 @@ export function GameScreen({
       window.setTimeout(() => engineRef.current?.pause(), failed ? 320 : 1150),
       window.setTimeout(() => onFinishRef.current(results), failed ? 750 : 1900),
     )
+    // Reads the rest through refs and the run's own snapshot; only a new chart or song rebuilds it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chart.difficulty, chart.id, song.id])
   finishRunRef.current = finishRun
 
@@ -514,7 +518,6 @@ export function GameScreen({
     // frozen picture and the song still playing: stop everything and say so instead.
     const crash = (error: unknown): void => {
       if (disposed) return
-      // eslint-disable-next-line no-console
       console.error(error)
       cancelAnimationFrame(rafRef.current)
       engineRef.current?.pause()
@@ -710,7 +713,6 @@ export function GameScreen({
     }
 
     routerRef.current = new InputRouter(
-      window,
       {
         onLaneDown: (lane, eventTimeMs) => {
           if (circleMap) held.add(`k${lane}`)
@@ -793,7 +795,7 @@ export function GameScreen({
       canvas.removeEventListener('contextmenu', noMenu)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onKey)
-      if (document.fullscreenElement === rootRef.current) void document.exitFullscreen().catch(() => undefined)
+      if (root && document.fullscreenElement === root) void document.exitFullscreen().catch(() => undefined)
       detachTouchRef.current?.()
       detachTouchRef.current = null
       routerRef.current?.dispose()
@@ -804,7 +806,7 @@ export function GameScreen({
       renderer.dispose()
       rendererRef.current = null
     }
-  }, [buffer, chart, circleMap, confirmThen, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.title, sourceChart, toggleFullscreen, togglePause, windows])
+  }, [buffer, chart, circleMap, confirmThen, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.scrollSpeed, song.title, sourceChart, toggleFullscreen, togglePause, windows])
 
   /* --------------------------------------------------------- live settings */
 

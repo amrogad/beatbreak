@@ -8,7 +8,7 @@
  */
 import { createRoot } from 'react-dom/client'
 import { App } from './app/App'
-import { registerServiceWorker } from './pwa/register'
+import { registerServiceWorker } from './app/serviceWorker'
 import { settingsStore } from './store/settings'
 import '@fontsource/bungee/latin-400.css'
 import '@fontsource/barlow/latin-500.css'
@@ -17,7 +17,7 @@ import '@fontsource/barlow/latin-700.css'
 import './styles/app.css'
 import './styles/theme-disco.css'
 import './styles/theme-mono.css'
-import { UPDATE_READY_EVENT } from './pwa/register'
+import { UPDATE_READY_EVENT } from './app/serviceWorker'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('#root is missing from index.html')
