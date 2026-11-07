@@ -12,7 +12,10 @@
  *    stopped, so switching songs or leaving gameplay cannot leave audio running.
  */
 import { buildEditPlan, toPlaybackPlan, type PlaybackPlan } from '../core/edit'
-import { PlanClock, planTimeForSongTime, snapIntoPlayback, type ScheduledSegment } from './planClock'
+import { PlanClock, SmoothClock, planTimeForSongTime, snapIntoPlayback, type ScheduledSegment } from './planClock'
+
+/** One smoothed clock per context, so what it learns about the device carries over between runs. */
+const smoothClocks = new WeakMap<BaseAudioContext, SmoothClock>()
 
 export interface AudioEngineOptions {
   /** Master volume 0..1. */
@@ -251,9 +254,13 @@ export class AudioEngine {
   private judgeFloor = -Infinity
   private onEnded?: () => void
   private endCheckTimer: ReturnType<typeof setTimeout> | null = null
+  private smooth: SmoothClock
 
   constructor(ctx: AudioContext, buffer: AudioBuffer, options: AudioEngineOptions = {}) {
     this.ctx = ctx
+    let smooth = smoothClocks.get(ctx)
+    if (!smooth) smoothClocks.set(ctx, (smooth = new SmoothClock()))
+    this.smooth = smooth
     this.buffer = buffer
     this.volume = options.volume ?? 0.9
     this.offsetMs = options.offsetMs ?? 0
@@ -276,7 +283,7 @@ export class AudioEngine {
   get planTime(): number {
     if (this.disposed) return 0
     if (!this.playing || !this.plan) return this.plan ? planTimeForSongTime(this.plan, this.pausedAt) : this.pausedAt
-    return this.clock.planTimeAt(this.ctx.currentTime)
+    return this.clock.planTimeAt(this.now())
   }
 
   get isPlaying(): boolean {
@@ -296,7 +303,12 @@ export class AudioEngine {
   get songTime(): number {
     if (this.disposed) return 0
     if (!this.playing) return this.pausedAt
-    return this.clock.songTimeAt(this.ctx.currentTime)
+    return this.clock.songTimeAt(this.now())
+  }
+
+  /** The audio clock without its buffer-sized steps (see `SmoothClock`): judging and drawing read this. */
+  private now(): number {
+    return this.smooth.read(this.ctx.currentTime, performance.now())
   }
 
   /**
@@ -309,7 +321,7 @@ export class AudioEngine {
     if (this.disposed) return 0
     const shift = this.outputLatency + this.offsetMs / 1000
     // During the scheduling lookahead nothing sounds yet: hold at the start instead of stepping back.
-    if (this.playing || this.ended) return Math.max(this.judgeFloor, this.clock.songTimeAtUnclamped(this.ctx.currentTime - shift))
+    if (this.playing || this.ended) return Math.max(this.judgeFloor, this.clock.songTimeAtUnclamped(this.now() - shift))
     return this.pausedAt - shift
   }
 

@@ -120,3 +120,55 @@ export class PlanClock {
     return ctxNow >= this.segments[this.segments.length - 1].ctxEnd - 1e-3
   }
 }
+
+/**
+ * `AudioContext.currentTime` moves in jumps: the audio thread renders a whole device buffer at
+ * once (about 10 ms on Windows, more on phones) and the clock stands still in between, so a raw
+ * reading is up to one buffer late, at random. This draws a straight line through the tops of
+ * those steps with `performance.now()`, then shifts it down by the average gap so it sits where
+ * the raw clock sits on average: calibrations made on the stepped clock still hold.
+ */
+export class SmoothClock {
+  /** Context seconds minus performance seconds along the line through the step tops. */
+  private offset = Number.NaN
+  private lastRaw = -Infinity
+  private lastAt = 0
+  private lastOut = -Infinity
+  /** Running average of how far the line sits above the raw clock. */
+  private lead = 0
+
+  /**
+   * @param maxLead   furthest the line may run ahead of the raw clock before it counts as stalled
+   * @param sagPerSecond how fast the line lets itself fall back, so a slower audio clock is followed
+   */
+  constructor(
+    private readonly maxLead = 0.08,
+    private readonly sagPerSecond = 0.0005,
+  ) {}
+
+  read(raw: number, nowMs: number): number {
+    const now = nowMs / 1000
+    if (Number.isNaN(this.offset) || raw < this.lastRaw) {
+      // First reading, or a different context.
+      this.offset = raw - now
+      this.lead = 0
+      this.lastOut = -Infinity
+    } else {
+      this.offset -= Math.max(0, now - this.lastAt) * this.sagPerSecond
+      // The audio clock is never behind its latest reading.
+      this.offset = Math.max(this.offset, raw - now)
+    }
+    this.lastRaw = raw
+    this.lastAt = now
+    let line = now + this.offset
+    if (line - raw > this.maxLead) {
+      // The audio clock stopped (suspended, an underrun): start the line again from it.
+      this.offset = raw - now
+      line = raw
+    } else {
+      this.lead += (line - raw - this.lead) * 0.02
+    }
+    this.lastOut = Math.max(this.lastOut, line - this.lead)
+    return this.lastOut
+  }
+}
