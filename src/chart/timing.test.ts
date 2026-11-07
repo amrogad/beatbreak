@@ -88,6 +88,12 @@ describe('TimingMap with a single tempo', () => {
     expect(t.timeToBeat(0.75)).toBeCloseTo(-0.5, 9)
   })
 
+  it('runs beats before the first tempo backwards, the inverse of timeToBeat', () => {
+    const t = new TimingMap({ offset: 1, bpms: [{ beat: 0, bpm: 120 }] })
+    expect(t.beatToTime(-0.5)).toBeCloseTo(0.75, 9)
+    for (const time of [0, 0.3, 0.99]) expect(t.beatToTime(t.timeToBeat(time))).toBeCloseTo(time, 9)
+  })
+
   it('maps integer steps to the grid', () => {
     expect(timing.stepToTime(0, 4)).toBeCloseTo(0.35, 9)
     expect(timing.stepToTime(8, 4)).toBeCloseTo(1.15, 9) // beat 2

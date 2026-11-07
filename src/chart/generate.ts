@@ -1280,7 +1280,8 @@ export function generateChart(input: GenerateChartInput): Chart {
   const clipped = clipNotesToEdit(tidied, input.edit, duration, timing, settings.stepsPerBeat)
   const notes = clipped.notes
 
-  const stats = computeStats(notes, duration)
+  // Rated on the part that plays: a 60 s window of a 4-minute song is not four times easier.
+  const stats = computeStats(notes, input.edit ? input.edit.duration : duration)
   const notes_: string[] = []
   if (selection.diagnostics.droppedOffGrid > 0) {
     notes_.push(`${selection.diagnostics.droppedOffGrid} onsets sat too far off the grid and were skipped.`)
@@ -1300,7 +1301,9 @@ export function generateChart(input: GenerateChartInput): Chart {
   if (clipped.shortened > 0) {
     notes_.push(`${clipped.shortened} holds were shortened to stop before a removed section.`)
   }
-  if (stats.chordNotes === 0 && settings.maxChord > 1) {
+  if (notes.length === 0) {
+    notes_.push('No arrows: the song had no clear hits to chart.')
+  } else if (stats.chordNotes === 0 && settings.maxChord > 1) {
     notes_.push('No clear chord moments were found in this song, so this chart is single-note only.')
   }
 
@@ -1362,6 +1365,8 @@ export interface PlayabilityIssue {
     | 'duplicate'
     | 'negative-time'
     | 'past-end'
+    | 'bad-hold'
+    | 'inside-hold'
     | 'jack'
     | 'hand-repeat'
     | 'chord-size'
@@ -1414,6 +1419,26 @@ export function validatePlayability(
     }
     if (i > 0 && notes[i - 1].time > note.time + 1e-6) {
       issues.push({ severity: 'error', code: 'unsorted', message: 'Notes are not sorted by time.', time: note.time, noteIds: [notes[i - 1].id, note.id] })
+    }
+    if (note.kind === 'hold') {
+      const length = note.duration ?? NaN
+      if (!Number.isFinite(length) || length <= 0) {
+        issues.push({ severity: 'error', code: 'bad-hold', message: 'A long arrow has no length.', time: note.time, noteIds: [note.id] })
+      } else if (note.time + length > duration + 0.001) {
+        issues.push({ severity: 'warning', code: 'past-end', message: 'A long arrow ends after the end of the audio.', time: note.time, noteIds: [note.id] })
+      }
+    }
+  }
+
+  // An arrow in a lane while that lane's long arrow is still held cannot be hit.
+  const holdingUntil: { end: number; id: string }[] = [{ end: -1, id: '' }, { end: -1, id: '' }, { end: -1, id: '' }, { end: -1, id: '' }]
+  for (const note of notes) {
+    const held = holdingUntil[note.lane]
+    if (held && note.time > -1e-6 && note.time < held.end - 1e-3) {
+      issues.push({ severity: 'error', code: 'inside-hold', message: 'An arrow sits inside a long arrow in the same lane.', time: note.time, noteIds: [held.id, note.id] })
+    }
+    if (note.kind === 'hold' && Number.isFinite(note.duration) && (note.duration ?? 0) > 0 && held) {
+      holdingUntil[note.lane] = { end: Math.max(held.end, note.time + (note.duration ?? 0)), id: note.id }
     }
   }
 

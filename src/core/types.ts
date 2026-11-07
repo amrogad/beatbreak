@@ -347,6 +347,8 @@ export interface RunResults {
   createdAt: number
   /** Mean signed timing error of hit notes in ms (negative = early). Absent on old records. */
   meanTimingMs?: number
+  /** Which build of the chart was played: generator version, seed, and whether it was hand-edited. Absent on old records. */
+  chartVersion?: string
   /** Notes (or circles) in the chart, each counted once; `totalNotes` counts a hold twice. Absent on old records. */
   objects?: number
   /** Holds released too early during the run. Absent on old records. */

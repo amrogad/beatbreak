@@ -169,6 +169,21 @@ describe('chart generation', () => {
     expect(charts.map((chart) => chart.stepsPerBeat)).toEqual([1, 2, 8, 8])
   })
 
+  it('flags an arrow inside a same-lane long arrow and a long arrow with no length', () => {
+    const { analysis, duration } = analyseDemo()
+    const timing = TimingMap.single(analysis.bpm, analysis.offset)
+    const chart = generateAllDifficulties({ analysis, timing, duration, songId: 'demo' })[0]
+    const base = { strength: 0.5, beat: 0, step: 0 }
+    const notes = [
+      { ...base, id: 'h', lane: 0 as const, time: 1, kind: 'hold' as const, duration: 1 },
+      { ...base, id: 'in', lane: 0 as const, time: 1.5, kind: 'tap' as const },
+      { ...base, id: 'z', lane: 1 as const, time: 3, kind: 'hold' as const, duration: 0 },
+    ]
+    const codes = validatePlayability({ ...chart, notes }, duration).issues.map((issue) => issue.code)
+    expect(codes).toContain('inside-hold')
+    expect(codes).toContain('bad-hold')
+  })
+
   it('produces physically playable charts at every difficulty', () => {
     const { analysis, duration } = analyseDemo()
     const timing = TimingMap.single(analysis.bpm, analysis.offset)

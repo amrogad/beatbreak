@@ -77,6 +77,10 @@ export class TimingMap {
 
   /** Song time (seconds) of a beat position. */
   beatToTime(beat: number): number {
+    // Before the first tempo: run the first tempo backwards (the loop below would stop at once and
+    // answer the offset for every earlier beat).
+    const first = this.bpms[0]
+    if (first && beat < first.beat) return this.offset - ((first.beat - beat) * 60) / first.bpm
     let time = this.offset
     for (let i = 0; i < this.bpms.length; i++) {
       const seg = this.bpms[i]

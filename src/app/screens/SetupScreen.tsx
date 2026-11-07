@@ -295,6 +295,8 @@ export function SetupScreen({
           bpm: beatOf(updated).bpm,
           offset: beatOf(updated).offset,
           edit: planForMeta(updated),
+          // The player's "New arrows" pick survives a trim.
+          salt: updated.chartVariant ?? 0,
           existing: bundle.charts,
         })
         adopt({ ...bundle, meta: updated, charts: regenerated })

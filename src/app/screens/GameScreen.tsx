@@ -13,7 +13,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Chart, RunResults, SongMeta } from '../../core/types'
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
 import { AudioEngine, estimateOutputLatency, getAudioContext, resumeAudioContext } from '../../audio/engine'
-import { buildEditPlan, planForMeta, toPlaybackPlan } from '../../core/edit'
+import { buildEditPlan, isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
 import { CircleSession, HIT_SLACK, TOUCH_HIT_SLACK } from '../../game/circleSession'
@@ -143,22 +143,21 @@ export function GameScreen({
   const [circleMode] = useState(() => settings.playMode === 'circles')
   const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart, circleRhythm ?? sourceChart) : null), [circleMode, sourceChart, circleRhythm])
   const [hud, setHud] = useState({ score: 0, combo: 0, accuracy: 1, judged: 0 })
-  // Long arrows off: every hold plays as a plain tap at its start.
-  const chart = useMemo(
-    () =>
-      settings.longArrows
-        ? sourceChart
-        : {
-            ...sourceChart,
-            notes: sourceChart.notes.map((note) => {
-              if (note.kind !== 'hold') return note
-              const tap = { ...note, kind: 'tap' as const }
-              delete tap.duration
-              return tap
-            }),
-          },
-    [sourceChart, settings.longArrows],
-  )
+  // Long arrows off: every hold plays as a plain tap at its start. Arrows a hand edit left in a
+  // removed part, or outside the window, never play: they are left out of the run.
+  const chart = useMemo(() => {
+    const plan = planForMeta(song)
+    const playable = sourceChart.notes.filter((note) => note.time >= plan.windowStart - 1e-3 && note.time <= plan.windowEnd + 1e-3 && !isCut(plan, note.time))
+    const notes = settings.longArrows
+      ? playable
+      : playable.map((note) => {
+          if (note.kind !== 'hold') return note
+          const tap = { ...note, kind: 'tap' as const }
+          delete tap.duration
+          return tap
+        })
+    return notes.length === sourceChart.notes.length && settings.longArrows ? sourceChart : { ...sourceChart, notes }
+  }, [sourceChart, settings.longArrows, song])
   // Touch devices have no keyboard: the hint should teach the gesture that actually works.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
 
@@ -269,6 +268,7 @@ export function GameScreen({
       meanTimingMs: session.meanTimingMs,
       droppedHolds: session instanceof CircleSession ? session.brokenSliders : state.droppedHolds,
       objects: session.totalNotes,
+      chartVersion: `${sourceChart.generator.version}:${sourceChart.generator.seed}${sourceChart.edited ? ':edited' : ''}`,
       autoPlay: session.isAutoPlay,
       rules: runRulesKey(settingsRef.current, session instanceof CircleSession ? 'circles' : 'arrows'),
       ...(session instanceof CircleSession ? { mode: 'circles' as const, clicks: session.clickStats } : {}),
