@@ -709,21 +709,22 @@ export function SetupScreen({
           <div>
             <strong>Beat</strong>
             <p className="muted small">
-              {Math.round(beatOf(meta).bpm * 10) / 10} BPM{meta.beatFix ? ' (your fix)' : ''}
+              {Math.round(beatOf(meta).bpm * 10) / 10} beats a minute{meta.beatFix ? ', fixed by you' : ''}.
               {!meta.beatFix && (meta.analysis.bpmConfidence < 0.45 || meta.analysis.phaseConfidence < 0.45)
-                ? ' - this beat was hard to read. If the arrows feel off the music, try these.'
+                ? ' We were not sure about this one.'
                 : ''}
             </p>
+            <p className="muted tiny">Slower: arrows rush ahead of the music. Faster: they drag behind it. Offbeat: they land between the beats.</p>
           </div>
           <div className="row gap-8 wrap">
             <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('half')} title="The arrows run twice as fast as the music">
-              Half
+              Slower
             </Button>
             <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('double')} title="The arrows run half as fast as the music">
-              Double
+              Faster
             </Button>
             <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('shift')} title="The arrows sit between the beats">
-              Shift
+              Offbeat
             </Button>
             {meta.beatFix && (
               <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('reset')} title="Back to the detected beat">

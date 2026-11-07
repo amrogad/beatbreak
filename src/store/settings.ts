@@ -57,6 +57,8 @@ export interface Settings {
   holdMode: 'release' | 'hold'
   /** Long arrows in the chart; off plays each one as a tap. Phones start with them off. */
   longArrows: boolean
+  /** Circles: show the comet that flies to the next circle. */
+  circlePath: boolean
   /** How wide the timing windows are: 'phone' is 1.5x wider, since tapping glass is harder. */
   timing: 'pc' | 'phone'
   /** Difficulty a song opens on before you pick one for it; 'auto' uses the recommended one. */
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   menuMusic: true,
   holdMode: 'hold',
   longArrows: true,
+  circlePath: true,
   timing: 'pc',
   defaultDifficulty: 'auto',
   // A screen shows a frame a frame or two after it is drawn, so arrows reach the target a little
@@ -243,6 +246,7 @@ export function sanitizeSettings(input: unknown): Settings {
     menuMusic: typeof raw.menuMusic === 'boolean' ? raw.menuMusic : DEFAULT_SETTINGS.menuMusic,
     holdMode: raw.holdMode === 'release' ? 'release' : 'hold',
     longArrows: typeof raw.longArrows === 'boolean' ? raw.longArrows : DEFAULT_SETTINGS.longArrows,
+    circlePath: typeof raw.circlePath === 'boolean' ? raw.circlePath : DEFAULT_SETTINGS.circlePath,
     timing: raw.timing === 'phone' ? 'phone' : 'pc',
     defaultDifficulty:
       raw.defaultDifficulty === 'easy' || raw.defaultDifficulty === 'normal' || raw.defaultDifficulty === 'hard' || raw.defaultDifficulty === 'expert'

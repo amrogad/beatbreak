@@ -413,6 +413,7 @@ export function GameScreen({
       progressStyle: settingsRef.current.progressStyle,
       columnColors: settingsRef.current.columnColors,
       reducedMotion: settingsRef.current.reducedMotion,
+      circlePath: settingsRef.current.circlePath,
     })
     rendererRef.current = renderer
     renderer.setCircles(circleMap)
@@ -816,6 +817,7 @@ export function GameScreen({
       progressStyle: settings.progressStyle,
       columnColors: settings.columnColors,
       reducedMotion: settings.reducedMotion,
+      circlePath: settings.circlePath,
     })
   }, [settings])
 

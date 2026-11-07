@@ -193,6 +193,14 @@ export function SettingsScreen({
                 : 'Circles: click or tap each circle as its ring closes. The settings that only change arrows are hidden while Circles is on.'
             }
           />
+          {!arrowMode && (
+            <Toggle
+              label="Path to the next circle"
+              checked={settings.circlePath}
+              onChange={(value) => onUpdate({ circlePath: value })}
+              hint="A small comet flies from each circle to the next one, so you know where to move."
+            />
+          )}
           <Choice
             label="Default difficulty"
             value={settings.defaultDifficulty}

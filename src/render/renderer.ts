@@ -53,6 +53,8 @@ export interface RenderSettings {
   /** The four column colours the player picked (used when arrow colours are per column). */
   columnColors: string[]
   reducedMotion: boolean
+  /** Circles: the comet that shows the way to the next circle. */
+  circlePath?: boolean
 }
 
 export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
@@ -1529,6 +1531,7 @@ export class PlayfieldRenderer {
       judgeStyle: (judgment: Judgment) => this.judgeStyle(judgment),
       drawText: (text: string, x: number, y: number, size: number, style: JudgeStyle, glow: boolean) => this.drawText(this.ctx, text, x, y, size, style, glow && this.quality > 0),
       glow: (color: string, radius: number) => this.glowSprite(color, radius),
+      pathGuide: this.settings.circlePath !== false,
       scrollMs: (songMs: number) => this.scrollMs(songMs),
       songMs: (scrollMs: number) => (this.plan ? songTimeForScrollTime(this.plan, scrollMs / 1000) * 1000 : scrollMs),
     }

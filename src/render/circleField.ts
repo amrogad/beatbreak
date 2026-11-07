@@ -28,6 +28,8 @@ export interface CircleEnv {
   drawText(text: string, x: number, y: number, size: number, style: TextStyle, glow: boolean): void
   /** The soft round light the arrows use for their hit glow. */
   glow(color: string, radius: number): HTMLCanvasElement
+  /** Draw the comet that flies from each circle to the next (Settings > Path to the next circle). */
+  pathGuide: boolean
   /** Song time (ms) on the played timeline, cuts closed up, so approaches run on through a cut. */
   scrollMs(songMs: number): number
   /** The inverse of `scrollMs`. */
@@ -166,31 +168,9 @@ export class CircleField {
     session.forEachVisible(songTimeMs, (object) => visible.push(object), env.songMs(nowScroll + preemptMs))
     const active = session.activeSlider
 
-    // Follow points: a line from each circle to the next one while it approaches. It starts at the
-    // circle just hit, so the guide stays while the player travels.
-    ctx.save()
-    ctx.lineCap = 'round'
-    ctx.lineWidth = Math.max(1.5, r * 0.07)
-    const lastHit = !active && session.firstPendingIndex > 0 ? session.objectAt(session.firstPendingIndex - 1) : undefined
-    const chain = active ? [active, ...visible] : lastHit ? [lastHit, ...visible] : visible
-    for (let i = 0; i + 1 < chain.length; i++) {
-      const a = chain[i]
-      const b = chain[i + 1]
-      if (b.time - a.endTime > 2) continue
-      const from = this.toScreen(sliderExit(a).x, sliderExit(a).y)
-      const to = this.toScreen(b.x, b.y)
-      const dist = Math.hypot(to.x - from.x, to.y - from.y)
-      if (dist < r * 2.6) continue
-      const appear = Math.max(0, Math.min(1, (preemptMs - untilMs(b)) / fadeInMs))
-      const ux = (to.x - from.x) / dist
-      const uy = (to.y - from.y) / dist
-      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.35 * appear).toFixed(3)})`
-      ctx.beginPath()
-      ctx.moveTo(from.x + ux * r * 1.2, from.y + uy * r * 1.2)
-      ctx.lineTo(from.x + ux * (r * 1.2 + (dist - r * 2.4) * appear), from.y + uy * (r * 1.2 + (dist - r * 2.4) * appear))
-      ctx.stroke()
-    }
-    ctx.restore()
+    // The path to the next circle: a small comet in the next circle's colour. It waits at the
+    // edge of the circle before, pointing the way, then flies over and lands as the ring closes.
+    if (env.pathGuide) this.drawPathComets(env, session, visible, active, songTimeMs, r, untilMs)
 
     // The running slider sits under everything that is still coming.
     if (active) this.drawSlider(env, active, songTimeMs, 1, r)
@@ -207,6 +187,70 @@ export class CircleField {
     this.drawEffects(env, r)
     this.drawMarks(env, r)
     if (showCursor) this.drawCursor(env, session, songTimeMs, r)
+  }
+
+  private drawPathComets(
+    env: CircleEnv,
+    session: CircleSession,
+    visible: CircleObject[],
+    active: CircleObject | null,
+    songTimeMs: number,
+    r: number,
+    untilMs: (object: CircleObject) => number,
+  ): void {
+    const ctx = env.ctx
+    const { preemptMs, fadeInMs } = this.map
+    const lastHit = !active && session.firstPendingIndex > 0 ? session.objectAt(session.firstPendingIndex - 1) : undefined
+    const chain = active ? [active, ...visible] : lastHit ? [lastHit, ...visible] : visible
+    ctx.save()
+    ctx.lineCap = 'round'
+    for (let i = 0; i + 1 < chain.length; i++) {
+      const a = chain[i]
+      const b = chain[i + 1]
+      if (b.time - a.endTime > 2) continue
+      const from = this.toScreen(sliderExit(a).x, sliderExit(a).y)
+      const to = this.toScreen(b.x, b.y)
+      const dist = Math.hypot(to.x - from.x, to.y - from.y)
+      if (dist < r * 2.6) continue
+      const appear = Math.max(0, Math.min(1, (preemptMs - untilMs(b)) / fadeInMs))
+      if (appear <= 0) continue
+      const ux = (to.x - from.x) / dist
+      const uy = (to.y - from.y) / dist
+      // Flight time is the gap between the two objects, eased out so it settles onto the target.
+      const travel = Math.max(0, Math.min(1, (songTimeMs - a.endTime * 1000) / Math.max(1, (b.time - a.endTime) * 1000)))
+      const ease = 1 - (1 - travel) * (1 - travel)
+      const startD = r * 1.15 + r * 0.9
+      const endD = dist - r * 1.1
+      if (endD <= startD) continue
+      const headD = startD + (endD - startD) * ease
+      const tailD = Math.max(r * 1.15, headD - Math.min(dist * 0.4, r * 3.4))
+      const color = env.mono ? '#ffffff' : env.color(b.color)
+      const hx = from.x + ux * headD
+      const hy = from.y + uy * headD
+      const tx = from.x + ux * tailD
+      const ty = from.y + uy * tailD
+      const alpha = appear * (travel > 0.92 ? (1 - travel) / 0.08 : 1)
+      const tail = ctx.createLinearGradient(tx, ty, hx, hy)
+      tail.addColorStop(0, hexToRgba(color, 0))
+      tail.addColorStop(1, hexToRgba(color, 0.8 * alpha))
+      ctx.strokeStyle = tail
+      ctx.lineWidth = Math.max(2, r * 0.16)
+      ctx.beginPath()
+      ctx.moveTo(tx, ty)
+      ctx.lineTo(hx, hy)
+      ctx.stroke()
+      if (env.quality > 0) {
+        const size = r * 0.55
+        ctx.globalAlpha = alpha
+        ctx.drawImage(env.glow(color, Math.round(r * 0.6)), hx - size, hy - size, size * 2, size * 2)
+        ctx.globalAlpha = 1
+      }
+      ctx.fillStyle = `rgba(255, 255, 255, ${(0.95 * alpha).toFixed(3)})`
+      ctx.beginPath()
+      ctx.arc(hx, hy, Math.max(2, r * 0.1), 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
   }
 
   private drawCircle(env: CircleEnv, object: CircleObject, alpha: number, r: number, songTimeMs: number, lateLimitMs: number, until: number): void {
@@ -498,4 +542,9 @@ function shade(hex: string, amount: number): string {
   const t = Math.abs(amount)
   const channels = [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - t) + target * t))
   return `#${channels.map((v) => v.toString(16).padStart(2, '0')).join('')}`
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const value = parseInt(hex.slice(1), 16)
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha.toFixed(3)})`
 }
