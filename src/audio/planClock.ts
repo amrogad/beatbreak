@@ -54,6 +54,34 @@ export function planTimeForSongTime(plan: PlaybackPlan, origTime: number): numbe
   return plan.duration
 }
 
+/**
+ * Where an original-time position sits on the scrolling highway: the edited timeline, so the notes
+ * after a cut scroll in from below like any other instead of popping up near the targets. Runs on
+ * past both ends, so the countdown and the outro keep moving; a time inside a cut sits at the join.
+ */
+export function scrollTimeForSongTime(plan: PlaybackPlan, origTime: number): number {
+  const segments = plan.segments
+  if (segments.length === 0) return origTime
+  const first = segments[0]
+  const last = segments[segments.length - 1]
+  if (origTime < first.origStart) return first.pbStart - (first.origStart - origTime)
+  if (origTime > last.origEnd) return last.pbEnd + (origTime - last.origEnd)
+  return planTimeForSongTime(plan, origTime)
+}
+
+/** The inverse of `scrollTimeForSongTime`; on a join it gives the start of the later part. */
+export function songTimeForScrollTime(plan: PlaybackPlan, scrollTime: number): number {
+  const segments = plan.segments
+  if (segments.length === 0) return scrollTime
+  const first = segments[0]
+  const last = segments[segments.length - 1]
+  if (scrollTime < first.pbStart) return first.origStart - (first.pbStart - scrollTime)
+  for (const segment of segments) {
+    if (scrollTime < segment.pbEnd) return segment.origStart + (scrollTime - segment.pbStart)
+  }
+  return last.origEnd + (scrollTime - last.pbEnd)
+}
+
 export class PlanClock {
   private segments: ScheduledSegment[] = []
   /** Original-time position reported before the first scheduled segment starts. */

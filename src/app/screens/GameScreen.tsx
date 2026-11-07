@@ -414,6 +414,7 @@ export function GameScreen({
     rendererRef.current = renderer
     renderer.setCircles(circleMap)
     renderer.setChart(buffer.duration, chart)
+    renderer.setPlan(playbackPlan)
     renderer.resize()
     const observer = new ResizeObserver(() => renderer.resize())
     observer.observe(canvas)

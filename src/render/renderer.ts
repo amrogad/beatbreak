@@ -21,6 +21,8 @@ import { CircleSession } from '../game/circleSession'
 import type { CircleMap, CircleObject } from '../chart/circles'
 import { CircleField } from './circleField'
 import { ParticleSystem } from './particles'
+import type { PlaybackPlan } from '../core/edit'
+import { scrollTimeForSongTime, songTimeForScrollTime } from '../audio/planClock'
 
 export type LaneStyle = 'neon' | 'classic' | 'minimal'
 /** Note skin: the thick default arrow, a vector chevron, a diamond, or a plain bar. */
@@ -230,6 +232,8 @@ export class PlayfieldRenderer {
    */
   private missFx: { note: ChartNote; frozenMs: number; headTime: number; at: number; hit?: boolean }[] = []
   private lastCombo = 0
+  /** The trimmed song's arrangement; the highway closes its cuts up. Null: plain song time. */
+  private plan: PlaybackPlan | null = null
   private comboBumpAt = -1e9
   private comboMilestoneAt = -1e9
 
@@ -288,6 +292,10 @@ export class PlayfieldRenderer {
   }
 
   /** Clear transient effects so nothing leaks between runs, and colour the chart's arrows. */
+  setPlan(plan: PlaybackPlan | null): void {
+    this.plan = plan
+  }
+
   setChart(durationSeconds: number, chart?: Pick<Chart, 'notes' | 'timing'>): void {
     void durationSeconds
     this.particles.clear()
@@ -801,17 +809,24 @@ export class PlayfieldRenderer {
     }
   }
 
+  /** Highway position of a song time, in ms: the cuts are closed up so the notes scroll on through. */
+  private scrollMs(songMs: number): number {
+    return this.plan ? scrollTimeForSongTime(this.plan, songMs / 1000) * 1000 : songMs
+  }
+
   private drawNotes(session: GameSession, songTimeMs: number): void {
     const ctx = this.ctx
     const { laneX, laneW, receptorY, noteH, pxPerSec, travelSeconds, direction } = this.layout()
-    const untilMs = songTimeMs + travelSeconds * 1000
+    const nowScroll = this.scrollMs(songTimeMs)
+    const untilScroll = nowScroll + travelSeconds * 1000
+    const untilMs = this.plan ? songTimeForScrollTime(this.plan, untilScroll / 1000) * 1000 : untilScroll
     const reduced = this.settings.reducedMotion
 
     // Holds already being played: the head stays pinned on the receptor while the body drains.
     session.forEachActiveHold(songTimeMs, (note, life) => {
       const duration = note.duration ?? 0
       if (duration <= 0.05) return
-      const tailDeltaMs = (note.time + duration) * 1000 - songTimeMs
+      const tailDeltaMs = this.scrollMs((note.time + duration) * 1000) - nowScroll
       if (tailDeltaMs < 0) return
       const x = laneX[note.lane] + laneW / 2
       const shift = this.tileShift(this.tileHy)
@@ -837,11 +852,12 @@ export class PlayfieldRenderer {
       const x = laneX[note.lane] + laneW / 2
       const hy = this.tileHyFor(note)
       const shift = this.tileShift(hy)
-      const headY = receptorY + direction * ((fx.headTime * 1000 - fx.frozenMs) / 1000) * pxPerSec + shift
+      const frozenScroll = this.scrollMs(fx.frozenMs)
+      const headY = receptorY + direction * ((this.scrollMs(fx.headTime * 1000) - frozenScroll) / 1000) * pxPerSec + shift
       const size = noteH * (1 - 0.12 * (1 - fade))
       const missColor = fx.hit ? this.columnColor(note.lane) : this.missColor()
       if (note.kind === 'hold' && (note.duration ?? 0) > 0.05) {
-        const tailY = receptorY + direction * (((note.time + (note.duration ?? 0)) * 1000 - fx.frozenMs) / 1000) * pxPerSec + shift
+        const tailY = receptorY + direction * ((this.scrollMs((note.time + (note.duration ?? 0)) * 1000) - frozenScroll) / 1000) * pxPerSec + shift
         this.drawHoldBody(x, headY, tailY, noteH, missColor, 'dropping', 1, note.lane, 0.6 * fade)
       }
       ctx.save()
@@ -852,14 +868,14 @@ export class PlayfieldRenderer {
     })
 
     session.forEachPending(untilMs, (note: ChartNote) => {
-      const delta = note.time * 1000 - songTimeMs
+      const delta = this.scrollMs(note.time * 1000) - nowScroll
       const hy = this.tileHyFor(note)
       const shift = this.tileShift(hy)
       const y = receptorY + direction * (delta / 1000) * pxPerSec + shift
       const x = laneX[note.lane] + laneW / 2
       const color = this.columnColor(note.lane)
       if (note.kind === 'hold' && note.duration && note.duration > 0.05) {
-        const tailY = receptorY + direction * ((delta + note.duration * 1000) / 1000) * pxPerSec + shift
+        const tailY = receptorY + direction * ((this.scrollMs((note.time + note.duration) * 1000) - nowScroll) / 1000) * pxPerSec + shift
         this.drawHoldBody(x, y, tailY, noteH, color, 'waiting', 1, note.lane)
         this.drawHoldEnd(x, tailY, noteH, color, note.lane)
       }

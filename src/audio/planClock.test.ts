@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildEditPlan, toPlaybackPlan, type PlaybackPlan } from '../core/edit'
-import { PlanClock, SmoothClock, planTimeForSongTime, snapIntoPlayback } from './planClock'
+import { PlanClock, SmoothClock, planTimeForSongTime, scrollTimeForSongTime, snapIntoPlayback, songTimeForScrollTime } from './planClock'
 
 /** Window 10..40 with the middle 15..20 removed: segments 10..15 and 20..40. */
 const plan: PlaybackPlan = toPlaybackPlan(buildEditPlan({ start: 10, end: 40 }, [{ start: 15, end: 20 }], 60))
@@ -160,5 +160,31 @@ describe('SmoothClock', () => {
     expect(later - frozen).toBeLessThan(0.09)
     // When the clock moves again the reading carries on from there, not from far ahead.
     expect(clock.read(1.2, 3200)).toBeLessThan(1.21)
+  })
+})
+
+describe('scroll time (the highway closes cuts up)', () => {
+  it('keeps the gap across a cut at its played length', () => {
+    // 14.5 is 0.5 s before the join, 20.5 is 0.5 s after it: 1 s apart on the highway.
+    expect(scrollTimeForSongTime(plan, 20.5) - scrollTimeForSongTime(plan, 14.5)).toBeCloseTo(1, 9)
+  })
+
+  it('runs on before the window and after it', () => {
+    expect(scrollTimeForSongTime(plan, 8)).toBeCloseTo(-2, 9)
+    expect(scrollTimeForSongTime(plan, 42)).toBeCloseTo(27, 9)
+  })
+
+  it('puts a time inside a cut on the join', () => {
+    expect(scrollTimeForSongTime(plan, 17)).toBeCloseTo(5, 9)
+  })
+
+  it('maps back, giving the later part on a join', () => {
+    for (const t of [8, 10, 12.5, 20, 33, 42]) expect(songTimeForScrollTime(plan, scrollTimeForSongTime(plan, t))).toBeCloseTo(t, 9)
+    expect(songTimeForScrollTime(plan, 5)).toBeCloseTo(20, 9)
+  })
+
+  it('is plain song time with no plan segments', () => {
+    expect(scrollTimeForSongTime({ duration: 0, segments: [] }, 12)).toBe(12)
+    expect(songTimeForScrollTime({ duration: 0, segments: [] }, 12)).toBe(12)
   })
 })
