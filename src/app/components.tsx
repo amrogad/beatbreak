@@ -45,6 +45,9 @@ export const Button = React.memo(function Button({
   title,
   type = 'button',
   full,
+  autoFocus,
+  'aria-label': ariaLabel,
+  'aria-pressed': ariaPressed,
 }: {
   children: React.ReactNode
   onClick?: () => void
@@ -54,11 +57,17 @@ export const Button = React.memo(function Button({
   title?: string
   type?: 'button' | 'submit'
   full?: boolean
+  autoFocus?: boolean
+  'aria-label'?: string
+  'aria-pressed'?: boolean
 }): React.JSX.Element {
   return (
     <button
       type={type}
       title={title}
+      autoFocus={autoFocus}
+      aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
       className={`btn btn-${variant} btn-${size}${full ? ' btn-full' : ''}`}
       onClick={onClick}
       disabled={disabled}
@@ -274,7 +283,7 @@ export function Modal({
       <div className="modal">
         <header className="panel-head">
           <h2>{title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose} title="Close">
+          <Button variant="ghost" size="sm" onClick={onClose} title="Close" aria-label="Close">
             ✕
           </Button>
         </header>

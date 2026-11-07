@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, lazy, useMemo, useRef, useState, Suspense, useSyncExternalStore } from 'react'
 import { circleRhythm } from '../chart/circles'
 import type { Chart, Difficulty, RunResults, SongMeta } from '../core/types'
-import { createTestSongFile } from '../audio/synth'
+import { DEMO_FILE_NAME, createTestSongFile } from '../audio/synth'
 import { getAudioContext, resumeAudioContext } from '../audio/engine'
 import { configureMenuMusic, playMenuMusic, previewStart, stopMenuMusic } from '../audio/menuMusic'
 import { loadSongBundle } from '../store/library'
@@ -50,6 +50,8 @@ type Route =
       previousBest: StoredRun | null
       isNewBest: boolean
       history: StoredRun[]
+      /** True until the run is saved and the previous best is known. */
+      saving: boolean
     }
   | { name: 'settings' }
   | { name: 'about' }
@@ -106,13 +108,15 @@ function AppShell(): React.JSX.Element {
   }, [notice, route.name, toast])
 
   const rulesKey = runRulesKey(settings, settings.playMode)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
   const refreshLibrary = useCallback(async () => {
     try {
       const [nextSongs, nextBest] = await Promise.all([listSongs(), loadBestScores(settings.playMode, rulesKey)])
       setSongs(nextSongs)
       setBestScores(nextBest)
+      setLibraryError(null)
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), 'error')
+      setLibraryError(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
@@ -215,13 +219,41 @@ function AppShell(): React.JSX.Element {
   }, [])
 
   const startDemo = useCallback(() => {
+    // The demo is already in the library: open it instead of adding another copy.
+    const saved = songs.find((song) => song.fileName === DEMO_FILE_NAME && song.audioCached)
+    if (saved) {
+      setRoute({ name: 'setup', file: null, songId: saved.id, attempt: 0 })
+      return
+    }
     try {
       const { file } = createTestSongFile({ bpm: 128, bars: 24, sampleRate: 32000, melody: true })
       startImport(file)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'error')
     }
-  }, [startImport, toast])
+  }, [songs, startImport, toast])
+
+  // A file dropped anywhere outside the Home drop card would make the browser open it and lose
+  // the app. Home takes it as a song; other screens ignore it.
+  useEffect(() => {
+    const onDragOver = (event: DragEvent): void => {
+      if (!event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = route.name === 'home' ? 'copy' : 'none'
+    }
+    const onDrop = (event: DragEvent): void => {
+      if (event.defaultPrevented || !event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      const file = event.dataTransfer.files[0]
+      if (route.name === 'home' && file) startImport(file)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [route.name, startImport])
 
   const openSong = useCallback((songId: string) => {
     setRoute({ name: 'setup', file: null, songId, attempt: 0 })
@@ -278,36 +310,43 @@ function AppShell(): React.JSX.Element {
   )
 
   const finishRun = useCallback(
-    async (results: RunResults) => {
+    (results: RunResults) => {
       const bundle = runtime.get(results.songId)
       const song = bundle?.meta ?? songs.find((candidate) => candidate.id === results.songId)
       const chart = bundle?.charts.find((candidate) => candidate.id === results.chartId) ?? null
-      let previousBest: StoredRun | null = null
-      let isNewBest = false
-      let history: StoredRun[] = []
-      try {
-        previousBest = (await bestRunFor(results.songId, results.difficulty, results.mode ?? 'arrows', results.rules)) ?? null
-        if (!results.autoPlay) {
-          isNewBest = !results.failed && results.score > 0 && (!previousBest || results.score > previousBest.score)
-          await saveRun({
-            songId: results.songId,
-            songTitle: song?.title ?? '',
-            artist: song?.artist ?? '',
-            results,
-          })
-          await updateSong(results.songId, { lastPlayedAt: Date.now() })
-          history = (await listRuns(results.songId)).filter((run) => run.chartId === results.chartId && run.mode === results.mode).slice(0, 5)
-          await refreshLibrary()
+      // Results show at once; saving and the best-score lookup land a moment later, so a slow or
+      // blocked database never leaves the player staring at a finished playfield.
+      void (async () => {
+        let previousBest: StoredRun | null = null
+        let isNewBest = false
+        let history: StoredRun[] = []
+        try {
+          previousBest = (await bestRunFor(results.songId, results.difficulty, results.mode ?? 'arrows', results.rules)) ?? null
+          if (!results.autoPlay) {
+            isNewBest = !results.failed && results.score > 0 && (!previousBest || results.score > previousBest.score)
+            await saveRun({
+              songId: results.songId,
+              songTitle: song?.title ?? '',
+              artist: song?.artist ?? '',
+              results,
+            })
+            await updateSong(results.songId, { lastPlayedAt: Date.now() })
+            history = (await listRuns(results.songId)).filter((run) => run.chartId === results.chartId && run.mode === results.mode).slice(0, 5)
+          }
+        } catch (error) {
+          toast(error instanceof Error ? error.message : String(error), 'error')
         }
-      } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), 'error')
-      }
+        setRoute((current) =>
+          current.name === 'results' && current.results === results ? { ...current, previousBest, isNewBest, history, saving: false } : current,
+        )
+        if (!results.autoPlay) await refreshLibrary()
+      })()
       if (!song || !chart) {
         toast('Song or chart went missing; returning home.', 'error')
         setRoute({ name: 'home' })
         return
       }
-      setRoute({ name: 'results', results, songId: results.songId, chartId: results.chartId, previousBest, isNewBest, history })
+      setRoute({ name: 'results', results, songId: results.songId, chartId: results.chartId, previousBest: null, isNewBest: false, history: [], saving: true })
     },
     [refreshLibrary, songs, toast],
   )
@@ -373,6 +412,8 @@ function AppShell(): React.JSX.Element {
           <HomeScreen
             songs={songs}
             loading={loading}
+            loadError={libraryError}
+            onRetryLoad={() => void refreshLibrary()}
             bestScores={bestScores}
             storageAvailable={storageAvailable}
             onImport={startImport}
@@ -459,6 +500,7 @@ function AppShell(): React.JSX.Element {
             previousBest={route.previousBest}
             isNewBest={route.isNewBest}
             history={route.history}
+            saving={route.saving}
             onRetry={() => void startGame({ songId: route.songId, chartId: route.chartId, difficulty: chart.difficulty, autoPlay: route.results.autoPlay ?? false })}
             onSetup={() => setRoute({ name: 'setup', file: null, songId: route.songId, attempt: 0 })}
             onHome={backHome}
@@ -517,7 +559,7 @@ function AppShell(): React.JSX.Element {
           </Suspense>
         )
       default:
-        return <HomeScreen songs={songs} loading={loading} bestScores={bestScores} storageAvailable={storageAvailable} onImport={startImport} onPlayDemo={startDemo} onOpenSong={openSong} onDeleteSong={() => undefined} onClearAll={() => undefined} />
+        return <HomeScreen songs={songs} loading={loading} loadError={libraryError} onRetryLoad={() => void refreshLibrary()} bestScores={bestScores} storageAvailable={storageAvailable} onImport={startImport} onPlayDemo={startDemo} onOpenSong={openSong} onDeleteSong={() => undefined} onClearAll={() => undefined} />
     }
   }
 

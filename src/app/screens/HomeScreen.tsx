@@ -10,6 +10,9 @@ import type { BestScoreEntry, BestScores } from './bestScores'
 export interface HomeScreenProps {
   songs: SongMeta[]
   loading: boolean
+  /** The library could not be read: say so and offer a retry instead of an empty list. */
+  loadError: string | null
+  onRetryLoad: () => void
   bestScores: BestScores
   storageAvailable: boolean
   onImport: (file: File) => void
@@ -37,6 +40,8 @@ function highestScore(
 export function HomeScreen({
   songs,
   loading,
+  loadError,
+  onRetryLoad,
   bestScores,
   storageAvailable,
   onImport,
@@ -143,7 +148,18 @@ export function HomeScreen({
           ) : undefined
         }
       >
-        {songs.length === 0 && !loading && (
+        {loadError && (
+          <div className="empty-state" role="alert">
+            <h3>Your songs did not load</h3>
+            <p className="muted small">
+              They are most likely still saved. Another Beatbreak tab may be updating the library: close it, then try again. ({loadError})
+            </p>
+            <Button variant="primary" onClick={onRetryLoad}>
+              Try again
+            </Button>
+          </div>
+        )}
+        {songs.length === 0 && !loading && !loadError && (
           <div className="empty-state">
             <h3>Nothing here yet</h3>
             <p className="muted small">
@@ -164,7 +180,7 @@ export function HomeScreen({
                   <span className="song-title truncate">{song.title}</span>
                   <div className="song-meta">
                     {song.artist && <span className="muted tiny">{song.artist}</span>}
-                    {!song.audioCached && <Chip color="#a35f00" tone="outline">File needed</Chip>}
+                    {!song.audioCached && <Chip color="#ffb02e" tone="outline">File needed</Chip>}
                   </div>
                   {bestRun && (
                     <div className="song-high-score">
@@ -180,13 +196,14 @@ export function HomeScreen({
                 </div>
                 <span className="song-duration mono">{formatDuration(song.duration)}</span>
                 <div className="song-actions">
-                  <Button variant="primary" onClick={() => onOpenSong(song.id)}>
+                  <Button variant="primary" onClick={() => onOpenSong(song.id)} aria-label={`Play ${song.title}`}>
                     Play
                   </Button>
                   <Button
                     variant="danger"
                     onClick={() => setConfirmDelete(song.id)}
                     title="Delete this song, its charts and its scores"
+                    aria-label={`Delete ${song.title}`}
                   >
                     Delete
                   </Button>

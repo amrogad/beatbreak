@@ -252,6 +252,6 @@ export function createTestSongFile(options: SynthOptions = {}): { file: File; tr
   const truth = renderTestRhythm(options)
   const wav = encodeWav(truth.samples, truth.sampleRate, 1)
   const fileName = DEMO_FILE_NAME
-  const file = new File([wav], fileName, { type: 'audio/wav', lastModified: Date.now() })
+  const file = new File([wav], fileName, { type: 'audio/wav', lastModified: 1 })
   return { file, truth }
 }

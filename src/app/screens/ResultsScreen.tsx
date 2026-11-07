@@ -15,6 +15,8 @@ export interface ResultsScreenProps {
   previousBest: StoredRun | null
   isNewBest: boolean
   history: StoredRun[]
+  /** The best-score lookup has not landed yet: hold back the chips that depend on it. */
+  saving: boolean
   onRetry: () => void
   onSetup: () => void
   onHome: () => void
@@ -28,6 +30,7 @@ export function ResultsScreen({
   previousBest,
   isNewBest,
   history,
+  saving,
   onRetry,
   onSetup,
   onHome,
@@ -93,13 +96,13 @@ export function ResultsScreen({
                 Run ended after {judged.toLocaleString('en-US')} of {results.totalNotes.toLocaleString('en-US')} {things}
               </Chip>
             )}
-            {isNewBest && !results.autoPlay && <Chip color="#ffc93d">New personal best</Chip>}
-            {!isNewBest && !previousBest && !results.autoPlay && !results.failed && results.score > 0 && (
+            {!saving && isNewBest && !results.autoPlay && <Chip color="#ffc93d">New personal best</Chip>}
+            {!saving && !isNewBest && !previousBest && !results.autoPlay && !results.failed && results.score > 0 && (
               <Chip color="#3fe08a">First score on this chart</Chip>
             )}
             {marvelousFullCombo && <Chip color="#3de9ff">Marvelous full combo</Chip>}
             {fullCombo && !marvelousFullCombo && <Chip color="#3fe08a">Full combo</Chip>}
-            {!isNewBest && previousBest && !results.autoPlay && (
+            {!saving && !isNewBest && previousBest && !results.autoPlay && (
               <Stat
                 label="Previous best"
                 value={previousBest.score.toLocaleString('en-US')}
@@ -134,7 +137,7 @@ export function ResultsScreen({
       </Panel>
 
       <div className="row gap-12 wrap">
-        <Button variant="primary" size="lg" onClick={onRetry}>
+        <Button variant="primary" size="lg" onClick={onRetry} autoFocus>
           <Icon name="replay" />
           Play again
         </Button>
@@ -142,7 +145,7 @@ export function ResultsScreen({
           Change difficulty
         </Button>
         <Button variant="ghost" size="lg" onClick={onHome}>
-          Back
+          Home
         </Button>
         <Button variant="ghost" size="lg" onClick={onExportChart}>
           Save chart file
