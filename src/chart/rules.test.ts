@@ -28,6 +28,22 @@ describe('chart rules', () => {
     expect(out[0].lane).toBe(0)
   })
 
+  it('never leaves more than 12 arrows in any one second', () => {
+    // 16ths at 200 BPM: 13.3 a second, with every downbeat a two-arrow chord.
+    const fast = TimingMap.single(200, 0)
+    const step = 60 / 200 / 4
+    const notes: ChartNote[] = []
+    for (let i = 0; i < 80; i++) {
+      notes.push({ ...tap(i * step, (i % 4) as Lane, i % 4 === 0 ? 0.9 : 0.5), beat: i / 4, step: i })
+      if (i % 4 === 0) notes.push({ ...tap(i * step, ((i + 2) % 4) as Lane, 0.6), id: `c${i}`, beat: i / 4, step: i })
+    }
+    const out = applyChartRules(notes, fast, { stepsPerBeat: 4, maxChord: 2, minJackGap: 0.05 }, 'expert')
+    for (let i = 0; i < out.length; i++) {
+      const inSecond = out.filter((n) => n.time >= out[i].time && n.time - out[i].time <= 1).length
+      expect(inSecond).toBeLessThanOrEqual(12)
+    }
+  })
+
   it('keeps arrows a full grid step apart', () => {
     const out = applyChartRules([tap(1, 0), tap(1.125, 2)], timing, settings, 'expert')
     expect(out.map((n) => n.time)).toEqual([1, 1.125])

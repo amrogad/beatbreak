@@ -68,7 +68,39 @@ export function applyChartRules(
   const anchor = ANCHOR_LIMIT[difficulty]
   if (anchor) notes = breakAnchors(notes, beatAt, anchor, settings)
   notes = dropStrays(notes, beatAt)
+  notes = capDensity(notes.sort((a, b) => a.time - b.time || a.lane - b.lane))
   return notes.sort((a, b) => a.time - b.time || a.lane - b.lane)
+}
+
+/** No more arrows than this in any one second, on any level (Amro, 2026-11-07). */
+export const MAX_NOTES_PER_SECOND = 12
+
+/**
+ * Over the ceiling, the weakest arrow in the busy second goes first: a chord's extra arrow before
+ * a single one, a tap before a long arrow, then the lowest strength.
+ */
+function capDensity(notes: ChartNote[]): ChartNote[] {
+  const out = [...notes]
+  let start = 0
+  for (let i = 0; i < out.length; i++) {
+    while (out[i].time - out[start].time > 1) start++
+    if (i - start + 1 <= MAX_NOTES_PER_SECOND) continue
+    let worst = start
+    let worstScore = Infinity
+    for (let k = start; k <= i; k++) {
+      const note = out[k]
+      const chordMate = (k > 0 && Math.abs(out[k - 1].time - note.time) < 1e-3) || (k + 1 < out.length && Math.abs(out[k + 1].time - note.time) < 1e-3)
+      const score = note.strength + (note.kind === 'hold' ? 1 : 0) - (chordMate ? 0.5 : 0)
+      if (score < worstScore) {
+        worstScore = score
+        worst = k
+      }
+    }
+    out.splice(worst, 1)
+    i = Math.max(start, worst) - 1
+    if (start > i + 1) start = i + 1
+  }
+  return out
 }
 
 /** Two bars, in beats: an arrow at least this far from every other one is a stray. */
