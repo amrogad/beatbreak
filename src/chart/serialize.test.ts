@@ -175,11 +175,29 @@ describe('StepMania .sm export', () => {
   })
 
   it('rounds notes that are off the .sm grid instead of refusing to export', () => {
-    const offGrid: ChartNote = { id: 'og', lane: 2, time: 0.123, beat: 0, step: 0, kind: 'tap', strength: 0.5 }
+    const offGrid: ChartNote = { id: 'og', lane: 2, time: 0.473, beat: 0, step: 0, kind: 'tap', strength: 0.5 }
     const result = exportSm(makeChart([note(0, 0), offGrid]), { title: 'T', artist: '', musicFileName: 'a.ogg' })
     expect(result.ok).toBe(true)
     expect(result.text).not.toBe('')
     expect(result.warnings.some((w) => /rounded/i.test(w))).toBe(true)
+  })
+
+  it('refuses to drop arrows that share a row or sit before the first beat', () => {
+    const close: ChartNote = { ...note(1, 4), id: 'close', time: note(1, 4).time + 0.04 }
+    const shared = exportSm(makeChart([note(0, 0), note(1, 4), close]), { title: 'T', artist: '', musicFileName: 'a.ogg' })
+    expect(shared.ok).toBe(false)
+    const early: ChartNote = { id: 'early', lane: 2, time: 0.1, beat: 0, step: 0, kind: 'tap', strength: 0.5 }
+    expect(exportSm(makeChart([early, note(0, 4)]), { title: 'T', artist: '', musicFileName: 'a.ogg' }).ok).toBe(false)
+  })
+
+  it('reads a file with broken notes, odd grids and repeated ids without throwing', () => {
+    const file = JSON.stringify({ notes: [null, { lane: 0, time: 1, id: 'a' }, { lane: 1, time: 2, id: 'a' }], timing: { offset: 0, bpms: [{ beat: 0, bpm: 120 }] }, stepsPerBeat: 1e9 })
+    const parsed = parseChartFile(file)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.chart.stepsPerBeat).toBe(4)
+    expect(new Set(parsed.chart.notes.map((n) => n.id)).size).toBe(2)
+    expect(parseChartFile(JSON.stringify({ notes: [], timing: { offset: 0, bpms: [null] } })).ok).toBe(false)
   })
 
   it('refuses an empty chart', () => {

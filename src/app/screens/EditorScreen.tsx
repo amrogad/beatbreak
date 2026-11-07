@@ -24,7 +24,7 @@ import { loadSongBundle } from '../../store/library'
 import { isCut, planForMeta, toPlaybackPlan } from '../../core/edit'
 import { isOccupied, noteEnd, placeNote, regridNotes, stepTime, withEnd } from '../../chart/editNotes'
 import type { SongBundle } from '../../store/library'
-import { Icon, BackButton, Button, Chip, Panel, Select, Spinner, Stat, Toggle } from '../components'
+import { Icon, BackButton, Button, Chip, Modal, Panel, Select, Spinner, Stat, Toggle } from '../components'
 import { hexToRgba } from '../../render/renderer'
 import { formatClock, formatDuration } from '../format'
 
@@ -70,6 +70,10 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const [importWarnings, setImportWarnings] = useState<string[] | null>(null)
   const [bpmDraft, setBpmDraft] = useState<string | null>(null)
   const [offsetDraft, setOffsetDraft] = useState<string | null>(null)
+  /** An in-page question: portals can block the browser's own confirm dialog. */
+  const [ask, setAsk] = useState<{ message: string; yes: string; action: () => void } | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [sizeTick, setSizeTick] = useState(0)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -77,6 +81,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const rafRef = useRef(0)
   const clickCursorRef = useRef(0)
   const undoRef = useRef<UndoEntry[]>([])
+  const redoRef = useRef<UndoEntry[]>([])
   const dragRef = useRef<{
     noteId: string
     mode: 'move' | 'create' | 'tail'
@@ -102,7 +107,11 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     let cancelled = false
     loadSongBundle(songId)
       .then((loaded) => {
-        if (cancelled || !loaded) return
+        if (cancelled) return
+        if (!loaded) {
+          setMissing(true)
+          return
+        }
         runtime.put(loaded)
         setBundle(loaded)
       })
@@ -136,6 +145,10 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   useEffect(() => stopPlayback, [stopPlayback])
 
   const togglePlayback = useCallback(async () => {
+    if (bundle && !bundle.buffer) {
+      onToast('The audio for this song is not loaded. Attach the file on the song screen to hear it here.', 'info')
+      return
+    }
     if (!bundle?.buffer || !chart || !plan) return
     if (engineRef.current) {
       stopPlayback()
@@ -176,13 +189,14 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
-  }, [bundle, chart, duration, plan, stopPlayback, timing])
+  }, [bundle, chart, duration, onToast, plan, stopPlayback, timing])
 
   /* ------------------------------------------------------------------ edits */
 
   const pushUndo = useCallback((entry: UndoEntry) => {
     undoRef.current.push(entry)
     if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift()
+    redoRef.current = []
   }, [])
 
   const commitNotes = useCallback(
@@ -201,7 +215,18 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
   const undo = useCallback(() => {
     const previous = undoRef.current.pop()
     if (!previous || !chart) return
+    redoRef.current.push({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
     setChart({ ...chart, ...previous, stats: computeStats(previous.notes, duration), edited: true })
+    setBpmDraft(null)
+    setOffsetDraft(null)
+    setDirty(true)
+  }, [chart, duration])
+
+  const redo = useCallback(() => {
+    const next = redoRef.current.pop()
+    if (!next || !chart) return
+    undoRef.current.push({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
+    setChart({ ...chart, ...next, stats: computeStats(next.notes, duration), edited: true })
     setBpmDraft(null)
     setOffsetDraft(null)
     setDirty(true)
@@ -241,6 +266,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     setBpmDraft(null)
     if (!chart || !Number.isFinite(next) || next < 30 || next > 320) return
     if (Math.abs(next - timing.primaryBpm) < 1e-9) return
+    if (timing.hasTempoChanges) onToast('This chart had tempo changes; the new BPM replaces all of them. Undo brings them back.', 'info')
     regrid(timing.withBpm(next), chart.stepsPerBeat)
   }
 
@@ -250,12 +276,29 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     setOffsetDraft(null)
     if (!chart || offsetDraft.trim() === '' || !Number.isFinite(next)) return
     if (Math.abs(next - timing.offset) < 1e-6) return
-    regrid(timing.withOffset(next), chart.stepsPerBeat)
+    // The offset moves the grid and every arrow with it: the player is lining up the whole chart,
+    // not asking each arrow to jump to its nearest new line.
+    const shift = next - timing.offset
+    const moved = chart.notes.map((note) => ({ ...note, time: note.time + shift }))
+    const kept = moved.filter((note) => note.time >= 0 && note.time <= duration + 1e-6)
+    pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
+    setChart({ ...chart, timing: timing.withOffset(next).toJSON(), notes: kept, stats: computeStats(kept, duration), edited: true })
+    setDirty(true)
+    if (kept.length < moved.length) onToast(`${moved.length - kept.length} arrow(s) moved outside the song and were removed. Undo brings them back.`, 'info')
   }
 
+  /** Where a new or moved arrow lands: on the grid when snapping, never before 0 or past the end. */
   const snapTime = useCallback(
-    (time: number): number => (snap ? timing.snapTime(Math.max(0, time), chart?.stepsPerBeat ?? 4) : Math.max(0, time)),
-    [chart?.stepsPerBeat, snap, timing],
+    (time: number): number => {
+      const end = duration > 0 ? duration : Number.POSITIVE_INFINITY
+      const spb = chart?.stepsPerBeat ?? 4
+      if (!snap) return Math.max(0, Math.min(end, time))
+      let snapped = timing.snapTime(Math.max(0, Math.min(end, time)), spb)
+      if (snapped < 0) snapped = stepTime(snapped, 1, timing, spb)
+      if (snapped > end) snapped = stepTime(snapped, -1, timing, spb)
+      return Math.max(0, Math.min(end, snapped))
+    },
+    [chart?.stepsPerBeat, duration, snap, timing],
   )
 
   const timeFromX = useCallback(
@@ -466,7 +509,16 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     cancelAnimationFrame(raf)
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [bundle?.meta.analysis.silentRegions, camera, chart, duration, plan, playhead, selection, timing, xFromTime])
+  }, [bundle?.meta.analysis.silentRegions, camera, chart, duration, plan, playhead, selection, sizeTick, timing, xFromTime])
+
+  // A resize or a phone rotation stretches the old bitmap: draw again at the new size.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const observer = new ResizeObserver(() => setSizeTick((tick) => tick + 1))
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [chart !== null])
 
   /* -------------------------------------------------------------- shortcuts */
 
@@ -474,9 +526,16 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return
+      // Space on a focused button presses the button, not play.
+      if (event.code === 'Space' && target && (target.tagName === 'BUTTON' || target.tagName === 'A')) return
       if (event.code === 'Space') {
         event.preventDefault()
         void togglePlayback()
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && (event.code === 'KeyY' || (event.code === 'KeyZ' && event.shiftKey))) {
+        event.preventDefault()
+        redo()
         return
       }
       if ((event.ctrlKey || event.metaKey) && event.code === 'KeyZ') {
@@ -486,7 +545,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       }
       if (!chart) return
       if (event.code === 'Delete' || event.code === 'Backspace') {
-        if (!selection) return
+        if (!selection || !chart.notes.some((note) => note.id === selection)) return
         event.preventDefault()
         const before = chart.notes
         commitNotes(
@@ -504,24 +563,25 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       }
       const action = nudge[event.code]
       if (action && selection) {
-        event.preventDefault()
         const before = chart.notes
         const target = before.find((note) => note.id === selection)
         if (!target) return
+        event.preventDefault()
         const nextTime = action.time ? Math.max(0, stepTime(target.time, action.time, timing, chart.stepsPerBeat)) : target.time
         const nextLane = Math.max(0, Math.min(3, target.lane + (action.lane ?? 0))) as Lane
         const length = noteEnd(target) - target.time
         if (nextLane === target.lane && Math.abs(nextTime - target.time) < 1e-6) return
         if (isOccupied(before, nextLane, nextTime, nextTime + length, target.id)) return
+        // A held arrow key repeats: the whole slide is one undo step.
         commitNotes(
           before.map((note) => (note.id === selection ? placeNote(note, nextTime, nextLane, timing, chart.stepsPerBeat) : note)),
-          { undo: before },
+          event.repeat ? {} : { undo: before },
         )
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [chart, commitNotes, selection, timing, togglePlayback, undo])
+  }, [chart, commitNotes, redo, selection, timing, togglePlayback, undo])
 
   /* ------------------------------------------------------------ persistence */
 
@@ -576,15 +636,21 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     onToast('Chart saved.', 'success')
   }, [bundle, chart, duration, onChartsChanged, onToast, songId])
 
-  const downloadText = (fileName: string, text: string): void => {
-    const blob = new Blob([text], { type: 'application/json' })
+  const downloadText = (fileName: string, text: string, type = 'application/json'): void => {
+    const blob = new Blob([text], { type })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.download = fileName
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+    link.remove()
+    // Safari starts the download after the click returns: revoking at once can leave it blank.
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
   }
+
+  /** A file name that keeps Arabic, Cyrillic or any other letters, never an empty one. */
+  const fileStem = (title: string): string => title.replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'chart'
 
   const exportJson = useCallback(() => {
     if (!chart || !bundle) return
@@ -594,7 +660,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       fileName: bundle.meta.fileName,
       duration: bundle.meta.duration,
     })
-    downloadText(`${bundle.meta.title.replace(/[^\w\- ]+/g, '')}-${chart.difficulty}.beatbreak.json`, text)
+    downloadText(`${fileStem(bundle.meta.title)}-${chart.difficulty}.beatbreak.json`, text)
     onToast('Chart exported as JSON.', 'success')
   }, [bundle, chart, onToast])
 
@@ -611,13 +677,23 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       onToast('This chart cannot be exported as a valid .sm file — see the issues below.', 'error')
       return
     }
-    downloadText(`${bundle.meta.title.replace(/[^\w\- ]+/g, '')}-${chart.difficulty}.sm`, result.text)
+    downloadText(`${fileStem(bundle.meta.title)}-${chart.difficulty}.sm`, result.text, 'text/plain')
     onToast('Exported a valid StepMania .sm file.', 'success')
   }, [bundle, chart, onToast])
 
   const importJson = useCallback(
     async (file: File) => {
-      const text = await file.text()
+      if (file.size > 10 * 1024 * 1024) {
+        onToast(`Import failed: ${file.name} is ${(file.size / 1048576).toFixed(0)} MB; a chart file is far smaller.`, 'error')
+        return
+      }
+      let text: string
+      try {
+        text = await file.text()
+      } catch {
+        onToast(`Import failed: ${file.name} could not be read.`, 'error')
+        return
+      }
       const parsed = parseChartFile(text)
       if (!parsed.ok) {
         setImportWarnings(null)
@@ -626,13 +702,29 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       }
       if (!chart) return
       const incoming = parsed.chart
+      // One sweep in time order: an arrow is kept unless its lane is still busy (an earlier arrow
+      // within 30 ms, or a long arrow still running).
       const notes: ChartNote[] = []
+      const busyUntil = [-Infinity, -Infinity, -Infinity, -Infinity]
+      let pastEnd = 0
       for (const note of [...incoming.notes].sort((a, b) => (a.time === b.time ? a.lane - b.lane : a.time - b.time))) {
-        if (!isOccupied(notes, note.lane, note.time, noteEnd(note))) notes.push(note)
+        if (duration > 0 && note.time > duration + 1e-6) {
+          pastEnd++
+          continue
+        }
+        if (note.time < busyUntil[note.lane] + 0.03) continue
+        notes.push(note)
+        busyUntil[note.lane] = noteEnd(note)
       }
-      if (notes.length < incoming.notes.length) {
-        parsed.warnings.push(`${incoming.notes.length - notes.length} arrow(s) sat on top of another one and were dropped.`)
-      }
+      const overlapping = incoming.notes.length - notes.length - pastEnd
+      if (overlapping > 0) parsed.warnings.push(`${overlapping} arrow(s) sat on top of another one and were dropped.`)
+      if (pastEnd > 0) parsed.warnings.push(`${pastEnd} arrow(s) after the end of this song were dropped.`)
+      // A chart made for another song fits no beat here: say so (Ctrl+Z takes the import back).
+      const fromSong = parsed.song
+      const otherSong =
+        (fromSong.duration > 0 && duration > 0 && Math.abs(fromSong.duration - duration) > 2) ||
+        (fromSong.fileName !== '' && bundle !== null && fromSong.fileName !== bundle.meta.fileName)
+      if (otherSong) parsed.warnings.unshift(`This chart was made for "${fromSong.title || fromSong.fileName}", not this song. Undo (Ctrl+Z) takes the import back.`)
       // The file's notes and grid replace this chart; it stays this song's chart at this difficulty.
       pushUndo({ notes: chart.notes, timing: chart.timing, stepsPerBeat: chart.stepsPerBeat })
       setChart({
@@ -650,9 +742,16 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
       setBpmDraft(null)
       setOffsetDraft(null)
       setImportWarnings(parsed.warnings)
-      onToast(`Imported ${notes.length} notes from ${file.name}. Review, then save.`, 'success')
+      onToast(`Imported ${notes.length} notes from ${file.name}. Review, then save.`, otherSong ? 'info' : 'success')
     },
-    [bundle?.meta.title, chart, duration, onToast, pushUndo, songId],
+    [bundle, chart, duration, onToast, pushUndo, songId],
+  )
+
+  // Validation reads every note: once per edit, not on every playhead frame.
+  const validation = useMemo(() => (chart ? validatePlayability(chart, duration) : null), [chart, duration])
+  const trimmedNotes = useMemo(
+    () => (plan && chart ? chart.notes.filter((note) => isCut(plan, note.time) || note.time < plan.windowStart || note.time > plan.windowEnd).length : 0),
+    [chart, plan],
   )
 
   /* ------------------------------------------------------------------ render */
@@ -661,7 +760,7 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     return (
       <div className="page narrow">
         <Panel title="Editor">
-          <Spinner label={bundle ? 'Selecting chart…' : 'Loading song…'} />
+          {missing ? <p className="muted">This song is no longer in the library.</p> : <Spinner label={bundle ? 'Selecting chart…' : 'Loading song…'} />}
           <div className="mt-16">
             <Button variant="ghost" onClick={onBack}>
               Back
@@ -672,12 +771,9 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
     )
   }
 
-  const playability = validatePlayability(chart, duration)
+  const playability = validation ?? validatePlayability(chart, duration)
   const errors = playability.issues.filter((issue) => issue.severity === 'error')
   const warnings = playability.issues.filter((issue) => issue.severity === 'warning')
-  const trimmedNotes = plan
-    ? chart.notes.filter((note) => isCut(plan, note.time) || note.time < plan.windowStart || note.time > plan.windowEnd).length
-    : 0
 
   return (
     <div className="page">
@@ -686,9 +782,12 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
           <div className="title-row">
             <BackButton
               onClick={() => {
-                if (dirty && !window.confirm('Leave the editor without saving your changes?')) return
-                stopPlayback()
-                onBack()
+                const leave = (): void => {
+                  stopPlayback()
+                  onBack()
+                }
+                if (dirty) setAsk({ message: 'Leave the editor without saving your changes?', yes: 'Leave', action: leave })
+                else leave()
               }}
             />
             <h1>{bundle.meta.title}</h1>
@@ -744,17 +843,22 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
                     borderColor: candidate?.difficulty === chart.difficulty ? DIFFICULTY_COLOR[difficulty] : undefined,
                     color: candidate?.difficulty === chart.difficulty ? DIFFICULTY_COLOR[difficulty] : undefined,
                   }}
+                  aria-pressed={candidate?.difficulty === chart.difficulty}
                   onClick={() => {
-                    if (dirty && !window.confirm('Discard unsaved changes and switch difficulty?')) return
                     if (!candidate) return
-                    stopPlayback()
-                    undoRef.current = []
-                    setChart(candidate)
-                    setSelection(null)
-                    setDirty(false)
-                    setSmResult(null)
-                    setBpmDraft(null)
-                    setOffsetDraft(null)
+                    const switchTo = (): void => {
+                      stopPlayback()
+                      undoRef.current = []
+                      redoRef.current = []
+                      setChart(candidate)
+                      setSelection(null)
+                      setDirty(false)
+                      setSmResult(null)
+                      setBpmDraft(null)
+                      setOffsetDraft(null)
+                    }
+                    if (dirty) setAsk({ message: 'Discard unsaved changes and switch difficulty?', yes: 'Discard and switch', action: switchTo })
+                    else switchTo()
                   }}
                 >
                   {DIFFICULTY_LABEL[difficulty]}
@@ -1132,6 +1236,26 @@ export function EditorScreen({ songId, chartId, onBack, onToast, onChartsChanged
           </div>
         )}
       </Panel>
+      {ask && (
+        <Modal title="Are you sure?" onClose={() => setAsk(null)}>
+          <p>{ask.message}</p>
+          <div className="row gap-8 wrap mt-16">
+            <Button
+              variant="danger"
+              onClick={() => {
+                const action = ask.action
+                setAsk(null)
+                action()
+              }}
+            >
+              {ask.yes}
+            </Button>
+            <Button variant="ghost" onClick={() => setAsk(null)}>
+              Keep editing
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

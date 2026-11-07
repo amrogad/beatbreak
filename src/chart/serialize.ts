@@ -75,8 +75,20 @@ export interface ParseFailure {
 const LANE_FROM_LETTER: Record<string, Lane> = { L: 0, D: 1, U: 2, R: 3 }
 const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard', 'expert']
 
+/** Larger files are not charts a player made: refuse them before they can freeze the tab. */
+export const MAX_IMPORT_NOTES = 20000
+const MAX_TEMPO_SEGMENTS = 512
+
 /** Parse and validate a Beatbreak chart file. Never throws; returns a typed failure instead. */
 export function parseChartFile(text: string): ParseResult | ParseFailure {
+  try {
+    return parseChartFileOrThrow(text)
+  } catch (error) {
+    return { ok: false, error: `The file could not be read as a chart (${error instanceof Error ? error.message : String(error)}).`, warnings: [] }
+  }
+}
+
+function parseChartFileOrThrow(text: string): ParseResult | ParseFailure {
   const warnings: string[] = []
   let raw: unknown
   try {
@@ -100,43 +112,65 @@ export function parseChartFile(text: string): ParseResult | ParseFailure {
   if (!chartCandidate.timing || !Array.isArray(chartCandidate.timing.bpms) || chartCandidate.timing.bpms.length === 0) {
     return { ok: false, error: 'Chart is missing a valid timing map (offset + bpms).', warnings }
   }
-  const bpm = chartCandidate.timing.bpms[0].bpm
-  if (!Number.isFinite(bpm) || bpm <= 5 || bpm > 1000) {
-    return { ok: false, error: `Chart BPM ${String(bpm)} is out of range.`, warnings }
+  if (chartCandidate.notes.length > MAX_IMPORT_NOTES) {
+    return { ok: false, error: `The chart has ${chartCandidate.notes.length} notes; ${MAX_IMPORT_NOTES} is the most a chart can hold.`, warnings }
+  }
+  if (chartCandidate.timing.bpms.length > MAX_TEMPO_SEGMENTS) {
+    return { ok: false, error: `The chart has ${chartCandidate.timing.bpms.length} tempo changes; ${MAX_TEMPO_SEGMENTS} is the most it can hold.`, warnings }
+  }
+  for (const segment of chartCandidate.timing.bpms as Partial<{ bpm: number; beat: number }>[]) {
+    const value = segment && typeof segment === 'object' ? Number(segment.bpm) : NaN
+    if (!Number.isFinite(value) || value <= 5 || value > 1000) {
+      return { ok: false, error: `Chart BPM ${String(segment?.bpm)} is out of range.`, warnings }
+    }
   }
 
-  const stepsPerBeat = Number.isFinite(chartCandidate.stepsPerBeat) ? chartCandidate.stepsPerBeat : 4
-  if (![1, 2, 3, 4, 6, 8].includes(stepsPerBeat)) {
-    warnings.push(`Unusual grid resolution ${stepsPerBeat} steps per beat; snapping to 4.`)
+  const declared = Number(chartCandidate.stepsPerBeat)
+  const stepsPerBeat = [1, 2, 3, 4, 6, 8].includes(declared) ? declared : 4
+  if (Number.isFinite(declared) && declared !== stepsPerBeat) {
+    warnings.push(`Unusual grid resolution ${declared} steps per beat; snapped to 4.`)
   }
 
   const duration = file.song?.duration && file.song.duration > 0 ? file.song.duration : Number.POSITIVE_INFINITY
   const timing = new TimingMap(chartCandidate.timing)
   const notes: ChartNote[] = []
   const seen = new Set<string>()
+  const ids = new Set<string>()
+  // Counted, not listed: a broken file with thousands of bad notes must not print thousands of lines.
+  let invalid = 0
+  let pastEnd = 0
+  let duplicates = 0
 
-  for (const rawNote of chartCandidate.notes as Partial<ChartNote>[]) {
+  for (const rawNote of chartCandidate.notes as (Partial<ChartNote> | null)[]) {
+    if (!rawNote || typeof rawNote !== 'object') {
+      invalid++
+      continue
+    }
     const lane = Number(rawNote.lane)
     const time = Number(rawNote.time)
     if (!Number.isInteger(lane) || lane < 0 || lane > 3 || !Number.isFinite(time) || time < 0) {
-      warnings.push('A note had an invalid lane or time and was dropped.')
+      invalid++
       continue
     }
     if (time > duration) {
-      warnings.push('A note past the end of the song was dropped.')
+      pastEnd++
       continue
     }
     const key = `${time.toFixed(4)}|${lane}`
     if (seen.has(key)) {
-      warnings.push('Duplicate note dropped.')
+      duplicates++
       continue
     }
     seen.add(key)
-    const step = Number.isFinite(rawNote.step)
+    const step = Number.isFinite(rawNote.step) && declared === stepsPerBeat
       ? Math.round(rawNote.step as number)
       : timing.timeToStep(time, stepsPerBeat)
+    // Every note gets its own id: the editor moves and deletes notes by id.
+    let id = typeof rawNote.id === 'string' && rawNote.id ? rawNote.id : `imp${step}-${lane}`
+    for (let n = 2; ids.has(id); n++) id = `${typeof rawNote.id === 'string' && rawNote.id ? rawNote.id : `imp${step}-${lane}`}-${n}`
+    ids.add(id)
     notes.push({
-      id: typeof rawNote.id === 'string' ? rawNote.id : `imp${step}-${lane}`,
+      id,
       lane: lane as Lane,
       time,
       beat: Number.isFinite(rawNote.beat) ? (rawNote.beat as number) : step / stepsPerBeat,
@@ -148,6 +182,10 @@ export function parseChartFile(text: string): ParseResult | ParseFailure {
         : {}),
     })
   }
+
+  if (invalid > 0) warnings.push(`${invalid} note(s) had an invalid lane or time and were dropped.`)
+  if (pastEnd > 0) warnings.push(`${pastEnd} note(s) past the end of the song were dropped.`)
+  if (duplicates > 0) warnings.push(`${duplicates} duplicate note(s) were dropped.`)
 
   if (notes.length === 0) {
     return { ok: false, error: 'Chart contains no usable notes.', warnings }
@@ -270,8 +308,15 @@ export function exportSm(chart: Chart, options: SmExportOptions): SmExportResult
 
   // StepMania note letters: 1 = tap, 2 = hold head, 3 = hold tail.
   const cellsByRow = new Map<number, string[]>()
+  // A cell already taken, or a row before the first measure, would drop an arrow without a word.
+  const lost: string[] = []
   const put = (row: number, lane: Lane, letter: string): void => {
+    if (row < 0) {
+      lost.push(`before the first beat (lane ${lane + 1})`)
+      return
+    }
     const cells = cellsByRow.get(row) ?? ['0', '0', '0', '0']
+    if (cells[lane] !== '0') lost.push(`beat ${trimNumber(row / rowsPerBeat, 3)}, lane ${lane + 1}`)
     cells[lane] = letter
     cellsByRow.set(row, cells)
   }
@@ -290,6 +335,11 @@ export function exportSm(chart: Chart, options: SmExportOptions): SmExportResult
     }
     lastRow = Math.max(lastRow, tailRow)
   }
+  if (lost.length > 0) {
+    errors.push(
+      `${lost.length} arrow(s) would land on the same StepMania row as another (${lost.slice(0, 3).join('; ')}${lost.length > 3 ? '; ...' : ''}). Move them apart or pick a finer grid.`,
+    )
+  }
   const measures = Math.max(1, Math.ceil((lastRow + 1) / rowsPerMeasure))
 
   const laneRows: string[][] = []
@@ -302,7 +352,7 @@ export function exportSm(chart: Chart, options: SmExportOptions): SmExportResult
   }
 
   const bpms = normalizeTiming(chart.timing as Timing)
-    .bpms.map((segment) => `${trimNumber(segment.beat, 3)}=${trimNumber(segment.bpm, 3)}`)
+    .bpms.map((segment) => `${trimNumber(segment.beat, 6)}=${trimNumber(segment.bpm, 6)}`)
     .join(',\n     ')
   const offset = -timing.offset
 
