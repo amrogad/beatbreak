@@ -12,7 +12,7 @@ import type { NoteShape } from '../../render/renderer'
 import type { Settings } from '../../store/settings'
 import { storageSummary, clearScores, idbAudioClearAndFlag, wipeEverything } from '../../store/maintenance'
 import type { StorageSummary } from '../../store/maintenance'
-import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle } from '../components'
+import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle, useConfirm } from '../components'
 import { SYNC_HINT, formatBytes, formatPercent, formatSync } from '../format'
 import { CalibrateDialog } from '../Calibrate'
 import { buildBackup, parseBackup, restoreBackup } from '../../store/backup'
@@ -72,6 +72,7 @@ export function SettingsScreen({
   // Phones and tablets have no keys to set, so the key panel only shows where there is a keyboard.
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
   const arrowMode = settings.playMode !== 'circles'
+  const [ask, confirmDialog] = useConfirm()
 
   const [calibrating, setCalibrating] = useState(false)
   const backupInputRef = useRef<HTMLInputElement | null>(null)
@@ -95,7 +96,7 @@ export function SettingsScreen({
     try {
       const { backup, skipped } = parseBackup(await file.text())
       const when = backup.savedAt ? ` from ${backup.savedAt.slice(0, 10)}` : ''
-      if (!window.confirm(`Restore ${backup.songs.length} song(s), their charts and ${backup.scores.length} score(s)${when}? A song that is already here is replaced by the backup's copy, and your settings are replaced.`)) return
+      if (!(await ask(`Restore ${backup.songs.length} song(s), their charts and ${backup.scores.length} score(s)${when}? A song that is already here is replaced by the backup's copy, and your settings are replaced.`, 'Restore'))) return
       const done = await restoreBackup(backup)
       if (backup.settings) onUpdate(backup.settings)
       onLibraryChanged()
@@ -108,7 +109,7 @@ export function SettingsScreen({
 
   /** Ask first, then run a destructive storage action and report a failure instead of dropping it. */
   const guarded = async (question: string, action: () => Promise<void>): Promise<void> => {
-    if (!window.confirm(question)) return
+    if (!(await ask(question))) return
     try {
       await action()
     } catch (error) {
@@ -164,11 +165,12 @@ export function SettingsScreen({
       <div className="title-row">
         <BackButton onClick={onBack} />
         <h1>Settings</h1>
+        {confirmDialog}
         <div className="grow" />
         <Button
           variant="ghost"
           onClick={() => {
-            if (window.confirm('Reset every setting, including your key bindings?')) onReset()
+            void ask('Reset every setting, including your key bindings?', 'Reset').then((ok) => ok && onReset())
           }}
         >
           Restore defaults

@@ -1,5 +1,5 @@
 /** Small shared UI building blocks. Everything here is presentational and dependency-free. */
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import type { Difficulty } from '../core/types'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../core/types'
 import { hexToRgba } from '../render/renderer'
@@ -435,4 +435,34 @@ export function BackButton({ onClick }: { onClick: () => void }): React.JSX.Elem
       Back
     </Button>
   )
+}
+
+/**
+ * An in-page yes/no question. The browser's own confirm() can be blocked inside a game portal's
+ * frame, where it answers "no" without showing anything.
+ */
+export function useConfirm(): [(message: string, yes?: string) => Promise<boolean>, React.ReactNode] {
+  const [pending, setPending] = useState<{ message: string; yes: string; resolve: (ok: boolean) => void } | null>(null)
+  const ask = useCallback(
+    (message: string, yes = 'Yes') => new Promise<boolean>((resolve) => setPending({ message, yes, resolve })),
+    [],
+  )
+  const close = (ok: boolean): void => {
+    pending?.resolve(ok)
+    setPending(null)
+  }
+  const dialog = pending ? (
+    <Modal title="Are you sure?" onClose={() => close(false)}>
+      <p>{pending.message}</p>
+      <div className="row gap-8 wrap mt-16">
+        <Button variant="danger" onClick={() => close(true)}>
+          {pending.yes}
+        </Button>
+        <Button variant="ghost" onClick={() => close(false)}>
+          Cancel
+        </Button>
+      </div>
+    </Modal>
+  ) : null
+  return [ask, dialog]
 }

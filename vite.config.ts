@@ -19,7 +19,7 @@ function serviceWorkerPrecache(): import('vite').Plugin {
       const swPath = path.join(dist, 'sw.js')
       if (!fs.existsSync(swPath)) return
 
-      const skip = new Set(['sw.js', 'manifest.webmanifest', 'robots.txt'])
+      const skip = new Set(['sw.js', 'manifest.webmanifest', 'robots.txt', 'vercel.json', '_headers'])
       const walk = (dir: string, base = ''): string[] => {
         const out: string[] = []
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

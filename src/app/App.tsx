@@ -31,7 +31,7 @@ const EditorScreen = lazy(() =>
 )
 import { loadBestScores, runRulesKey } from './screens/bestScores'
 import type { BestScores } from './screens/bestScores'
-import { Button, Icon, Spinner } from './components'
+import { Button, Icon, Spinner, useConfirm } from './components'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Tutorial } from './Tutorial'
 import { listSongs } from '../store/repository'
@@ -109,6 +109,9 @@ function AppShell(): React.JSX.Element {
 
   const rulesKey = runRulesKey(settings, settings.playMode)
   const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [ask, confirmDialog] = useConfirm()
+  const askRef = useRef(ask)
+  askRef.current = ask
   const refreshLibrary = useCallback(async () => {
     try {
       const [nextSongs, nextBest] = await Promise.all([listSongs(), loadBestScores(settings.playMode, rulesKey)])
@@ -151,11 +154,11 @@ function AppShell(): React.JSX.Element {
     const unlock = (): void => {
       void resumeAudioContext().catch(() => undefined)
     }
-    window.addEventListener('pointerdown', unlock, { once: true })
-    window.addEventListener('keydown', unlock, { once: true })
+    // iOS unlocks on a touchend or click, not on pointerdown.
+    const events = ['pointerdown', 'touchend', 'click', 'keydown'] as const
+    for (const name of events) window.addEventListener(name, unlock, { once: true })
     return () => {
-      window.removeEventListener('pointerdown', unlock)
-      window.removeEventListener('keydown', unlock)
+      for (const name of events) window.removeEventListener(name, unlock)
     }
   }, [])
 
@@ -182,6 +185,8 @@ function AppShell(): React.JSX.Element {
         cancelled = true
       }
     }
+    // The library has a song to loop now: the 60 MB decoded theme is not needed again.
+    themeLoad = null
     const start = (buffer: AudioBuffer, duration: number, sections: { start: number; energy: number }[]): void => {
       if (!cancelled) playMenuMusic(songId, buffer, previewStart(duration, sections))
     }
@@ -383,9 +388,9 @@ function AppShell(): React.JSX.Element {
       if (current.name === 'game') {
         window.dispatchEvent(new Event(BACK_EVENT))
       } else if (current.name === 'editor') {
-        if (!editorUnsaved.current || window.confirm('Leave the editor without saving your changes?')) {
-          setRoute({ name: 'setup', file: null, songId: current.songId, attempt: 0 })
-        }
+        const toSetup = (): void => setRoute({ name: 'setup', file: null, songId: current.songId, attempt: 0 })
+        if (!editorUnsaved.current) toSetup()
+        else void askRef.current('Leave the editor without saving your changes?', 'Leave').then((ok) => ok && toSetup())
       } else if (current.name === 'results') {
         setRoute({ name: 'setup', file: null, songId: current.songId, attempt: 0 })
       } else if (current.name !== 'home') {
@@ -567,12 +572,16 @@ function AppShell(): React.JSX.Element {
   const inGame = route.name === 'game'
   /** Top bar links leave the editor too: ask first when it holds unsaved edits. */
   const leave = (next: Route): void => {
-    if (route.name === 'editor' && editorUnsaved.current && !window.confirm('Leave the editor without saving your changes?')) return
+    if (route.name === 'editor' && editorUnsaved.current) {
+      void ask('Leave the editor without saving your changes?', 'Leave').then((ok) => ok && setRoute(next))
+      return
+    }
     setRoute(next)
   }
 
   return (
     <div className="app">
+      {confirmDialog}
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {!inGame && (
         <header className="topbar">
@@ -635,7 +644,11 @@ let themeLoad: Promise<AudioBuffer | null> | null = null
  */
 function loadMenuTheme(): Promise<AudioBuffer | null> {
   themeLoad ??= (async () => {
-    for (const url of ['/music/menu-theme.ogg', '/music/menu-theme.mp3']) {
+    // Relative, so a portal or itch.io hosting the game under a subpath still finds it. Safari
+    // cannot decode the OGG: ask the browser first instead of downloading both.
+    const ogg = typeof Audio !== 'undefined' && new Audio().canPlayType('audio/ogg; codecs="vorbis"') !== ''
+    const urls = ogg ? ['./music/menu-theme.ogg', './music/menu-theme.mp3'] : ['./music/menu-theme.mp3', './music/menu-theme.ogg']
+    for (const url of urls) {
       try {
         const response = await fetch(url)
         if (!response.ok) continue

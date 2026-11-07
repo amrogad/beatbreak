@@ -53,7 +53,8 @@ function playable(name: string): AudioContext | null {
   try {
     const ctx = getAudioContext()
     // The first call always comes from a user gesture (a click), so resuming is allowed here.
-    if (ctx.state === 'suspended') void resumeAudioContext().catch(() => undefined)
+    // 'interrupted' is iOS after a call or Siri: it needs the same nudge.
+    if (ctx.state !== 'running' && ctx.state !== 'closed') void resumeAudioContext().catch(() => undefined)
     return ctx
   } catch {
     return null

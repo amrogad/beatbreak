@@ -45,16 +45,21 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(PRECACHE)
-      // Cache entries individually so a single failure cannot abort the whole install.
+      // Entries are cached one by one so an icon or a font cannot sink the install. The shell, the
+      // scripts and the styles can: without them offline is a blank page, so the install fails,
+      // the old worker stays, and the browser tries again on the next visit.
+      const missing = []
       await Promise.all(
         precacheEntries.map(async (entry) => {
           try {
             await cache.add(new Request(scoped(entry.url), { cache: 'reload' }))
           } catch (err) {
             console.warn('[pulsegrid/sw] precache miss', entry.url, err)
+            if (/\.(js|css|html)$/.test(entry.url)) missing.push(entry.url)
           }
         }),
       )
+      if (missing.length > 0) throw new Error(`precache failed for ${missing.join(', ')}`)
       await self.skipWaiting()
     })(),
   )

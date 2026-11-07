@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { Difficulty, SongMeta } from '../../core/types'
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
-import { Button, Chip, Panel } from '../components'
+import { Button, Chip, Panel, useConfirm } from '../components'
 import { PlayfieldPreview } from '../PlayfieldPreview'
 import { formatDuration } from '../format'
 import type { BestScoreEntry, BestScores } from './bestScores'
@@ -53,6 +53,7 @@ export function HomeScreen({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [dragging, setDragging] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [ask, confirmDialog] = useConfirm()
 
   const accept = (files: FileList | null): void => {
     const file = files?.[0]
@@ -140,7 +141,7 @@ export function HomeScreen({
               variant="danger"
               size="sm"
               onClick={() => {
-                if (window.confirm(`Remove all ${songs.length} songs, their charts and scores?`)) onClearAll()
+                void ask(`Remove all ${songs.length} songs, their charts and scores?`, 'Remove all').then((ok) => ok && onClearAll())
               }}
             >
               Clear all songs
@@ -214,6 +215,7 @@ export function HomeScreen({
         </div>
       </Panel>
 
+      {confirmDialog}
       {deleting && (
         <div
           className="tutorial-overlay"

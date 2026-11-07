@@ -24,8 +24,30 @@ export async function getSong(songId: string): Promise<SongMeta | undefined> {
   return idbGet<SongMeta>('songs', songId)
 }
 
+/*
+ * Rows are checked as they are read: one broken record (a half-written save, a field an older or
+ * newer build named differently) must not take the whole library down. Bad rows are skipped, not
+ * deleted, so nothing is lost if a later build can read them.
+ */
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+const finite = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value)
+function validSong(row: unknown): row is SongMeta {
+  return isRecord(row) && typeof row.id === 'string' && typeof row.title === 'string' && finite(row.duration) && isRecord(row.analysis) && finite(row.analysis.bpm)
+}
+function validChart(row: unknown): row is Chart {
+  return isRecord(row) && typeof row.id === 'string' && Array.isArray(row.notes) && isRecord(row.timing) && Array.isArray(row.timing.bpms) && DIFFICULTIES.includes(row.difficulty as Difficulty)
+}
+function validRun(row: unknown): row is StoredRun {
+  return isRecord(row) && typeof row.id === 'string' && typeof row.songId === 'string' && finite(row.score) && finite(row.createdAt) && DIFFICULTIES.includes(row.difficulty as Difficulty)
+}
+function keepValid<T>(rows: unknown[], valid: (row: unknown) => row is T, store: string): T[] {
+  const kept = rows.filter(valid)
+  if (kept.length < rows.length) console.warn(`[beatbreak] skipped ${rows.length - kept.length} unreadable ${store} record(s)`)
+  return kept
+}
+
 export async function listSongs(): Promise<SongMeta[]> {
-  const songs = await idbGetAll<SongMeta>('songs')
+  const songs = keepValid(await idbGetAll<unknown>('songs'), validSong, 'song')
   return songs.sort((a, b) => b.lastPlayedAt - a.lastPlayedAt || b.createdAt - a.createdAt)
 }
 
@@ -81,7 +103,7 @@ export async function getChart(chartId: string): Promise<Chart | undefined> {
 }
 
 export async function listCharts(songId: string): Promise<Chart[]> {
-  const charts = await idbGetAllByIndex<Chart>('charts', 'songId', songId)
+  const charts = keepValid(await idbGetAllByIndex<unknown>('charts', 'songId', songId), validChart, 'chart')
   return charts.sort((a, b) => DIFFICULTIES.indexOf(a.difficulty) - DIFFICULTIES.indexOf(b.difficulty))
 }
 
@@ -135,7 +157,7 @@ export async function saveRun(input: SaveRunInput): Promise<StoredRun> {
 }
 
 export async function listRuns(songId?: string): Promise<StoredRun[]> {
-  const runs = songId ? await idbGetAllByIndex<StoredRun>('scores', 'songId', songId) : await idbGetAll<StoredRun>('scores')
+  const runs = keepValid(songId ? await idbGetAllByIndex<unknown>('scores', 'songId', songId) : await idbGetAll<unknown>('scores'), validRun, 'score')
   return runs.sort((a, b) => b.createdAt - a.createdAt)
 }
 

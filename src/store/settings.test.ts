@@ -157,4 +157,15 @@ describe('settings migration and storage', () => {
     vi.stubGlobal('localStorage', fakeStorage({ [STORAGE_KEY]: 'not json at all' }))
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
   })
+
+  it('survives a blob that is not an object and one from a newer build', () => {
+    for (const blob of ['null', '[]', '"x"', '42']) {
+      vi.stubGlobal('localStorage', fakeStorage({ [STORAGE_KEY]: blob }))
+      expect(() => loadSettings()).not.toThrow()
+    }
+    vi.stubGlobal('localStorage', fakeStorage({ [STORAGE_KEY]: JSON.stringify({ schema: 999, volume: 0.5, someFutureField: true }) }))
+    const loaded = loadSettings()
+    expect(loaded.volume).toBe(0.5)
+    expect('someFutureField' in loaded).toBe(false)
+  })
 })

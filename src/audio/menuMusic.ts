@@ -21,6 +21,16 @@ let current: Playing | null = null
 let volume = 1
 let enabled = true
 
+// A hidden tab goes quiet: a menu loop playing in a background tab is the first thing portals test.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!current) return
+    const now = getAudioContext().currentTime
+    current.gain.gain.cancelScheduledValues(now)
+    current.gain.gain.setTargetAtTime(document.hidden ? 0 : MENU_GAIN * volume, now, 0.08)
+  })
+}
+
 export function configureMenuMusic(options: { enabled: boolean; volume: number }): void {
   enabled = options.enabled
   volume = Math.max(0, Math.min(1, options.volume))
