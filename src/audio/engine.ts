@@ -380,15 +380,11 @@ export class AudioEngine {
       source.buffer = this.buffer
       source.playbackRate.value = 1
       const segmentGain = this.ctx.createGain()
-      // Micro-fades only where a splice can click: fade in when a post-cut segment starts at its
-      // own beginning, fade out when the segment ends at a cut instead of the end of the song.
-      if (i > 0 && offset <= segment.origStart + 1e-6) {
-        segmentGain.gain.setValueAtTime(0.0001, startAt)
-        segmentGain.gain.linearRampToValueAtTime(1, startAt + fade)
-      } else {
-        segmentGain.gain.setValueAtTime(1, startAt)
-      }
-      if (i !== lastIndex) {
+      // Micro-fades wherever the music can start or stop mid-wave: every segment start (a splice,
+      // a resume, a trimmed start) and every end except the real end of the file.
+      segmentGain.gain.setValueAtTime(0.0001, startAt)
+      segmentGain.gain.linearRampToValueAtTime(1, startAt + fade)
+      if (i !== lastIndex || offset + length < duration - 1e-3) {
         segmentGain.gain.setValueAtTime(1, startAt + Math.max(0, length - fade))
         segmentGain.gain.linearRampToValueAtTime(0.0001, startAt + length)
       }
@@ -525,18 +521,31 @@ export class AudioEngine {
     const entries = this.scheduled
     this.scheduled = []
     this.clock.clear()
+    // A hard stop clicks: ramp each segment down over a few ms, then stop and disconnect it.
+    const now = this.ctx.currentTime
+    const fade = 0.008
     for (const entry of entries) {
-      entry.source.onended = null
-      try {
-        entry.source.stop()
-      } catch {
-        /* already stopped */
+      const disconnect = (): void => {
+        try {
+          entry.source.disconnect()
+          entry.gain.disconnect()
+        } catch {
+          /* already disconnected */
+        }
       }
+      const gain = entry.gain.gain
       try {
-        entry.source.disconnect()
-        entry.gain.disconnect()
+        if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now)
+        else {
+          gain.cancelScheduledValues(now)
+          gain.setValueAtTime(Math.max(0.0001, gain.value), now)
+        }
+        gain.linearRampToValueAtTime(0.0001, now + fade)
+        entry.source.onended = disconnect
+        entry.source.stop(now + fade + 0.002)
       } catch {
-        /* already disconnected */
+        entry.source.onended = null
+        disconnect()
       }
     }
   }

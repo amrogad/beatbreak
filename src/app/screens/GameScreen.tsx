@@ -245,7 +245,6 @@ export function GameScreen({
     const session = sessionRef.current
     if (!session) return
     judgingRef.current = false
-    engineRef.current?.pause()
     const state = session.scoreState
     const failed = failedRef.current
     // A failed run reports the performance up to the failure — StepMania shows what you actually
@@ -596,7 +595,7 @@ export function GameScreen({
         subtitle: DIFFICULTY_LABEL[chart.difficulty].toUpperCase(),
         subtitleColor: DIFFICULTY_COLOR[chart.difficulty],
       })
-      if (!failedRef.current && !autoPlayRef.current && checkFail(settingsRef.current.failRule, state)) {
+      if (!failedRef.current && !runCompleteRef.current && !autoPlayRef.current && checkFail(settingsRef.current.failRule, state)) {
         failedRef.current = true
         sfxFail()
         activeSession.forfeit(judgeMs)
@@ -675,13 +674,14 @@ export function GameScreen({
         letGo(event.code, event.timeStamp)
       }
     }
+    // A right click on the playfield must not open the browser menu: that blurs the page and pauses.
     const noMenu = (event: Event): void => event.preventDefault()
+    canvas.addEventListener('contextmenu', noMenu)
     if (circleMap) {
       canvas.addEventListener('pointermove', onPointerMove)
       canvas.addEventListener('pointerdown', onPointerDown)
       window.addEventListener('pointerup', onPointerUp)
       window.addEventListener('pointercancel', onPointerCancel)
-      canvas.addEventListener('contextmenu', noMenu)
       window.addEventListener('keydown', onKey)
       window.addEventListener('keyup', onKey)
     }
@@ -697,6 +697,7 @@ export function GameScreen({
           if (circleMap) letGo(`k${lane}`, eventTimeMs)
           releaseLane(lane, eventTimeMs)
         },
+        onLaneStillHeld: (lane) => deferredReleaseRef.current.delete(lane),
         onPause: () => togglePause(),
         // The router lets go of every held key when focus goes; pause first, so held long arrows
         // wait for the run to come back instead of being judged as let go.

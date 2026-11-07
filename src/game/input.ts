@@ -36,6 +36,7 @@ export interface ControlMap {
 
 export const LANE_ORDER: Lane[] = [0, 1, 2, 3]
 
+const MODIFIER_CODES = new Set(['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight'])
 const LANE_KEYS = ['left', 'down', 'up', 'right'] as const
 
 /**
@@ -118,6 +119,11 @@ export interface InputHandlers {
   onFullscreen?: () => void
   /** Focus left the page (blur or a visibility change), called before held lanes are let go. */
   onFocusLost?: (type: string) => void
+  /**
+   * A lane key that was down before a blur emptied the held set and is still down (the OS repeats
+   * it). It is not a new press, only proof the lane is still held.
+   */
+  onLaneStillHeld?: (lane: Lane, code: string) => void
   /** Returns true when the key should be swallowed (prevents page scrolling etc.). */
   shouldPreventDefault?: (code: string) => boolean
 }
@@ -170,15 +176,21 @@ export class InputRouter {
     const released = [...this.held]
     this.held.clear()
     const now = performance.now()
+    const lanes = new Set<Lane>()
     for (const code of released) {
       const lane = laneForKey(code, this.options.keyMap)
-      if (lane !== null) this.handlers.onLaneUp?.(lane, now, code)
+      if (lane === null || lanes.has(lane)) continue
+      lanes.add(lane)
+      this.handlers.onLaneUp?.(lane, now, code)
     }
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.disposed) return
     const code = event.code || event.key
+    // Ctrl, Cmd and Alt shortcuts belong to the browser (Ctrl+R reloads, Ctrl+F finds), unless the
+    // key pressed is itself the modifier a player put on a lane.
+    if ((event.ctrlKey || event.metaKey || event.altKey) && !MODIFIER_CODES.has(code)) return
     const controls = this.options.controls ?? CONTROL_DEFAULTS
     const enabled = this.options.enabled?.() ?? true
     // A key the player put on a lane is a lane key: D F J K must not toggle fullscreen on F, and a
@@ -214,6 +226,12 @@ export class InputRouter {
       event.preventDefault()
       return // ignore OS auto-repeat
     }
+    if (event.repeat) {
+      this.held.add(code)
+      event.preventDefault()
+      this.handlers.onLaneStillHeld?.(lane, code)
+      return
+    }
     this.held.add(code)
     if (this.handlers.shouldPreventDefault?.(code) ?? true) event.preventDefault()
     this.handlers.onLaneDown(lane, event.timeStamp, code)
@@ -223,7 +241,10 @@ export class InputRouter {
     const code = event.code || event.key
     this.held.delete(code)
     const lane = laneForKey(code, this.options.keyMap)
-    if (lane !== null) this.handlers.onLaneUp?.(lane, event.timeStamp, code)
+    if (lane === null) return
+    // Two keys on one lane: the lane stays held until the last of them comes up.
+    for (const other of this.held) if (laneForKey(other, this.options.keyMap) === lane) return
+    this.handlers.onLaneUp?.(lane, event.timeStamp, code)
   }
 }
 
@@ -251,6 +272,8 @@ export function attachTouchLanes(
     return (lane < 0 ? 0 : lane > 3 ? 3 : lane) as Lane
   }
   const down = (event: PointerEvent): void => {
+    // Only the main mouse button plays; touch and pen report button 0.
+    if (event.button !== 0) return
     const lane = laneFromEvent(event)
     if (lane === null) return
     active.set(event.pointerId, lane)
@@ -260,6 +283,8 @@ export function attachTouchLanes(
     const lane = active.get(event.pointerId)
     if (lane === undefined) return
     active.delete(event.pointerId)
+    // Two fingers in one column: the column stays held until the last one lifts.
+    for (const other of active.values()) if (other === lane) return
     handlers.onLaneUp?.(lane, event.timeStamp)
   }
   element.addEventListener('pointerdown', down)
