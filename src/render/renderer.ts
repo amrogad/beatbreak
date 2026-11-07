@@ -14,6 +14,7 @@
  * a frame is mostly `drawImage` calls.
  */
 import type { Chart, ChartNote, HitEvent, Judgment, Lane } from '../core/types'
+import { JUDGMENTS } from '../core/types'
 import { TimingMap } from '../chart/timing'
 import { JUDGMENT_LABEL } from '../game/judgment'
 import type { GameSession } from '../game/session'
@@ -222,6 +223,7 @@ export class PlayfieldRenderer {
   /** Notes by id, so a missed one can be drawn fading where it was missed. */
   private notesById = new Map<string, ChartNote>()
   private bgLayer: HTMLCanvasElement | null = null
+  private bgStillKey = ''
   /** A rectangle's height in half-note units: always twice its own width. */
   private tileHy = 2 * TILE_BASE_HX
   /** Half the tile's width in the same units; the short home preview shrinks notes but not columns. */
@@ -265,6 +267,11 @@ export class PlayfieldRenderer {
    * judgement and scoring never touch the renderer. */
   private frameEma = 16.7
   private qualityTimer = 0
+  /** The display's own frame time (median of the first frames), so a 60 Hz screen can recover. */
+  private baseFrameMs = 0
+  private firstFrames: number[] = []
+  /** Frame times of the run, kept for the local play log. */
+  private frameLog: number[] = []
   /** 2 = full, 1 = reduced, 0 = minimal. */
   private quality: 0 | 1 | 2 = 2
 
@@ -336,7 +343,45 @@ export class PlayfieldRenderer {
       this.glowSprite(color, Math.round(noteH))
     }
     this.glowSprite('#ffffff', Math.round(noteH))
+    // The judgement words and the countdown are glow text too: painting each the first time it
+    // shows put a hitch on the first hit and on GO.
+    const scratch = document.createElement('canvas').getContext('2d')
+    if (scratch && !this.preview) {
+      const { laneAreaW } = this.layout()
+      const size = Math.min(30, laneAreaW / 10) * this.textScale()
+      for (const judgment of JUDGMENTS) this.drawText(scratch, JUDGMENT_LABEL[judgment].toUpperCase(), 0, 0, size, this.judgeStyle(judgment), this.quality > 0)
+      this.drawText(scratch, 'LET GO', 0, 0, size, this.judgeStyle('miss'), this.quality > 0)
+      const countdown = ['3', '2', '1', 'GO!']
+      countdown.forEach((text, i) => {
+        const color = this.columnColors[i]
+        const style: JudgeStyle = this.settings.theme === 'mono' ? MONO_JUDGE : { fill: color, shadow: shade(color, -0.5), burst: color }
+        this.drawText(scratch, text, 0, 0, 96, style, this.quality > 0)
+      })
+    }
     this.spritesWarm = true
+  }
+
+  /** Frame-time summary of the run for the local play log: nothing about the song. */
+  frameStats(): { frames: number; medianMs: number; p95Ms: number; over25: number; quality: number; dpr: number; width: number; height: number } {
+    const sorted = [...this.frameLog].sort((a, b) => a - b)
+    const at = (q: number): number => (sorted.length ? Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] * 10) / 10 : 0)
+    return { frames: sorted.length, medianMs: at(0.5), p95Ms: at(0.95), over25: sorted.filter((ms) => ms > 25).length, quality: this.quality, dpr: this.dpr, width: this.width, height: this.height }
+  }
+
+  /** Free every canvas now: Safari keeps detached canvases alive until it decides to collect them. */
+  dispose(): void {
+    const release = (canvas: HTMLCanvasElement | null | undefined): void => {
+      if (!canvas) return
+      canvas.width = 0
+      canvas.height = 0
+    }
+    for (const sprite of this.spriteCache.values()) release(sprite)
+    for (const entry of this.textCache.values()) release(entry.canvas)
+    release(this.bgLayer)
+    this.spriteCache.clear()
+    this.textCache.clear()
+    this.bgLayer = null
+    this.spritesWarm = false
   }
 
   /** Switch to circle mode with this map, or back to arrows with null. */
@@ -465,8 +510,23 @@ export class PlayfieldRenderer {
       this.dpr !== dpr || this.width !== width || this.height !== height ||
       this.canvas.width !== Math.round(width * dpr) || this.canvas.height !== Math.round(height * dpr)
     if (changed) {
+      // Setting the size clears the canvas, and the browser can paint before the next frame: keep
+      // the old picture, stretched, so a resize never flashes black.
+      let snapshot: HTMLCanvasElement | null = null
+      if (this.canvas.width > 1 && this.canvas.height > 1) {
+        snapshot = document.createElement('canvas')
+        snapshot.width = this.canvas.width
+        snapshot.height = this.canvas.height
+        snapshot.getContext('2d')?.drawImage(this.canvas, 0, 0)
+      }
       this.canvas.width = Math.round(width * dpr)
       this.canvas.height = Math.round(height * dpr)
+      if (snapshot) {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        this.ctx.drawImage(snapshot, 0, 0, this.canvas.width, this.canvas.height)
+        snapshot.width = 0
+        snapshot.height = 0
+      }
       this.dpr = dpr
       this.width = width
       this.height = height
@@ -498,7 +558,9 @@ export class PlayfieldRenderer {
     const laneW = laneAreaW / 4
     const laneAreaX = (this.width - laneAreaW) / 2
     const direction: 1 | -1 = this.settings.scrollDirection === 'down' ? -1 : 1
-    const fullNote = Math.min(laneW * 0.96, laneW * 0.86 * this.settings.noteScale)
+    // Short windows and landscape phones: the note follows the height too, or a 16th stream
+    // overlaps itself.
+    const fullNote = Math.min(laneW * 0.96, laneW * 0.86 * this.settings.noteScale, this.height * 0.12 * this.settings.noteScale)
     // A short preview canvas keeps the arrows in proportion to its height.
     const noteH = this.preview ? Math.min(fullNote, this.height * 0.2) : fullNote
     // The receptor inset mirrors between layouts: at the top for rising arrows, at the bottom
@@ -579,12 +641,25 @@ export class PlayfieldRenderer {
     // hysteresis (degrade above 21.5 ms, recover below 15 ms average) and 1 s dwell time, so a
     // single hitch cannot flip the level back and forth.
     this.frameEma += (dtMs - this.frameEma) * 0.06
-    this.qualityTimer += dtMs
-    if (this.qualityTimer >= 1000) {
-      this.qualityTimer = 0
-      if (this.frameEma > 21.5 && this.quality > 0) this.quality = (this.quality - 1) as 0 | 1 | 2
-      else if (this.frameEma < 15 && this.quality < 2) this.quality = (this.quality + 1) as 0 | 1 | 2
+    if (this.frameLog.length < 20000) this.frameLog.push(dtMs)
+    if (this.baseFrameMs === 0) {
+      this.firstFrames.push(dtMs)
+      if (this.firstFrames.length >= 60) {
+        const sorted = [...this.firstFrames].sort((a, b) => a - b)
+        this.baseFrameMs = Math.max(6, Math.min(34, sorted[30]))
+      }
     }
+    this.qualityTimer += dtMs
+    const base = this.baseFrameMs || 16.7
+    // Slower than the screen's own pace for a second: shed decoration. Back near its pace for
+    // three seconds: take one step back up.
+    if (this.frameEma > Math.max(base * 1.3, base + 4) && this.qualityTimer >= 1000 && this.quality > 0) {
+      this.quality = (this.quality - 1) as 0 | 1 | 2
+      this.qualityTimer = 0
+    } else if (this.frameEma < base * 1.1 + 0.5 && this.qualityTimer >= 3000 && this.quality < 2) {
+      this.quality = (this.quality + 1) as 0 | 1 | 2
+      this.qualityTimer = 0
+    } else if (this.qualityTimer >= 3000) this.qualityTimer = 3000
 
     if (this.flash) {
       this.flash.ageMs += dtMs
@@ -597,7 +672,7 @@ export class PlayfieldRenderer {
     }
     if (!reduced && this.quality > 0) this.particles.update(dtMs)
 
-    if (!this.spritesWarm) this.warmSprites()
+    if (!this.spritesWarm && !this.circleField) this.warmSprites()
     const songSeconds = songTimeMs / 1000
     const beat = this.timing.timeToBeat(songSeconds)
     const beatFrac = beat - Math.floor(beat)
@@ -646,9 +721,15 @@ export class PlayfieldRenderer {
       layer.width = w
       layer.height = h
     }
-    const layerCtx = layer.getContext('2d')!
-    layerCtx.setTransform(BG_SCALE, 0, 0, BG_SCALE, 0, 0)
-    this.paintBackground(layerCtx, songSeconds)
+    // With the light show off the background never changes: paint it once per size and theme.
+    const still = this.settings.laneStyle === 'minimal' || this.settings.reducedMotion || this.quality === 0
+    const stillKey = still ? `${w}x${h}:${this.settings.theme}` : ''
+    if (!still || this.bgStillKey !== stillKey) {
+      const layerCtx = layer.getContext('2d')!
+      layerCtx.setTransform(BG_SCALE, 0, 0, BG_SCALE, 0, 0)
+      this.paintBackground(layerCtx, songSeconds)
+      this.bgStillKey = stillKey
+    }
     this.ctx.drawImage(layer, 0, 0, this.width, this.height)
   }
 
@@ -1053,7 +1134,7 @@ export class PlayfieldRenderer {
     // Room for the glow: a halo cut off by the sprite's edge shows as a hard straight line. The
     // sprite is only as big as the shape plus that room, so a tall rectangle is not drawn as a
     // mostly empty square (every empty pixel still costs a phone's GPU).
-    const pad = Math.ceil(size * 0.6)
+    const pad = Math.ceil(size * 0.4)
     const boxW = Math.ceil(size * Math.max(1, tileHx) + pad * 2)
     const boxH = Math.ceil(size * Math.max(1, tileHy) + pad * 2)
     const box = boxW
@@ -1537,7 +1618,7 @@ function shuffledColors(): string[] {
 const TILE_BASE_HY = 0.95
 const TILE_BASE_HX = 0.92
 /** Shapes drawn the same way up in every column. */
-const UNROTATED = new Set<NoteShape>(['tile', 'square'])
+const UNROTATED = new Set<NoteShape>(['tile', 'square', 'bar'])
 
 /** Offset from the centre, within half a note, of the shape's widest horizontal cross-section. */
 function widestCut(shape: number[][], centerY: number, half: number): number {
@@ -1573,7 +1654,19 @@ const ARROW_POINTS: [number, number][] = [[-0.94, -0.3], [0.02, -0.3], [0.02, -0
 /** A skin's outline as unit points around 0, pointing right (the orb as a 24-sided circle). */
 function shapePoints(shape: NoteShape, tileHy = TILE_BASE_HY, tileHx = TILE_BASE_HX): [number, number][] {
   const points: [number, number][] = []
-  if (shape === 'arrow' || shape === 'bar') {
+  if (shape === 'bar') {
+    // A rounded bar lying flat in every column.
+    const hx = 0.94
+    const hy = 0.42
+    const r = 0.3
+    const corners: [number, number, number][] = [[hx - r, hy - r, 0], [-(hx - r), hy - r, 0.5], [-(hx - r), -(hy - r), 1], [hx - r, -(hy - r), 1.5]]
+    for (const [cx, cy, start] of corners) {
+      for (let k = 0; k <= 5; k++) {
+        const a = (start + k / 10) * Math.PI
+        points.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r])
+      }
+    }
+  } else if (shape === 'arrow') {
     // A chunky arcade arrow pointing right, filling the square tile.
     points.push(...ARROW_POINTS)
   } else if (shape === 'square') {

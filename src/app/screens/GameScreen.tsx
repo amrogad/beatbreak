@@ -56,7 +56,7 @@ const leadInRef = { current: 900 }
  * On a local build (127.0.0.1) every run's presses, judgements (and in circle mode the pointer
  * path) go to the dev server, which saves them next to the test data. Never sent anywhere else.
  */
-function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart: Chart, settings: Settings, engine: AudioEngine | null, quit = false): void {
+function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart: Chart, settings: Settings, engine: AudioEngine | null, renderer: PlayfieldRenderer | null, quit = false): void {
   if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return
   const circles = session instanceof CircleSession
   const body = {
@@ -74,6 +74,7 @@ function sendPlayLog(session: GameSession | CircleSession, song: SongMeta, chart
     outputLatencyMs: engine ? Math.round(engine.outputLatency * 1000) : null,
     screen: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio },
     touch: window.matchMedia('(pointer: coarse)').matches,
+    frames: renderer?.frameStats() ?? null,
     ...(circles
       ? {
           radius: session.map.radius,
@@ -272,7 +273,7 @@ export function GameScreen({
       rules: runRulesKey(settingsRef.current, session instanceof CircleSession ? 'circles' : 'arrows'),
       ...(session instanceof CircleSession ? { mode: 'circles' as const, clicks: session.clickStats } : {}),
     }
-    if (!session.isAutoPlay) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current)
+    if (!session.isAutoPlay) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current, rendererRef.current)
     // Let the outro breathe: fade the music instead of cutting it the instant the last arrow is
     // judged, then switch to results after the fade has finished. The playfield stays visible (no
     // "loading" overlay) so the ending is not hidden.
@@ -335,7 +336,7 @@ export function GameScreen({
   const quit = useCallback(() => {
     const session = sessionRef.current
     // A run quit halfway is often the one worth reading: log what was played.
-    if (session && !session.isAutoPlay && !finishedRef.current) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current, true)
+    if (session && !session.isAutoPlay && !finishedRef.current) sendPlayLog(session, song, chart, settingsRef.current, engineRef.current, rendererRef.current, true)
     onExitRef.current()
   }, [chart, song])
 
@@ -793,6 +794,7 @@ export function GameScreen({
       engineRef.current?.dispose()
       engineRef.current = null
       sessionRef.current = null
+      renderer.dispose()
       rendererRef.current = null
     }
   }, [buffer, chart, circleMap, confirmThen, finishRun, pause, playPlan, playbackPlan, pressLane, releaseLane, restart, song.title, sourceChart, toggleFullscreen, togglePause, windows])

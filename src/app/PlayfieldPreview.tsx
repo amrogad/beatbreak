@@ -53,17 +53,21 @@ export function PlayfieldPreview(): React.JSX.Element {
     let frame = 0
     let next = 0
     const releaseAt: (number | null)[] = [null, null, null, null]
-    // Phones draw the demo at 60 frames a second at most, like the game.
-    const frameStep = window.matchMedia('(pointer: coarse)').matches ? 1000 / 60 : 0
+    // The demo is decoration: 30 frames a second on every device, and nothing at all while it is
+    // scrolled away or the tab is hidden.
+    const frameStep = 1000 / 30
     let nextFrameAt = 0
+    let onScreen = true
+    const visibility = new IntersectionObserver((entries) => {
+      onScreen = entries.some((entry) => entry.isIntersecting)
+    })
+    visibility.observe(canvas)
     const tick = (now: number = performance.now()): void => {
-      if (frameStep > 0) {
-        if (now < nextFrameAt - 1) {
-          frame = requestAnimationFrame(tick)
-          return
-        }
-        nextFrameAt = Math.max(nextFrameAt + frameStep, now)
+      if (!onScreen || document.hidden || now < nextFrameAt - 1) {
+        frame = requestAnimationFrame(tick)
+        return
       }
+      nextFrameAt = Math.max(nextFrameAt + frameStep, now)
       const elapsed = performance.now() - started
       const loop = Math.floor(elapsed / loopMs)
       if (loop !== lastLoop) {
@@ -111,6 +115,8 @@ export function PlayfieldPreview(): React.JSX.Element {
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      visibility.disconnect()
+      renderer.dispose()
       rendererRef.current = null
     }
   }, [])
