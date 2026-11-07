@@ -312,29 +312,17 @@ export function SetupScreen({
   )
 
   /** The player's beat fix: half or double tempo, or the beat moved by half a beat. Rebuilds unedited charts. */
-  const fixBeat = useCallback(
-    async (kind: 'half' | 'double' | 'shift' | 'reset') => {
+  /** Back to the detected beat, for a song whose beat the player changed with the old beat buttons. */
+  const resetBeat = useCallback(
+    async () => {
       if (!bundle || beatBusy) return
       if (!analysis) {
         onToast('Re-attach the audio file to change the beat.', 'error')
         return
       }
-      const current = beatOf(bundle.meta)
-      const beatFix =
-        kind === 'half'
-          ? { bpm: current.bpm / 2, offset: current.offset }
-          : kind === 'double'
-            ? { bpm: current.bpm * 2, offset: current.offset }
-            : kind === 'shift'
-              ? { bpm: current.bpm, offset: current.offset + 30 / current.bpm }
-              : undefined
-      if (beatFix && (beatFix.bpm < 40 || beatFix.bpm > 320)) {
-        onToast('That tempo is out of range.', 'error')
-        return
-      }
       setBeatBusy(true)
       try {
-        const updated = await updateSong(bundle.meta.id, { beatFix })
+        const updated = await updateSong(bundle.meta.id, { beatFix: undefined })
         if (!updated) throw new Error('The song is no longer in the library.')
         const beat = beatOf(updated)
         const regenerated = await regenerateCharts({
@@ -350,7 +338,7 @@ export function SetupScreen({
         })
         adopt({ ...bundle, meta: updated, charts: regenerated })
         const kept = bundle.charts.some((chart) => chart.edited) ? ' Charts you edited by hand were kept.' : ''
-        onToast(`${things === 'circles' ? 'Circles' : 'Arrows'} rebuilt at ${Math.round(beat.bpm * 10) / 10} BPM.${kept}`, 'success')
+        onToast(`Back to the beat the app found. ${things === 'circles' ? 'Circles' : 'Arrows'} rebuilt.${kept}`, 'success')
       } catch (caught) {
         onToast(caught instanceof Error ? caught.message : String(caught), 'error')
       } finally {
@@ -705,34 +693,14 @@ export function SetupScreen({
             </Button>
           </div>
         </div>
-        <div className="row-between wrap gap-12 mt-16">
-          <div>
-            <strong>Beat</strong>
-            <p className="muted small">
-              {Math.round(beatOf(meta).bpm * 10) / 10} beats a minute{meta.beatFix ? ', fixed by you' : ''}.
-              {!meta.beatFix && (meta.analysis.bpmConfidence < 0.45 || meta.analysis.phaseConfidence < 0.45)
-                ? ' We were not sure about this one.'
-                : ''}
-            </p>
-            <p className="muted tiny">Slower: arrows rush ahead of the music. Faster: they drag behind it. Offbeat: they land between the beats.</p>
+        {meta.beatFix && (
+          <div className="row-between wrap gap-12 mt-16">
+            <p className="muted small">You changed this song's beat earlier.</p>
+            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void resetBeat()}>
+              Undo beat change
+            </Button>
           </div>
-          <div className="row gap-8 wrap">
-            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('half')} title="The arrows run twice as fast as the music">
-              Slower
-            </Button>
-            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('double')} title="The arrows run half as fast as the music">
-              Faster
-            </Button>
-            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('shift')} title="The arrows sit between the beats">
-              Offbeat
-            </Button>
-            {meta.beatFix && (
-              <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void fixBeat('reset')} title="Back to the detected beat">
-                Reset
-              </Button>
-            )}
-          </div>
-        </div>
+        )}
         {trimming && (
           <div className="trim-panel mt-12">
             <TrimEditor
