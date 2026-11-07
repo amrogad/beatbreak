@@ -100,6 +100,14 @@ export function preemptForAr(ar: number): number {
   return ar < 5 ? 1800 - 120 * ar : 1200 - 150 * (ar - 5)
 }
 
+/**
+ * The approach time at a speed setting (1-10, 5 = the difficulty's own). Each step of 2.5 halves or
+ * doubles it, like moving osu!'s approach rate (Amro, 2026-11-07: the speed slider drives circles too).
+ */
+export function approachForSpeed(preemptMs: number, speed: number): number {
+  return Math.round(Math.max(350, Math.min(2400, preemptMs * 2 ** ((5 - speed) / 2.5))))
+}
+
 /** Keep centres this far inside the field edge. */
 const EDGE = 26
 /** Within this distance of the field edge a move starts to prefer turning back in. */

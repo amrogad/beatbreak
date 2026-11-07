@@ -750,7 +750,7 @@ export function SetupScreen({
         </div>
         <div className="mt-20">
           <Slider
-            label={meta.scrollSpeed === undefined ? 'Arrow speed' : 'Arrow speed (this song)'}
+            label={`${settings.playMode === 'circles' ? 'Approach' : 'Scroll'} speed${meta.scrollSpeed === undefined ? '' : ' (this song)'}`}
             value={meta.scrollSpeed ?? settings.scrollSpeed}
             min={1}
             max={10}

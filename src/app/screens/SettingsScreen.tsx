@@ -248,8 +248,10 @@ export function SettingsScreen({
             ]}
             onChange={(value) => onUpdate({ scrollDirection: value })}
           />
+          </>
+          )}
           <Slider
-            label="Arrow speed"
+            label={arrowMode ? 'Scroll speed' : 'Approach speed'}
             value={settings.scrollSpeed}
             min={1}
             max={10}
@@ -257,8 +259,6 @@ export function SettingsScreen({
             onChange={(value) => onUpdate({ scrollSpeed: value })}
             format={(value) => `${value.toFixed(1)} / 10`}
           />
-          </>
-          )}
         </div>
       </Panel>
 

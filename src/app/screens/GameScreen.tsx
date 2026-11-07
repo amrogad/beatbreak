@@ -17,7 +17,7 @@ import { buildEditPlan, isCut, planForMeta, toPlaybackPlan } from '../../core/ed
 import { sfxFail } from '../../audio/sfx'
 import { GameSession, checkFail } from '../../game/session'
 import { CircleSession, HIT_SLACK, TOUCH_HIT_SLACK } from '../../game/circleSession'
-import { placeCircles } from '../../chart/circles'
+import { approachForSpeed, placeCircles } from '../../chart/circles'
 import { compensateInputLatency, windowsForDifficulty } from '../../game/judgment'
 import { accuracyFromTally, finalAccuracy, gradeFor } from '../../game/score'
 import { InputRouter, attachTouchLanes, describeKey } from '../../game/input'
@@ -141,7 +141,13 @@ export function GameScreen({
   const armedRef = useRef<'restart' | 'quit' | null>(null)
   // The mode is fixed for the run; changing it in Settings applies to the next one.
   const [circleMode] = useState(() => settings.playMode === 'circles')
-  const circleMap = useMemo(() => (circleMode ? placeCircles(sourceChart, circleRhythm ?? sourceChart) : null), [circleMode, sourceChart, circleRhythm])
+  const [circleSpeed] = useState(() => song.scrollSpeed ?? settings.scrollSpeed)
+  const circleMap = useMemo(() => {
+    if (!circleMode) return null
+    const placed = placeCircles(sourceChart, circleRhythm ?? sourceChart)
+    const preemptMs = approachForSpeed(placed.preemptMs, circleSpeed)
+    return { ...placed, preemptMs, fadeInMs: (preemptMs * 2) / 3 }
+  }, [circleMode, sourceChart, circleRhythm, circleSpeed])
   const [hud, setHud] = useState({ score: 0, combo: 0, accuracy: 1, judged: 0 })
   // Long arrows off: every hold plays as a plain tap at its start. Arrows a hand edit left in a
   // removed part, or outside the window, never play: they are left out of the run.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartNote, Difficulty, Lane } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
-import { FIELD_H, FIELD_W, circleRhythm, placeCircles, sliderBall, sliderExit } from './circles'
+import { FIELD_H, FIELD_W, approachForSpeed, circleRhythm, placeCircles, sliderBall, sliderExit } from './circles'
 
 // 120 BPM: one beat = 0.5 s.
 const timing = { offset: 0, bpms: [{ beat: 0, bpm: 120 }] }
@@ -166,5 +166,15 @@ describe('circle placement', () => {
     const started = performance.now()
     place('expert', notes)
     expect(performance.now() - started).toBeLessThan(400)
+  })
+})
+
+describe('approach speed', () => {
+  it('keeps the difficulty approach at 5 and halves or doubles it every 2.5 steps', () => {
+    expect(approachForSpeed(1200, 5)).toBe(1200)
+    expect(approachForSpeed(1200, 7.5)).toBe(600)
+    expect(approachForSpeed(1200, 2.5)).toBe(2400)
+    expect(approachForSpeed(1200, 10)).toBe(350)
+    expect(approachForSpeed(1200, 1)).toBe(2400)
   })
 })
