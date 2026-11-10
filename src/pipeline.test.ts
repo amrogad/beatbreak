@@ -536,3 +536,48 @@ describe('edit-aware generation (trim splice)', () => {
     expect(signature(generateChart(input))).toEqual(signature(generateChart(input)))
   })
 })
+
+describe('following the singer', () => {
+  const sung = (analysis: AnalysisResult, duration: number) => {
+    const timing = TimingMap.single(analysis.bpm, analysis.offset)
+    const beat = 60 / analysis.bpm
+    const voice = []
+    for (let k = 0; timing.beatToTime(4 + k * 1.5) < duration - 2; k++) {
+      const late = k % 3 === 1 ? 0.06 : 0
+      voice.push({ time: timing.beatToTime(4 + k * 1.5) + late, strength: 0.4 + (k % 2) * 0.3, band: 2, brightness: 0, heldSeconds: k % 4 === 0 ? beat * 2 : 0.15 })
+    }
+    return { timing, voice }
+  }
+
+  it('puts singer arrows only where the singer sings, keeping late notes late', () => {
+    const { analysis, duration } = analyseDemo()
+    const { timing, voice } = sung(analysis, duration)
+    for (const difficulty of ['easy', 'expert'] as const) {
+      const chart = generateChart({ analysis, timing, duration, songId: 'demo', difficulty, follow: 'singer', voice })
+      expect(chart.notes.length).toBeGreaterThan(5)
+      expect(chart.generator.follow).toBe('singer')
+      for (const note of chart.notes) {
+        expect(voice.some((v) => Math.abs(v.time - note.time) < 0.031)).toBe(true)
+      }
+      expect(validatePlayability(chart, duration).errors).toBe(0)
+    }
+    const expert = generateChart({ analysis, timing, duration, songId: 'demo', difficulty: 'expert', follow: 'singer', voice })
+    const late = voice.filter((v) => Math.abs(timing.timeToBeat(v.time) * 4 - Math.round(timing.timeToBeat(v.time) * 4)) * (60 / analysis.bpm / 4) > 0.04)
+    expect(late.length).toBeGreaterThan(0)
+    expect(late.some((v) => expert.notes.some((n) => Math.abs(n.time - v.time) < 0.002))).toBe(true)
+    expect(expert.notes.some((n) => n.kind === 'hold')).toBe(true)
+  })
+
+  it('mixes drums and voice for both, and falls back to the music without a voice', () => {
+    const { analysis, duration } = analyseDemo()
+    const { timing, voice } = sung(analysis, duration)
+    const both = generateChart({ analysis, timing, duration, songId: 'demo', difficulty: 'hard', follow: 'both', voice })
+    const onVoice = both.notes.filter((n) => voice.some((v) => Math.abs(v.time - n.time) < 0.031)).length
+    expect(onVoice).toBeGreaterThan(0)
+    expect(onVoice).toBeLessThan(both.notes.length)
+    const music = generateChart({ analysis, timing, duration, songId: 'demo', difficulty: 'hard' })
+    const fallback = generateChart({ analysis, timing, duration, songId: 'demo', difficulty: 'hard', follow: 'singer', voice: [] })
+    expect(fallback.notes).toEqual(music.notes)
+    expect(fallback.generator.follow).toBeUndefined()
+  })
+})

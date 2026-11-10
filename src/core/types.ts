@@ -30,6 +30,9 @@ export const LANE_INFO: readonly {
 
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'expert'
 
+/** What the arrows follow: the whole mix, the singer, or both. */
+export type Follow = 'music' | 'singer' | 'both'
+
 export const DIFFICULTIES: readonly Difficulty[] = ['easy', 'normal', 'hard', 'expert'] as const
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
@@ -117,6 +120,8 @@ export interface GeneratorInfo extends GeneratorSettings {
   /** Human readable summary of how the chart was derived (shown in the UI). */
   source: 'analysis' | 'manual' | 'imported'
   notes: string[]
+  /** Set when the arrows follow the singer or both; absent means the music. */
+  follow?: Follow
 }
 
 export interface Chart {

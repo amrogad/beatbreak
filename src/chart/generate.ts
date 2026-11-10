@@ -23,6 +23,7 @@ import type {
   ChartNote,
   ChartStats,
   Difficulty,
+  Follow,
   Lane,
   OnsetEvent,
   Section,
@@ -266,6 +267,7 @@ export function selectCandidates(
   timing: TimingMap,
   duration: number,
   settings: GenerationSettings,
+  options: { keepOffGrid?: boolean } = {},
 ): SelectionResult {
   const onsets: OnsetEvent[] = analysis.onsets.filter(
     (o) => Number.isFinite(o.time) && o.time >= 0 && o.time < duration,
@@ -334,7 +336,9 @@ export function selectCandidates(
     const stepTime = timing.stepToTime(step, settings.stepsPerBeat)
     const deltaMs = Math.abs(stepTime - onset.time) * 1000
     let noteTime = stepTime
-    if (deltaMs > settings.snapToleranceMs) {
+    if (deltaMs > settings.snapToleranceMs && options.keepOffGrid) {
+      noteTime = Math.round(onset.time * 1000) / 1000
+    } else if (deltaMs > settings.snapToleranceMs) {
       // Too far from the grid to trust: keep only clearly strong hits that sit on a triplet, and
       // only when the difficulty uses a fine enough grid to represent them.
       const strongSyncopation = fineGrid && onset.strength >= Math.max(floor + 0.15, 0.6)
@@ -951,6 +955,8 @@ export function applyHolds(
   seed: number,
   sustains: ReadonlyMap<number, number> = new Map(),
   patterns: ReadonlyMap<number, string> = new Map(),
+  holdShare = 0.1,
+  freeHeads = false,
 ): HoldApplicationResult {
   if (notes.length === 0) return { notes, holds: 0 }
   const rng = createRng(seed ^ 0x51ed270b)
@@ -958,7 +964,7 @@ export function applyHolds(
   const maxHoldSeconds = HOLD_MAX_SECONDS[difficulty]
   const minHoldSeconds = MIN_HOLD_SECONDS
   const tailClearance = 0.12
-  const holdCap = Math.max(1, Math.floor(notes.length * 0.1))
+  const holdCap = Math.max(1, Math.floor(notes.length * holdShare))
   const songEnd = duration - 0.2
   const sustainAware = sustains.size > 0
 
@@ -994,7 +1000,9 @@ export function applyHolds(
     // an eighth (Hard/Expert) so a short tap never starts halfway through a sung phrase.
     const onQuarter = Math.abs(note.beat - Math.round(note.beat)) < 1e-6
     const onEighth = Math.abs(note.beat * 2 - Math.round(note.beat * 2)) < 1e-6
-    if (difficulty === 'easy' || difficulty === 'normal') {
+    if (freeHeads) {
+      // A held sung word starts where the singer starts it, on the grid or not.
+    } else if (difficulty === 'easy' || difficulty === 'normal') {
       if (!onQuarter) return note
     } else if (!onEighth) {
       return note
@@ -1151,6 +1159,59 @@ export interface GenerateChartInput {
    * cannot disagree.
    */
   edit?: EditPlan | null
+  /** What the arrows follow. Singer and both need `voice`; without it the chart follows the music. */
+  follow?: Follow
+  /** The singer's onsets, from the isolated vocal track. */
+  voice?: readonly OnsetEvent[] | null
+}
+
+/** A sung note this close to the beat grid lands on it; further off it keeps the singer's timing. */
+const SINGER_SNAP_MS = 30
+/** Long sung notes are the point of following the singer, so more of them become long arrows. */
+const SINGER_HOLD_SHARE = 0.2
+/** A bar following both keeps this many times the hits of its busier source. */
+const BOTH_ROOM = 1
+
+/** Strengths as ranks 0..1, so two sources with different loudness scales weigh the same. */
+function ranked(onsets: readonly OnsetEvent[]): OnsetEvent[] {
+  const order = onsets.map((onset, i) => [onset.strength, i] as const).sort((a, b) => a[0] - b[0])
+  const out = onsets.map((onset) => ({ ...onset }))
+  order.forEach(([, i], rank) => {
+    out[i].strength = onsets.length > 1 ? rank / (onsets.length - 1) : 1
+  })
+  return out
+}
+
+/** The onsets a chart is built from, for what the arrows follow. */
+export function followedOnsets(
+  analysis: AnalysisResult,
+  follow: Follow,
+  voice: readonly OnsetEvent[] | null | undefined,
+  timing: TimingMap,
+): OnsetEvent[] {
+  if (follow === 'music' || !voice || voice.length === 0) return analysis.onsets
+  if (follow === 'singer') return [...voice].sort((a, b) => a.time - b.time)
+  // Drums and voice together hear about twice the hits. Each bar keeps a little more than the
+  // busier of the two, the strongest of both, so a level keeps close to its usual pace.
+  const barOf = (time: number): number => Math.floor(timing.timeToBeat(time) / BAR_BEATS)
+  const bars = new Map<number, { music: number; voice: number; onsets: OnsetEvent[] }>()
+  const add = (list: OnsetEvent[], source: 'music' | 'voice'): void => {
+    for (const onset of list) {
+      const bar = barOf(onset.time)
+      const entry = bars.get(bar) ?? { music: 0, voice: 0, onsets: [] }
+      entry[source]++
+      entry.onsets.push(onset)
+      bars.set(bar, entry)
+    }
+  }
+  add(ranked(analysis.onsets), 'music')
+  add(ranked(voice), 'voice')
+  const kept: OnsetEvent[] = []
+  for (const entry of bars.values()) {
+    const room = Math.ceil(Math.max(entry.music, entry.voice) * BOTH_ROOM)
+    kept.push(...entry.onsets.sort((a, b) => b.strength - a.strength).slice(0, room))
+  }
+  return kept.sort((a, b) => a.time - b.time)
 }
 
 /**
@@ -1310,14 +1371,18 @@ export function generateChart(input: GenerateChartInput): Chart {
     input.options?.seed ??
     hashString(`${songId}|${difficulty}|${GENERATOR_VERSION}|${input.options?.salt ?? 0}`)
 
-  const heard = filterOnsetsForEdit(analysis, input.edit)
-  const selection = selectCandidates(heard, timing, duration, settings)
+  const follow: Follow = input.follow !== 'music' && input.voice?.length ? input.follow ?? 'music' : 'music'
+  const singing = follow !== 'music'
+  if (singing) settings.snapToleranceMs = SINGER_SNAP_MS
+  const heard = filterOnsetsForEdit({ ...analysis, onsets: followedOnsets(analysis, follow, input.voice, timing) }, input.edit)
+  const selection = selectCandidates(heard, timing, duration, settings, { keepOffGrid: singing })
   const isSilent = (time: number): boolean =>
     analysis.silentRegions.some((region) => time >= region.start - 0.05 && time <= region.end + 0.05)
   const candidates =
-    difficulty === 'expert' ? fillSparseBars(selection.candidates, timing, settings.stepsPerBeat, isSilent) : selection.candidates
+    difficulty === 'expert' && !singing ? fillSparseBars(selection.candidates, timing, settings.stepsPerBeat, isSilent) : selection.candidates
   const shaped = shapeDensity(candidates, timing, duration, settings, difficulty, {
-    groups: groupBars(heard.onsets, timing, duration, analysis.texture),
+    // Verses repeat the music but not the words, so a sung chart never copies one bar into another.
+    groups: singing ? { groupOfBar: [], members: [], mirrored: [] } : groupBars(heard.onsets, timing, duration, analysis.texture),
     sections: analysis.sections,
     isSilent,
   })
@@ -1332,7 +1397,7 @@ export function generateChart(input: GenerateChartInput): Chart {
     if (candidate.heldSeconds === undefined) continue
     sustains.set(key, Math.max(sustains.get(key) ?? 0, candidate.heldSeconds))
   }
-  const withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns)
+  const withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns, singing ? SINGER_HOLD_SHARE : undefined, singing)
   const tidied = applyChartRules(withHolds.notes, timing, settings, difficulty)
   const clipped = clipNotesToEdit(tidied, input.edit, duration, timing, settings.stepsPerBeat)
   const notes = clipped.notes
@@ -1366,6 +1431,7 @@ export function generateChart(input: GenerateChartInput): Chart {
 
   const generator: Chart['generator'] = {
     ...settings,
+    ...(follow !== 'music' ? { follow } : {}),
     version: GENERATOR_VERSION,
     source: 'analysis',
     seed,
