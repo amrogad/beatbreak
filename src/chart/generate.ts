@@ -15,7 +15,7 @@
  * Every stage is deterministic given a seed, so regenerating with the same settings reproduces
  * the same chart exactly.
  */
-import { ANCHOR_LIMIT, anchorWindow, applyChartRules } from './rules'
+import { ANCHOR_LIMIT, MIN_HOLD_SECONDS, anchorWindow, applyChartRules } from './rules'
 import { BAR_BEATS, groupBars, type BarGroups } from './structure'
 import type {
   AnalysisResult,
@@ -33,7 +33,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-4.3'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.4'
 
 /** Hits this close to an eighth snap to it instead of the nearest 16th (Hard and Expert). */
 const COARSE_SNAP_MS = 55
@@ -907,12 +907,6 @@ const RELEASE_ALIGN_SECONDS = 0.15
 /** No other arrow may come this soon before a hold's release. */
 const RELEASE_CLEAR_SECONDS = 0.3
 
-/**
- * Shortest sustained sound that may become a hold, per difficulty, in seconds. The music decides:
- * a pad or held vocal rings well past this and becomes a short hold; a drum hit decays fast and
- * stays a tap.
- */
-const HOLD_MIN_SUSTAIN: Record<Difficulty, number> = { easy: 0.5, normal: 0.45, hard: 0.4, expert: 0.35 }
 /** Repeats of a held pattern may push the chart this far past its hold cap. */
 const HOLD_REPEAT_ROOM = 1.6
 /**
@@ -925,6 +919,11 @@ export const HOLD_SHAPE = {
   lengthScale: 0.7,
   /** Most other-lane arrows per beat while a hold runs; a busier span stays a tap. */
   maxBusyPerBeat: 0.5,
+  /**
+   * Shortest sound, in seconds, that becomes a long arrow. Shorter sustains made 0.3 s holds that
+   * drew about as tall as a tap once scroll speed moved to arrow heights.
+   */
+  minSound: 0.5,
 }
 
 /**
@@ -957,8 +956,7 @@ export function applyHolds(
   const rng = createRng(seed ^ 0x51ed270b)
   const chance = HOLD_CHANCE[difficulty]
   const maxHoldSeconds = HOLD_MAX_SECONDS[difficulty]
-  const minHoldSeconds = 0.24
-  const minSustain = HOLD_MIN_SUSTAIN[difficulty]
+  const minHoldSeconds = MIN_HOLD_SECONDS
   const tailClearance = 0.12
   const holdCap = Math.max(1, Math.floor(notes.length * 0.1))
   const songEnd = duration - 0.2
@@ -1006,8 +1004,8 @@ export function applyHolds(
     let wanted: number
     if (sustainAware) {
       const sustain = sustains.get(Math.round(note.time * 1000))
-      if (sustain === undefined || sustain < minSustain) return note
-      wanted = Math.min(sustain * HOLD_SHAPE.lengthScale, bound - note.time)
+      if (sustain === undefined || sustain < HOLD_SHAPE.minSound) return note
+      wanted = Math.min(Math.max(sustain * HOLD_SHAPE.lengthScale, minHoldSeconds), bound - note.time)
       if (wanted < minHoldSeconds) return note
     } else {
       const onBeat = Math.abs(note.beat - Math.round(note.beat)) < 1e-6
@@ -1242,6 +1240,61 @@ export function clipNotesToEdit(
 
 const SLOW_TEMPO_BPM = 110
 
+/** A bar with fewer hits than this on Expert gets its open eighths filled. */
+const EXPERT_FILL_BELOW = 6
+
+/**
+ * On sparse songs Expert used to come out barely denser than Hard, because both already played
+ * every sound the detector heard. Expert fills the open eighths of thin bars, but only between
+ * real hits less than a beat apart on both sides, so gaps and breaks stay empty.
+ */
+export function fillSparseBars(
+  candidates: Candidate[],
+  timing: TimingMap,
+  stepsPerBeat: number,
+  isSilent: (time: number) => boolean,
+): Candidate[] {
+  if (candidates.length < 2) return candidates
+  const eighth = stepsPerBeat / 2
+  const bar = stepsPerBeat * 4
+  const perBar = new Map<number, number>()
+  for (const c of candidates) perBar.set(Math.floor(c.step / bar), (perBar.get(Math.floor(c.step / bar)) ?? 0) + 1)
+  const taken = new Set(candidates.map((c) => c.step))
+  const near = (step: number): boolean => {
+    for (let d = -eighth / 2; d <= eighth / 2; d++) if (taken.has(step + d)) return true
+    return false
+  }
+  const added: Candidate[] = []
+  for (let i = 0; i + 1 < candidates.length; i++) {
+    const prev = candidates[i]
+    const next = candidates[i + 1]
+    if (next.step - prev.step > stepsPerBeat * 2) continue
+    for (let step = Math.ceil((prev.step + 1) / eighth) * eighth; step < next.step; step += eighth) {
+      if ((perBar.get(Math.floor(step / bar)) ?? 0) >= EXPERT_FILL_BELOW) continue
+      if (step - prev.step > stepsPerBeat || next.step - step > stepsPerBeat) continue
+      if (near(step)) continue
+      const time = timing.stepToTime(step, stepsPerBeat)
+      if (isSilent(time)) continue
+      const source = step - prev.step <= next.step - step ? prev : next
+      added.push({
+        ...source,
+        step,
+        time,
+        attack: time,
+        strength: Math.min(prev.strength, next.strength) * 0.5,
+        hits: 1,
+        hitTimes: [time],
+        hitBands: [source.band],
+        simultaneousHits: 1,
+        bands: [source.band],
+        heldSeconds: undefined,
+      })
+      taken.add(step)
+    }
+  }
+  return added.length ? [...candidates, ...added].sort((a, b) => a.step - b.step) : candidates
+}
+
 export function generateChart(input: GenerateChartInput): Chart {
   const { analysis, timing, duration, songId, difficulty } = input
   const overrides = { ...input.options?.overrides, ...input.settings }
@@ -1259,10 +1312,14 @@ export function generateChart(input: GenerateChartInput): Chart {
 
   const heard = filterOnsetsForEdit(analysis, input.edit)
   const selection = selectCandidates(heard, timing, duration, settings)
-  const shaped = shapeDensity(selection.candidates, timing, duration, settings, difficulty, {
+  const isSilent = (time: number): boolean =>
+    analysis.silentRegions.some((region) => time >= region.start - 0.05 && time <= region.end + 0.05)
+  const candidates =
+    difficulty === 'expert' ? fillSparseBars(selection.candidates, timing, settings.stepsPerBeat, isSilent) : selection.candidates
+  const shaped = shapeDensity(candidates, timing, duration, settings, difficulty, {
     groups: groupBars(heard.onsets, timing, duration, analysis.texture),
     sections: analysis.sections,
-    isSilent: (time) => analysis.silentRegions.some((region) => time >= region.start - 0.05 && time <= region.end + 0.05),
+    isSilent,
   })
   const assignment = assignLanes(shaped, timing, settings, difficulty, seed)
   // Sustain per quantized step: a note whose sound keeps ringing in its own band becomes a hold.

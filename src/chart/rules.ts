@@ -34,6 +34,9 @@ export interface RuleSettings {
 }
 
 const MIN_HOLD_BEATS: Record<Difficulty, number> = { easy: 1, normal: 0.5, hard: 0.25, expert: 0.25 }
+/** A long arrow shorter than this reads as a tap at normal scroll speeds, so it becomes one. */
+export const MIN_HOLD_SECONDS = 0.5
+const minHold = (beat: number, difficulty: Difficulty): number => Math.max(beat * MIN_HOLD_BEATS[difficulty], MIN_HOLD_SECONDS)
 const RELEASE_GAP_BEATS: Record<Difficulty, number> = { easy: 1, normal: 0.5, hard: 0.25, expert: 0.25 }
 export const ANCHOR_LIMIT: Partial<Record<Difficulty, number>> = { normal: 3, hard: 5 }
 /** How many arrows of a run, counting the current one, an anchor is counted over. */
@@ -170,7 +173,7 @@ function alignOrApart(notes: ChartNote[], beatAt: (t: number) => number, setting
 function holdLengths(notes: ChartNote[], beatAt: (t: number) => number, difficulty: Difficulty): ChartNote[] {
   return notes.map((note) => {
     if (!isHold(note)) return note
-    if ((note.duration ?? 0) >= beatAt(note.time) * MIN_HOLD_BEATS[difficulty] - 1e-6) return note
+    if ((note.duration ?? 0) >= minHold(beatAt(note.time), difficulty) - 1e-6) return note
     return toTap(note)
   })
 }
@@ -211,7 +214,7 @@ function spaceReleases(notes: ChartNote[], beatAt: (t: number) => number, diffic
       continue
     }
     const shortened = end(later) - beatAt(end(earlier)) * RELEASE_GAP_BEATS[difficulty] - earlier.time
-    if (shortened >= beatAt(earlier.time) * MIN_HOLD_BEATS[difficulty]) {
+    if (shortened >= minHold(beatAt(earlier.time), difficulty) - 1e-6) {
       replaced.set(earlier, { ...earlier, duration: shortened })
     } else {
       replaced.set(earlier, toTap(earlier))
