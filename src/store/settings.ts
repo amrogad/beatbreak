@@ -5,7 +5,7 @@
  * defensive parsing: a settings blob from an older build — or a hand-edited one — must never be
  * able to put the app in a broken state, so every field is clamped or rejected.
  */
-import type { Difficulty, FailRule } from '../core/types'
+import type { Difficulty, FailRule, Follow } from '../core/types'
 import { FAIL_RULES } from '../core/types'
 import type { ControlMap, KeyMap } from '../game/input'
 import { CONTROL_DEFAULTS, DEFAULT_KEYMAP } from '../game/input'
@@ -73,6 +73,8 @@ export interface Settings {
   progressStyle: 'top' | 'column' | 'text'
   /** Arrows in lanes, or circles to click or tap on a field. */
   playMode: PlayMode
+  /** What the arrows follow by default: the music, the singer or both. */
+  follow: Follow
 }
 
 export type PlayMode = 'arrows' | 'circles'
@@ -111,6 +113,7 @@ export const DEFAULT_SETTINGS: Settings = {
   audioOffsetMs: 0,
   progressStyle: 'top',
   playMode: 'arrows',
+  follow: 'music',
 }
 
 export const STORAGE_KEY = 'pulsegrid:settings:v1'
@@ -255,6 +258,7 @@ export function sanitizeSettings(input: unknown): Settings {
     audioOffsetMs: Math.round(clamp(raw.audioOffsetMs, -250, 250, DEFAULT_SETTINGS.audioOffsetMs)),
     progressStyle: raw.progressStyle === 'column' || raw.progressStyle === 'text' ? raw.progressStyle : 'top',
     playMode: raw.playMode === 'circles' ? 'circles' : 'arrows',
+    follow: raw.follow === 'singer' || raw.follow === 'both' ? raw.follow : 'music',
   }
 }
 

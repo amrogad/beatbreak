@@ -12,7 +12,7 @@ import type { NoteShape } from '../../render/renderer'
 import type { Settings } from '../../store/settings'
 import { storageSummary, clearScores, idbAudioClearAndFlag, wipeEverything } from '../../store/maintenance'
 import type { StorageSummary } from '../../store/maintenance'
-import { BackButton, Button, Choice, KeyCap, Panel, ProgressBar, Slider, Stat, Toggle, useConfirm } from '../components'
+import { BackButton, Button, Choice, KeyCap, NO_SINGING_HINT, Panel, ProgressBar, Slider, Stat, Toggle, followOptions, useConfirm, useSingingSupport } from '../components'
 import { SYNC_HINT, formatBytes, formatPercent, formatSync } from '../format'
 import { CalibrateDialog } from '../Calibrate'
 import { buildBackup, parseBackup, restoreBackup } from '../../store/backup'
@@ -70,6 +70,7 @@ export function SettingsScreen({
   const [capturingLane, setCapturingLane] = useState<Lane | null>(null)
   const captureRef = useRef<Lane | null>(null)
   // Phones and tablets have no keys to set, so the key panel only shows where there is a keyboard.
+  const singing = useSingingSupport()
   const [touchOnly] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
   const arrowMode = settings.playMode !== 'circles'
   const [ask, confirmDialog] = useConfirm()
@@ -187,6 +188,13 @@ export function SettingsScreen({
               { value: 'circles', label: 'Circles (Beta)' },
             ]}
             onChange={(value) => onUpdate({ playMode: value })}
+          />
+          <Choice
+            label={arrowMode ? 'Arrows follow' : 'Circles follow'}
+            value={singing === false ? 'music' : settings.follow}
+            options={followOptions(singing)}
+            onChange={(value) => onUpdate({ follow: value })}
+            hint={singing === false ? NO_SINGING_HINT : undefined}
           />
           {!arrowMode && (
             <Toggle

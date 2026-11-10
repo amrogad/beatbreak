@@ -6,7 +6,7 @@
  * copy of the picked file is kept in IndexedDB so the song plays offline later. The decoded audio
  * buffer only lives in memory.
  */
-import type { AnalysisResult, Chart, Difficulty, SongMeta } from '../core/types'
+import type { AnalysisResult, Chart, Difficulty, Follow, OnsetEvent, SongMeta } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
 import { planForMeta, type EditPlan } from '../core/edit'
 import { decodeAudioFile } from '../audio/engine'
@@ -18,6 +18,7 @@ import { hashString } from '../core/rng'
 import { GENERATOR_VERSION, generateAllDifficulties } from '../chart/generate'
 import { TimingMap } from '../chart/timing'
 import { AnalysisClient } from '../workers/analysisClient'
+import { VOICE_VERSION, findSinging } from '../workers/voiceClient'
 import { openDb } from './db'
 import {
   deleteSong,
@@ -27,11 +28,30 @@ import {
   listSongs,
   loadAnalysis,
   loadAudio,
+  loadVoice,
   saveAnalysis,
   saveAudio,
   saveCharts,
   saveSong,
+  saveVoice,
 } from './repository'
+
+/** What a song's generated charts follow now; null when every chart was edited by hand. */
+export function followOf(charts: readonly Chart[]): Follow | null {
+  const generated = charts.find((chart) => !chart.edited)
+  return generated ? generated.generator.follow ?? 'music' : null
+}
+
+/**
+ * The follow choice and singing to rebuild charts with. Without saved singing a rebuild follows
+ * the music; the song screen finds the singing again when the player asks for it.
+ */
+async function keepFollow(songId: string, charts: readonly Chart[]): Promise<{ follow: Follow; voice: OnsetEvent[] | null }> {
+  const follow = followOf(charts) ?? 'music'
+  if (follow === 'music') return { follow, voice: null }
+  const voice = await loadVoice(songId, VOICE_VERSION).catch(() => null)
+  return voice ? { follow, voice } : { follow: 'music', voice: null }
+}
 
 /** Below these a file is a clip, not a song: there is nothing to chart. */
 const MIN_ONSETS = 24
@@ -251,6 +271,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
     if (existing.trimManual) meta.trimManual = true
     if (existing.beatFix) meta.beatFix = existing.beatFix
     if (existing.scrollSpeed !== undefined) meta.scrollSpeed = existing.scrollSpeed
+    if (existing.follow !== undefined) meta.follow = existing.follow
   } else {
     // Trim conservatively on the first import: only waveform-verified near-silence at the edges.
     // A quiet intro is never cut just because it is quiet.
@@ -279,6 +300,7 @@ export async function importSongFromFile(file: File, options: ImportSongOptions)
       difficulties: [...regenerate],
       edit: planForMeta(meta),
       options: { salt: meta.chartVariant ?? 0 },
+      ...(existing ? await keepFollow(songId, existingCharts) : {}),
     })
     const byDifficulty = new Map(regenerated.map((chart) => [chart.difficulty, chart]))
     charts = requested
@@ -335,8 +357,12 @@ export async function regenerateCharts(input: {
   /** The song's current charts. Hand-edited ones are kept as they are, unless `replaceEdited`. */
   existing?: Chart[]
   replaceEdited?: boolean
+  /** What to follow; omit to keep what the current charts follow. */
+  follow?: Follow
+  voice?: OnsetEvent[] | null
 }): Promise<Chart[]> {
   const timing = TimingMap.single(input.bpm, input.offset)
+  const following = input.follow ? { follow: input.follow, voice: input.voice ?? null } : await keepFollow(input.songId, input.existing ?? [])
   const edited = input.replaceEdited ? [] : (input.existing ?? []).filter((chart) => chart.edited)
   // A hand-edited chart that gets rebuilt is kept as the new chart's previous version.
   const replaced = new Map((input.replaceEdited ? (input.existing ?? []).filter((chart) => chart.edited) : []).map((chart) => [chart.difficulty, chart]))
@@ -351,6 +377,7 @@ export async function regenerateCharts(input: {
     ),
     edit: input.edit ?? null,
     options: { salt: input.salt ?? 0 },
+    ...following,
   }).map((chart) => {
     const old = replaced.get(chart.difficulty)
     if (!old) return chart
@@ -485,6 +512,7 @@ async function loadSongBundleNow(songId: string, options: { requireAudio?: boole
         difficulties,
         edit: planForMeta(meta),
         options: { salt: meta.chartVariant ?? 0 },
+        ...(await keepFollow(songId, charts)),
       })
       if (!(await getSong(songId))) return null
       await saveCharts(regenerated)
@@ -496,4 +524,41 @@ async function loadSongBundleNow(songId: string, options: { requireAudio?: boole
     return { meta, charts, analysis, buffer: null }
   }
   return { meta, charts, analysis, buffer }
+}
+
+/**
+ * Rebuild a song's generated charts to follow the music, the singer or both. The singing is found
+ * once per song (on the GPU) and saved; hand-edited charts are kept.
+ */
+export async function followCharts(
+  bundle: SongBundle,
+  follow: Follow,
+  options: { onProgress?: (stage: string, fraction: number) => void; signal?: AbortSignal } = {},
+): Promise<Chart[]> {
+  const { meta, analysis, buffer } = bundle
+  if (!analysis) throw new Error('Re-attach the audio file first.')
+  let voice: OnsetEvent[] | null = null
+  if (follow !== 'music') {
+    voice = await loadVoice(meta.id, VOICE_VERSION).catch(() => null)
+    if (!voice) {
+      if (!buffer) throw new Error('Re-attach the audio file first.')
+      voice = await findSinging(buffer, options)
+      await saveVoice(meta.id, VOICE_VERSION, voice)
+    }
+  }
+  if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError')
+  const beat = beatOf(meta)
+  return regenerateCharts({
+    analysis,
+    duration: meta.duration,
+    songId: meta.id,
+    title: meta.title,
+    bpm: beat.bpm,
+    offset: beat.offset,
+    edit: planForMeta(meta),
+    salt: meta.chartVariant ?? 0,
+    existing: bundle.charts,
+    follow,
+    voice,
+  })
 }

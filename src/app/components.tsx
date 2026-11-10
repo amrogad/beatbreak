@@ -1,6 +1,7 @@
 /** Small shared UI building blocks. Everything here is presentational and dependency-free. */
 import React, { useCallback, useEffect, useState } from 'react'
-import type { Difficulty } from '../core/types'
+import type { Difficulty, Follow } from '../core/types'
+import { canFindSinging } from '../workers/voiceClient'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../core/types'
 import { hexToRgba } from '../render/renderer'
 import { describeKey } from '../game/input'
@@ -196,7 +197,7 @@ export function Choice<T extends string>({
 }: {
   label: string
   value: T
-  options: { value: T; label: string; color?: string }[]
+  options: { value: T; label: string; color?: string; disabled?: boolean }[]
   onChange: (value: T) => void
   hint?: string
 }): React.JSX.Element {
@@ -212,6 +213,7 @@ export function Choice<T extends string>({
             aria-checked={value === option.value}
             className={`choice-btn${value === option.value ? ' is-selected' : ''}`}
             style={option.color ? ({ '--choice': option.color } as React.CSSProperties) : undefined}
+            disabled={option.disabled}
             onClick={() => onChange(option.value)}
           >
             {option.label}
@@ -465,4 +467,29 @@ export function useConfirm(): [(message: string, yes?: string) => Promise<boolea
     </Modal>
   ) : null
   return [ask, dialog]
+}
+
+/** Whether this browser can find the singing (WebGPU); null while checking. */
+export function useSingingSupport(): boolean | null {
+  const [supported, setSupported] = useState<boolean | null>(null)
+  useEffect(() => {
+    let alive = true
+    void canFindSinging().then((value) => {
+      if (alive) setSupported(value)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  return supported
+}
+
+export const NO_SINGING_HINT = "This browser can't use the graphics card for it (WebGPU), so arrows follow the music."
+
+export function followOptions(supported: boolean | null): { value: Follow; label: string; disabled?: boolean }[] {
+  return [
+    { value: 'music', label: 'Music' },
+    { value: 'singer', label: 'Singer', disabled: supported === false },
+    { value: 'both', label: 'Both', disabled: supported === false },
+  ]
 }

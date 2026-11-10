@@ -323,6 +323,7 @@ strong { font-weight: 700; }
   transition: border-color 120ms ease, background 120ms ease;
 }
 .choice-btn:hover { border-color: var(--choice, var(--border-strong)); background: var(--control-hover); }
+.choice-btn:disabled, .choice-btn:disabled:hover { opacity: 0.42; cursor: not-allowed; border-color: var(--border); background: var(--control); }
 .choice-btn.is-selected {
   border-color: var(--choice, var(--solid));
   background: var(--choice, var(--solid));

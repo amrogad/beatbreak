@@ -181,6 +181,8 @@ export interface SongMeta {
   beatFix?: { bpm: number; offset: number }
   /** Arrow speed for this song only; absent = the speed in Settings. */
   scrollSpeed?: number
+  /** What this song's arrows follow; absent = the choice in Settings. */
+  follow?: Follow
   /** The player set the trim by hand: never replace it with the automatic edge trim. */
   trimManual?: boolean
   analysis: AnalysisSummary

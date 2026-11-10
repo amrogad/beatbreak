@@ -45,6 +45,13 @@ export function AboutScreen({ onBack }: AboutScreenProps): React.JSX.Element {
           </a>{' '}
           by Kulakovka, from Pixabay.
         </p>
+        <p className="muted mt-12">
+          Following the singer uses the Kim Vocal 2 model by Kimberley Jensen, from{' '}
+          <a href="https://github.com/Anjok07/ultimatevocalremovergui" target="_blank" rel="noreferrer">
+            Ultimate Vocal Remover
+          </a>{' '}
+          (MIT), run with ONNX Runtime. It runs on your graphics card and nothing leaves your device.
+        </p>
       </Panel>
 
       <Panel title="Found a bug?">

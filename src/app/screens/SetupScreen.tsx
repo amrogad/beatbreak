@@ -7,10 +7,12 @@
  * "Whole song"; a new arrow variation is an explicit opt-in.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Difficulty } from '../../core/types'
+import type { Difficulty, Follow } from '../../core/types'
 import { DIFFICULTIES, DIFFICULTY_COLOR, DIFFICULTY_LABEL } from '../../core/types'
 import type { SongBundle } from '../../store/library'
 import {
+  followCharts,
+  followOf,
   importSongFromFile,
   loadSongBundle,
   beatOf,
@@ -30,7 +32,7 @@ import { planForMeta } from '../../core/edit'
 import { rateSong } from '../../chart/generate'
 import { circleRhythm, placeCircles } from '../../chart/circles'
 import { AnalysisClient, AnalysisCancelledError } from '../../workers/analysisClient'
-import { BackButton, Button, Choice, Modal, Panel, ProgressBar, Slider, Spinner } from '../components'
+import { BackButton, Button, Choice, Modal, NO_SINGING_HINT, Panel, ProgressBar, Slider, Spinner, followOptions, useSingingSupport } from '../components'
 import { TrimEditor } from '../TrimEditor'
 import { SYNC_HINT, formatDuration, formatPercent, formatSync, friendlyError } from '../format'
 import type { BestScores } from './bestScores'
@@ -105,6 +107,9 @@ export function SetupScreen({
   const [variationBusy, setVariationBusy] = useState(false)
   const [beatBusy, setBeatBusy] = useState(false)
   const [attaching, setAttaching] = useState(false)
+  const [following, setFollowing] = useState<{ stage: string; fraction: number } | null>(null)
+  const singing = useSingingSupport()
+  const followFailedRef = useRef(new Set<string>())
   const analysisClientRef = useRef<AnalysisClient | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -273,6 +278,57 @@ export function SetupScreen({
     [bundle],
   )
   useEffect(() => () => window.clearTimeout(speedSaveRef.current), [])
+
+  // What the arrows follow: this song's pick, else the one in Settings. Without a usable GPU, the music.
+  const wantedFollow: Follow = singing === false ? 'music' : bundle?.meta.follow ?? settings.follow
+  const chartsFollow = followOf(charts)
+
+  // The run reads the song from a ref: picking a difficulty or speed meanwhile must not restart it.
+  const bundleRef = useRef(bundle)
+  bundleRef.current = bundle
+  const followSongId = bundle?.meta.id
+  const followReady = Boolean(bundle?.analysis) && (wantedFollow === 'music' || Boolean(bundle?.buffer))
+  useEffect(() => {
+    const current = bundleRef.current
+    if (phase !== 'ready' || !current || !followReady || chartsFollow === null || chartsFollow === wantedFollow) return
+    if (wantedFollow !== 'music' && singing !== true) return
+    const key = `${current.meta.id}:${wantedFollow}`
+    if (followFailedRef.current.has(key)) return
+    const controller = new AbortController()
+    setFollowing({ stage: 'Preparing', fraction: 0 })
+    followCharts(current, wantedFollow, {
+      signal: controller.signal,
+      onProgress: (stage, fraction) => setFollowing({ stage, fraction }),
+    })
+      .then((next) => {
+        const latest = bundleRef.current
+        if (controller.signal.aborted || !latest) return
+        adopt({ ...latest, charts: next })
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return
+        followFailedRef.current.add(key)
+        onToast(`Could not find the singing: ${caught instanceof Error ? caught.message : String(caught)}`, 'error')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFollowing(null)
+      })
+    return () => {
+      controller.abort()
+      setFollowing(null)
+    }
+  }, [adopt, chartsFollow, followReady, followSongId, onToast, phase, singing, wantedFollow])
+
+  const chooseFollow = useCallback(
+    (next: Follow) => {
+      if (!bundle) return
+      // The same as Settings means no pick of its own, so a later change in Settings still applies.
+      const own = next === settings.follow ? undefined : next
+      setBundle((current) => (current ? { ...current, meta: { ...current.meta, follow: own } } : current))
+      void updateSong(bundle.meta.id, { follow: own })
+    },
+    [bundle, settings.follow],
+  )
 
   const saveTitle = useCallback(async () => {
     setRenaming(false)
@@ -609,6 +665,26 @@ export function SetupScreen({
           ]}
           onChange={(value) => onUpdateSettings({ playMode: value })}
         />
+        <div className="mt-12">
+          <Choice
+            label={circleMode ? 'Circles follow' : 'Arrows follow'}
+            value={wantedFollow}
+            options={followOptions(singing)}
+            onChange={chooseFollow}
+            hint={singing === false ? NO_SINGING_HINT : undefined}
+          />
+        </div>
+        {following && (
+          <div className="mt-12">
+            <div className="row-between gap-16">
+              <Spinner label={following.stage} />
+              <span className="mono small">{Math.round(following.fraction * 100)}%</span>
+            </div>
+            <div className="mt-8">
+              <ProgressBar fraction={following.fraction} />
+            </div>
+          </div>
+        )}
         <div className="difficulty-grid mt-12" role="radiogroup" aria-label="Difficulty">
           {DIFFICULTY_ORDER.map((item) => {
             const chart = charts.find((candidate) => candidate.difficulty === item)
@@ -652,7 +728,7 @@ export function SetupScreen({
             <Button
               size="lg"
               variant="ghost"
-              disabled={!selectedChart}
+              disabled={!selectedChart || following !== null}
               onClick={() => selectedChart && onOpenEditor(meta.id, selectedChart.id)}
             >
               {circleMode ? 'Edit rhythm' : 'Edit arrows'}
@@ -661,7 +737,7 @@ export function SetupScreen({
               size="lg"
               variant="primary"
               onClick={startRun}
-              disabled={!bundle.buffer || !selectedChart}
+              disabled={!bundle.buffer || !selectedChart || following !== null}
               title={bundle.buffer ? 'Start the run' : 'Attach the audio file to play'}
             >
               ▶ Play {DIFFICULTY_LABEL[difficulty]}
@@ -683,7 +759,7 @@ export function SetupScreen({
             <Button
               size="sm"
               variant="ghost"
-              disabled={variationBusy || rangeBusy || !analysis}
+              disabled={variationBusy || rangeBusy || !analysis || following !== null}
               onClick={regenerate}
               title={analysis ? 'Build all four charts again with a new pattern' : 'Re-attach the audio first'}
             >
@@ -692,7 +768,7 @@ export function SetupScreen({
             <Button
               size="sm"
               variant={trimming ? 'ghost' : 'primary'}
-              disabled={!analysis}
+              disabled={!analysis || following !== null}
               onClick={() => {
                 setTrimming((current) => !current)
                 setSelection(null)
@@ -706,7 +782,7 @@ export function SetupScreen({
         {meta.beatFix && (
           <div className="row-between wrap gap-12 mt-16">
             <p className="muted small">You changed this song's beat earlier.</p>
-            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis} onClick={() => void resetBeat()}>
+            <Button size="sm" variant="ghost" disabled={beatBusy || !analysis || following !== null} onClick={() => void resetBeat()}>
               Undo beat change
             </Button>
           </div>
