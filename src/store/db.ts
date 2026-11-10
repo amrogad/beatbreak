@@ -9,13 +9,14 @@
  *   charts  — Chart records (the playable data, generated and/or hand-edited), indexed by songId.
  *   audio   — optional decoded-source blobs, written **only** when the user asks to remember them.
  *   scores  — RunResults, indexed by songId.
+ *   voices  — the singer's onsets, found once per song when a player follows the singer.
  */
-import type { AnalysisResult, Chart, RunResults, SongMeta } from '../core/types'
+import type { AnalysisResult, Chart, OnsetEvent, RunResults, SongMeta } from '../core/types'
 
 export const DB_NAME = 'pulsegrid'
-export const DB_VERSION = 4
+export const DB_VERSION = 5
 
-export type StoreName = 'songs' | 'charts' | 'audio' | 'scores' | 'analyses'
+export type StoreName = 'songs' | 'charts' | 'audio' | 'scores' | 'analyses' | 'voices'
 
 export interface StoredAudio {
   songId: string
@@ -31,6 +32,15 @@ export interface StoredAudio {
 export interface StoredAnalysis {
   songId: string
   analysis: AnalysisResult
+  savedAt: number
+}
+
+/** Where the singer sings in one song, from its isolated vocal track. */
+export interface StoredVoice {
+  songId: string
+  /** Detector version: a newer one finds the singing again. */
+  version: string
+  onsets: OnsetEvent[]
   savedAt: number
 }
 
@@ -92,6 +102,9 @@ export function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('analyses')) {
         db.createObjectStore('analyses', { keyPath: 'songId' })
+      }
+      if (!db.objectStoreNames.contains('voices')) {
+        db.createObjectStore('voices', { keyPath: 'songId' })
       }
       // v4: the scoring scale dropped from 1,000 to 100 points per arrow. Existing runs are
       // divided once so old personal bests stay comparable instead of being ten times too high.
@@ -217,7 +230,7 @@ export async function idbClear(store: StoreName): Promise<void> {
 
 /** Wipe every Beatbreak store (settings live in localStorage and are cleared separately). */
 export async function wipeDatabase(): Promise<void> {
-  for (const store of ['songs', 'charts', 'audio', 'scores', 'analyses'] as StoreName[]) {
+  for (const store of ['songs', 'charts', 'audio', 'scores', 'analyses', 'voices'] as StoreName[]) {
     await idbClear(store)
   }
 }

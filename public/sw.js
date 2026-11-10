@@ -80,7 +80,8 @@ self.addEventListener('activate', (event) => {
       await book.put('builds', new Response(JSON.stringify(builds), { headers: { 'Content-Type': 'application/json' } }))
       const keep = new Set([BUILDS, ...builds.flatMap((v) => [`${v}-precache`, `${v}-runtime`])])
       const keys = await caches.keys()
-      await Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)))
+      // The singer files are cached by the page itself and outlive builds.
+      await Promise.all(keys.filter((k) => !keep.has(k) && !k.startsWith('beatbreak-voice')).map((k) => caches.delete(k)))
       await self.clients.claim()
     })(),
   )
@@ -100,6 +101,8 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return // never proxy third-party requests
+  // The singer files (tens of MB) are cached by the page in their own cache, once.
+  if (url.pathname.includes('/voice/')) return
 
   if (isNavigation(request)) {
     event.respondWith(

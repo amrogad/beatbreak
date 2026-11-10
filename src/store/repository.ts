@@ -7,12 +7,12 @@
  *  - scores are stored with the song title so the history list never needs a join;
  *  - audio bytes are only written when the caller explicitly asks (`saveAudio`).
  */
-import type { AnalysisResult, Chart, Difficulty, RunResults, SongMeta } from '../core/types'
+import type { AnalysisResult, Chart, Difficulty, OnsetEvent, RunResults, SongMeta } from '../core/types'
 import { DIFFICULTIES } from '../core/types'
 import { createId } from '../core/rng'
 import { sortNotes } from '../chart/timing'
 import { idbDelete, idbGet, idbGetAll, idbGetAllByIndex, idbPut, idbPutMany } from './db'
-import type { StoredAnalysis, StoredAudio, StoredRun } from './db'
+import type { StoredAnalysis, StoredAudio, StoredRun, StoredVoice } from './db'
 
 /* ----------------------------------------------------------------- songs */
 
@@ -66,7 +66,21 @@ export async function deleteSong(songId: string): Promise<void> {
   for (const run of runs) await idbDelete('scores', run.id)
   await idbDelete('audio', songId)
   await idbDelete('analyses', songId)
+  await idbDelete('voices', songId)
   await idbDelete('songs', songId)
+}
+
+/* ---------------------------------------------------------------- voices */
+
+export async function saveVoice(songId: string, version: string, onsets: OnsetEvent[]): Promise<void> {
+  const record: StoredVoice = { songId, version, onsets, savedAt: Date.now() }
+  await idbPut('voices', record)
+}
+
+/** The singer's onsets for a song, when found with this detector version. */
+export async function loadVoice(songId: string, version: string): Promise<OnsetEvent[] | null> {
+  const record = await idbGet<StoredVoice>('voices', songId)
+  return record && record.version === version && Array.isArray(record.onsets) ? record.onsets : null
 }
 
 /* -------------------------------------------------------------- analyses */
