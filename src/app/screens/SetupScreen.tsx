@@ -145,6 +145,11 @@ export function SetupScreen({
     bundleReadyRef.current(next)
   }, [])
 
+  // The game reads the song from the runtime store: a speed or follow change made here must reach it.
+  useEffect(() => {
+    if (bundle) runtime.put(bundle)
+  }, [bundle])
+
   /* --------------------------------------------------------------- importing */
 
   useEffect(() => {

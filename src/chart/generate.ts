@@ -34,7 +34,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-4.4'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.5'
 
 /** Hits this close to an eighth snap to it instead of the nearest 16th (Hard and Expert). */
 const COARSE_SNAP_MS = 55
@@ -928,6 +928,12 @@ export const HOLD_SHAPE = {
    * drew about as tall as a tap once scroll speed moved to arrow heights.
    */
   minSound: 0.5,
+  /**
+   * Below this share of long arrows (dense rap over a dry beat), sounds that ring this long also
+   * count. The arrow still lasts at least MIN_HOLD_SECONDS.
+   */
+  fewShare: 0.04,
+  fewSound: 0.3,
 }
 
 /**
@@ -957,6 +963,7 @@ export function applyHolds(
   patterns: ReadonlyMap<number, string> = new Map(),
   holdShare = 0.1,
   freeHeads = false,
+  minSound = HOLD_SHAPE.minSound,
 ): HoldApplicationResult {
   if (notes.length === 0) return { notes, holds: 0 }
   const rng = createRng(seed ^ 0x51ed270b)
@@ -998,8 +1005,10 @@ export function applyHolds(
     if ((sameStep.get(Math.round(note.time * 1000)) ?? 0) > 1) return note
     // Holds are anchors, not decoration. Keep their heads on a beat (Easy/Normal) or at least on
     // an eighth (Hard/Expert) so a short tap never starts halfway through a sung phrase.
-    const onQuarter = Math.abs(note.beat - Math.round(note.beat)) < 1e-6
-    const onEighth = Math.abs(note.beat * 2 - Math.round(note.beat * 2)) < 1e-6
+    // A slow detected tempo is usually half the real one: its half beats are the real beats.
+    const grid = timing.primaryBpm < SLOW_TEMPO_BPM ? 2 : 1
+    const onQuarter = Math.abs(note.beat * grid - Math.round(note.beat * grid)) < 1e-6
+    const onEighth = Math.abs(note.beat * 2 * grid - Math.round(note.beat * 2 * grid)) < 1e-6
     if (freeHeads) {
       // A held sung word starts where the singer starts it, on the grid or not.
     } else if (difficulty === 'easy' || difficulty === 'normal') {
@@ -1012,7 +1021,7 @@ export function applyHolds(
     let wanted: number
     if (sustainAware) {
       const sustain = sustains.get(Math.round(note.time * 1000))
-      if (sustain === undefined || sustain < HOLD_SHAPE.minSound) return note
+      if (sustain === undefined || sustain < minSound) return note
       wanted = Math.min(Math.max(sustain * HOLD_SHAPE.lengthScale, minHoldSeconds), bound - note.time)
       if (wanted < minHoldSeconds) return note
     } else {
@@ -1397,7 +1406,12 @@ export function generateChart(input: GenerateChartInput): Chart {
     if (candidate.heldSeconds === undefined) continue
     sustains.set(key, Math.max(sustains.get(key) ?? 0, candidate.heldSeconds))
   }
-  const withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns, singing ? SINGER_HOLD_SHARE : undefined, singing)
+  const holdShare = singing ? SINGER_HOLD_SHARE : undefined
+  let withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns, holdShare, singing)
+  if (withHolds.holds < assignment.notes.length * HOLD_SHAPE.fewShare) {
+    const more = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns, holdShare, singing, HOLD_SHAPE.fewSound)
+    if (more.holds > withHolds.holds) withHolds = more
+  }
   const tidied = applyChartRules(withHolds.notes, timing, settings, difficulty)
   const clipped = clipNotesToEdit(tidied, input.edit, duration, timing, settings.stepsPerBeat)
   const notes = clipped.notes
