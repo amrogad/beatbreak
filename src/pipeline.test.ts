@@ -450,6 +450,13 @@ describe('hold notes', () => {
     expect(counts[counts.length - 1]).toBeGreaterThan(counts[0])
   })
 
+  it('gives harder levels at least as many long arrows', () => {
+    const { analysis, duration } = analyseDemo()
+    const timing = TimingMap.single(analysis.bpm, analysis.offset)
+    const holds = generateAllDifficulties({ analysis, timing, duration, songId: 'demo' }).map((c) => c.notes.filter((n) => n.kind === 'hold').length)
+    for (let i = 1; i < holds.length; i++) expect(holds[i]).toBeGreaterThanOrEqual(holds[i - 1])
+  })
+
   it('refuses to hold a lane that has no room before the next note', () => {
     const timing = TimingMap.single(120, 0)
     const notes: ChartNote[] = [

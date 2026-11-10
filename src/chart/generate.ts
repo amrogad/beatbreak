@@ -15,7 +15,7 @@
  * Every stage is deterministic given a seed, so regenerating with the same settings reproduces
  * the same chart exactly.
  */
-import { ANCHOR_LIMIT, MIN_HOLD_SECONDS, anchorWindow, applyChartRules } from './rules'
+import { ANCHOR_LIMIT, anchorWindow, applyChartRules, minHold } from './rules'
 import { BAR_BEATS, groupBars, type BarGroups } from './structure'
 import type {
   AnalysisResult,
@@ -34,7 +34,7 @@ import { createRng, createId, hashString, type Rng } from '../core/rng'
 import { isCut, type EditPlan } from '../core/edit'
 import { TimingMap, sortNotes } from './timing'
 
-export const GENERATOR_VERSION = 'pulsegrid-gen-4.5'
+export const GENERATOR_VERSION = 'pulsegrid-gen-4.6'
 
 /** Hits this close to an eighth snap to it instead of the nearest 16th (Hard and Expert). */
 const COARSE_SNAP_MS = 55
@@ -899,8 +899,6 @@ export interface HoldApplicationResult {
   holds: number
 }
 
-/** Share of notes that may become holds, per difficulty. Used only for pre-sustain analyses. */
-const HOLD_CHANCE: Record<Difficulty, number> = { easy: 0.1, normal: 0.13, hard: 0.16, expert: 0.18 }
 /**
  * Longest hold each difficulty will place, in seconds. The sound decides the length; these caps
  * only stop a pad that rings for bars from becoming a pole down the lane.
@@ -911,46 +909,29 @@ const RELEASE_ALIGN_SECONDS = 0.15
 /** No other arrow may come this soon before a hold's release. */
 const RELEASE_CLEAR_SECONDS = 0.3
 
-/** Repeats of a held pattern may push the chart this far past its hold cap. */
-const HOLD_REPEAT_ROOM = 1.6
 /**
- * Hold shaping, tuned on 2026-11-07 against the StepMania and osu!mania charts of the same three
- * songs: holds went from 1.5 to 1.0 beats (the human median), holds where both humans tap fell
- * from 176 to 102, and a human hold starts under 43% of ours (was 35%).
+ * Long arrows, one rule on every level: a fixed share of the chart's arrows, taken from the sounds
+ * that ring longest. Human StepMania and osu!mania charts keep holds at a few percent of their
+ * notes at every level, so the count rises with the arrows: Hard always has more than Normal.
  */
 export const HOLD_SHAPE = {
+  /** Share of a chart's arrows that become long arrows. */
+  share: 0.06,
   /** Share of the measured sustain a hold lasts: the envelope rings on after a player would let go. */
   lengthScale: 0.7,
-  /** Most other-lane arrows per beat while a hold runs; a busier span stays a tap. */
-  maxBusyPerBeat: 0.5,
-  /**
-   * Shortest sound, in seconds, that becomes a long arrow. Shorter sustains made 0.3 s holds that
-   * drew about as tall as a tap once scroll speed moved to arrow heights.
-   */
-  minSound: 0.5,
-  /**
-   * Below this share of long arrows (dense rap over a dry beat), sounds that ring this long also
-   * count. The arrow still lasts at least MIN_HOLD_SECONDS.
-   */
-  fewShare: 0.04,
-  fewSound: 0.3,
+  /** A sound shorter than this is a hit, never a long arrow. */
+  minSound: 0.2,
+  /** Easy and Normal: most other-lane arrows per beat while a hold runs. */
+  maxBusyPerBeat: 1,
 }
 
 /**
- * Turn notes into hold notes where the music sustains and the lane stays clear long enough.
+ * Turn the longest-ringing notes into holds, up to HOLD_SHAPE.share of the chart.
  *
- * A hold is one judged note: its head is judged like a tap and the player must keep the key down
- * until the tail; releasing early drops the hold (combo break + accuracy penalty). When the
- * analysis measured sustain (`sustains`), the sound decides — only onsets whose envelope kept
- * ringing past the difficulty's minimum become holds, and the hold lasts as long as the sound
- * (snapped to the grid, capped per difficulty). Analyses saved before sustain measurement carry
- * no data here, and fall back to the old seeded coin-flip so old libraries keep their holds.
- *
- * A candidate is still required to
- *  - have room before the next note in its lane (tail plus a little clearance),
- *  - keep the tail inside the song,
- *  - be long enough to read as a hold rather than a tap, and
- *  - stay within the per-chart cap of holds.
+ * A candidate needs a solo start on the beat grid, room before the next arrow in its lane, and a
+ * sound that rings at least HOLD_SHAPE.minSound. The hold lasts as long as the sound (at least
+ * the chart rules' minimum, snapped to the 16th grid, capped per level), and ends on another lane's arrow
+ * when one is close. Analyses saved before sustain was measured pick holds at random instead.
  */
 export function applyHolds(
   notes: ChartNote[],
@@ -960,113 +941,101 @@ export function applyHolds(
   difficulty: Difficulty,
   seed: number,
   sustains: ReadonlyMap<number, number> = new Map(),
-  patterns: ReadonlyMap<number, string> = new Map(),
-  holdShare = 0.1,
+  share = HOLD_SHAPE.share,
   freeHeads = false,
   minSound = HOLD_SHAPE.minSound,
 ): HoldApplicationResult {
   if (notes.length === 0) return { notes, holds: 0 }
   const rng = createRng(seed ^ 0x51ed270b)
-  const chance = HOLD_CHANCE[difficulty]
   const maxHoldSeconds = HOLD_MAX_SECONDS[difficulty]
-  const minHoldSeconds = MIN_HOLD_SECONDS
   const tailClearance = 0.12
-  const holdCap = Math.max(1, Math.floor(notes.length * holdShare))
+  const target = Math.max(1, Math.round(notes.length * share))
   const songEnd = duration - 0.2
   const sustainAware = sustains.size > 0
+  const busyRule = difficulty === 'easy'
+  // A slow detected tempo is usually half the real one: its half beats are the real beats.
+  const grid = timing.primaryBpm < SLOW_TEMPO_BPM ? 2 : 1
 
-  // A hold that starts on the same step as another arrow asks the player to hold and tap at once;
-  // that combination is what made generated long/short pairs feel awkward. Keep holds for solo
-  // starts only.
+  // A hold that starts together with another arrow asks for a hold and a tap at once.
   const sameStep = new Map<number, number>()
   for (const note of notes) {
     const key = Math.round(note.time * 1000)
     sameStep.set(key, (sameStep.get(key) ?? 0) + 1)
   }
-
-  // The next note in the same lane after each note, computed in one backward pass.
   const nextInLane = new Array<number>(notes.length).fill(Number.POSITIVE_INFINITY)
-  const laneNext = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+  const nextIndex = new Array<number>(notes.length).fill(-1)
+  const laneNext = [-1, -1, -1, -1]
   for (let i = notes.length - 1; i >= 0; i--) {
-    nextInLane[i] = laneNext[notes[i].lane]
-    laneNext[notes[i].lane] = notes[i].time
+    const j = laneNext[notes[i].lane]
+    nextIndex[i] = j
+    nextInLane[i] = j >= 0 ? notes[j].time : Number.POSITIVE_INFINITY
+    laneNext[notes[i].lane] = i
   }
+  // Only to keep a harder level from having fewer long arrows: one tap in the lane may give way.
+  const makeRoom = minSound === 0
 
+  // Longest sounds first.
+  const ringing = notes
+    .map((note, i) => ({ i, sustain: sustainAware ? sustains.get(Math.round(note.time * 1000)) ?? 0 : 0.5 + rng.next() }))
+    .filter(({ i, sustain }) => notes[i].kind === 'tap' && sustain >= minSound)
+    .sort((a, b) => b.sustain - a.sustain || a.i - b.i)
+
+  const out = [...notes]
+  const cleared = new Set<number>()
   let holds = 0
-  const cleared = new Set<string>()
-  const heldPatterns = new Set<string>()
-  const out = notes.map((note, i) => {
-    if (note.kind !== 'tap' || cleared.has(note.id)) return note
-    // The cap is paced through the song so the long arrows don't all land in the opening. A pattern
-    // that held before holds again, up to a hard limit.
-    const pattern = patterns.get(Math.round(note.time * 1000))
-    const allowed = pattern !== undefined && heldPatterns.has(pattern) ? holdCap * HOLD_REPEAT_ROOM : holdCap * ((i + 1) / notes.length)
-    if (holds >= Math.max(1, allowed)) return note
-    if ((sameStep.get(Math.round(note.time * 1000)) ?? 0) > 1) return note
-    // Holds are anchors, not decoration. Keep their heads on a beat (Easy/Normal) or at least on
-    // an eighth (Hard/Expert) so a short tap never starts halfway through a sung phrase.
-    // A slow detected tempo is usually half the real one: its half beats are the real beats.
-    const grid = timing.primaryBpm < SLOW_TEMPO_BPM ? 2 : 1
-    const onQuarter = Math.abs(note.beat * grid - Math.round(note.beat * grid)) < 1e-6
-    const onEighth = Math.abs(note.beat * 2 * grid - Math.round(note.beat * 2 * grid)) < 1e-6
-    if (freeHeads) {
-      // A held sung word starts where the singer starts it, on the grid or not.
-    } else if (difficulty === 'easy' || difficulty === 'normal') {
-      if (!onQuarter) return note
-    } else if (!onEighth) {
-      return note
+  for (const { i, sustain } of ringing) {
+    if (holds >= target) break
+    const note = notes[i]
+    if (cleared.has(i) || out[i].kind !== 'tap') continue
+    // The chart rules turn anything shorter back into a tap.
+    const minHoldSeconds = minHold(timing.secondsPerBeat(note.beat), difficulty)
+    if (minSound > 0 && (sameStep.get(Math.round(note.time * 1000)) ?? 0) > 1) continue
+    if (!freeHeads) {
+      const step = note.beat * grid * (difficulty === 'easy' ? 1 : 2)
+      if (Math.abs(step - Math.round(step)) > 1e-6) continue
     }
-    const bound = Math.min(nextInLane[i] - tailClearance, note.time + maxHoldSeconds, songEnd)
-    if (bound - note.time < minHoldSeconds) return note
-    let wanted: number
-    if (sustainAware) {
-      const sustain = sustains.get(Math.round(note.time * 1000))
-      if (sustain === undefined || sustain < minSound) return note
-      wanted = Math.min(Math.max(sustain * HOLD_SHAPE.lengthScale, minHoldSeconds), bound - note.time)
-      if (wanted < minHoldSeconds) return note
-    } else {
-      const onBeat = Math.abs(note.beat - Math.round(note.beat)) < 1e-6
-      if (rng.next() > (onBeat ? chance * 1.35 : chance)) return note
-      wanted = bound - note.time
+    let bound = Math.min(nextInLane[i] - tailClearance, note.time + maxHoldSeconds, songEnd)
+    let giveWay = -1
+    if (bound - note.time < minHoldSeconds && makeRoom) {
+      const j = nextIndex[i]
+      if (j >= 0 && notes[j].kind === 'tap' && !cleared.has(j) && (sameStep.get(Math.round(notes[j].time * 1000)) ?? 0) === 1) {
+        giveWay = j
+        bound = Math.min(nextInLane[j] - tailClearance, note.time + maxHoldSeconds, songEnd)
+      }
     }
-    // Snap the tail to the subdivision grid so the export and the editor stay exact. `timeToStep`
-    // rounds, so step down until the snapped time is really inside the wanted span.
-    // Tails snap to the nearest 16th on every difficulty. Snapping down to Easy's whole beats
-    // ended holds up to a beat before the sound did, so letting go "on time" felt early.
+    if (bound - note.time < minHoldSeconds) continue
+    const wanted = Math.min(Math.max(sustain * HOLD_SHAPE.lengthScale, minHoldSeconds), bound - note.time)
+    // Tails sit on the 16th grid so the export and the editor stay exact.
     const tailGrid = Math.max(4, settings.stepsPerBeat)
-    let tailStep = Math.round(timing.timeToBeat(note.time + wanted) * tailGrid)
+    // Rounded up, so a hold never snaps below its minimum length.
+    let tailStep = Math.ceil(timing.timeToBeat(note.time + wanted) * tailGrid - 1e-6)
     while (tailStep > 0 && timing.stepToTime(tailStep, tailGrid) > bound + 1e-6) tailStep--
     let tailTime = timing.stepToTime(tailStep, tailGrid)
-    // End on an arrow when one is close: the release lands together with another lane's note,
-    // the way hand-made charts end their holds.
+    // End on another lane's arrow when one is close, the way hand-made charts do.
     let partner: ChartNote | null = null
     for (let j = i + 1; j < notes.length && notes[j].time <= tailTime + RELEASE_ALIGN_SECONDS; j++) {
       const other = notes[j]
-      if (other.lane === note.lane || other.time < tailTime - RELEASE_ALIGN_SECONDS) continue
+      if (other.lane === note.lane || cleared.has(j) || other.time < tailTime - RELEASE_ALIGN_SECONDS) continue
       if (!partner || Math.abs(other.time - tailTime) < Math.abs(partner.time - tailTime)) partner = other
     }
     if (partner && partner.time - note.time >= minHoldSeconds && partner.time <= bound + 1e-6) tailTime = partner.time
     const holdSeconds = tailTime - note.time
-    if (holdSeconds < minHoldSeconds) return note
-    let busy = 0
+    if (holdSeconds < minHoldSeconds - 1e-6) continue
+    const inside: number[] = []
     for (let j = i + 1; j < notes.length && notes[j].time < tailTime - 1e-6; j++) {
-      if (notes[j].lane !== note.lane && notes[j].time > note.time + 1e-6) busy++
+      if (notes[j].lane !== note.lane && notes[j].time > note.time + 1e-6 && !cleared.has(j)) inside.push(j)
     }
-    const holdBeats = timing.timeToBeat(tailTime) - note.beat
-    if (busy > HOLD_SHAPE.maxBusyPerBeat * Math.max(holdBeats, 0.25)) return note
-    // Keep the run-up to the release clear: arrows in other lanes just before the tail make the
-    // player split attention exactly when the hold needs it.
-    for (let j = i + 1; j < notes.length && notes[j].time < tailTime - 1e-6; j++) {
-      if (notes[j].lane !== note.lane && notes[j].time > tailTime - RELEASE_CLEAR_SECONDS && notes[j].kind === 'tap') {
-        cleared.add(notes[j].id)
-      }
+    // Easy and Normal empty a hold of other arrows later, so a busy stretch would lose too many.
+    if (busyRule && inside.length > HOLD_SHAPE.maxBusyPerBeat * Math.max(timing.timeToBeat(tailTime) - note.beat, 0.25)) continue
+    // Keep the run-up to the release clear.
+    for (const j of inside) {
+      if (notes[j].time > tailTime - RELEASE_CLEAR_SECONDS && out[j].kind === 'tap') cleared.add(j)
     }
+    if (giveWay >= 0) cleared.add(giveWay)
+    out[i] = { ...note, kind: 'hold', duration: holdSeconds }
     holds++
-    if (pattern !== undefined) heldPatterns.add(pattern)
-    return { ...note, kind: 'hold' as const, duration: holdSeconds }
-  })
-
-  return { notes: out.filter((note) => note.kind === 'hold' || !cleared.has(note.id)), holds }
+  }
+  return { notes: out.filter((_, i) => !cleared.has(i)), holds }
 }
 
 /* ----------------------------------------------------------------------------------------- */
@@ -1172,12 +1141,12 @@ export interface GenerateChartInput {
   follow?: Follow
   /** The singer's onsets, from the isolated vocal track. */
   voice?: readonly OnsetEvent[] | null
+  /** Long arrows the level below has; this level aims for at least as many. */
+  minHolds?: number
 }
 
 /** A sung note this close to the beat grid lands on it; further off it keeps the singer's timing. */
 const SINGER_SNAP_MS = 30
-/** Long sung notes are the point of following the singer, so more of them become long arrows. */
-const SINGER_HOLD_SHARE = 0.2
 /** A bar following both keeps this many times the hits of its busier source. */
 const BOTH_ROOM = 1
 
@@ -1406,10 +1375,13 @@ export function generateChart(input: GenerateChartInput): Chart {
     if (candidate.heldSeconds === undefined) continue
     sustains.set(key, Math.max(sustains.get(key) ?? 0, candidate.heldSeconds))
   }
-  const holdShare = singing ? SINGER_HOLD_SHARE : undefined
-  let withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns, holdShare, singing)
-  if (withHolds.holds < assignment.notes.length * HOLD_SHAPE.fewShare) {
-    const more = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, patterns, holdShare, singing, HOLD_SHAPE.fewSound)
+  let withHolds = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, undefined, singing)
+  // A harder level never has fewer long arrows than the one below it: when the ringing sounds run
+  // short in its busier lanes, any grid position and shorter sounds may start one.
+  const minHolds = input.minHolds ?? 0
+  if (withHolds.holds < minHolds) {
+    const share = Math.max(HOLD_SHAPE.share, minHolds / Math.max(1, assignment.notes.length))
+    const more = applyHolds(assignment.notes, timing, duration, settings, difficulty, seed, sustains, share, true, 0)
     if (more.holds > withHolds.holds) withHolds = more
   }
   const tidied = applyChartRules(withHolds.notes, timing, settings, difficulty)
@@ -1473,7 +1445,15 @@ export function generateAllDifficulties(
   input: Omit<GenerateChartInput, 'difficulty'> & { difficulties?: Difficulty[] },
 ): Chart[] {
   const list = input.difficulties ?? (['easy', 'normal', 'hard', 'expert'] as Difficulty[])
-  return list.map((difficulty) => generateChart({ ...input, difficulty }))
+  const ordered = [...list].sort((a, b) => rank(a) - rank(b))
+  const made = new Map<Difficulty, Chart>()
+  let minHolds = 0
+  for (const difficulty of ordered) {
+    const chart = generateChart({ ...input, difficulty, minHolds })
+    made.set(difficulty, chart)
+    minHolds = chart.notes.filter((note) => note.kind === 'hold').length
+  }
+  return list.map((difficulty) => made.get(difficulty)!)
 }
 
 /** Convenience: full pipeline straight from analysis + bpm/offset, used by the worker. */

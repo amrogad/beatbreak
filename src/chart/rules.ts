@@ -36,7 +36,7 @@ export interface RuleSettings {
 const MIN_HOLD_BEATS: Record<Difficulty, number> = { easy: 1, normal: 0.5, hard: 0.25, expert: 0.25 }
 /** A long arrow shorter than this reads as a tap at normal scroll speeds, so it becomes one. */
 export const MIN_HOLD_SECONDS = 0.5
-const minHold = (beat: number, difficulty: Difficulty): number => Math.max(beat * MIN_HOLD_BEATS[difficulty], MIN_HOLD_SECONDS)
+export const minHold = (beat: number, difficulty: Difficulty): number => Math.max(beat * MIN_HOLD_BEATS[difficulty], MIN_HOLD_SECONDS)
 const RELEASE_GAP_BEATS: Record<Difficulty, number> = { easy: 1, normal: 0.5, hard: 0.25, expert: 0.25 }
 export const ANCHOR_LIMIT: Partial<Record<Difficulty, number>> = { normal: 3, hard: 5 }
 /** How many arrows of a run, counting the current one, an anchor is counted over. */
